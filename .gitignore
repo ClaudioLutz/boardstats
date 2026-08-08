@@ -3,7 +3,12 @@ arbeit/
 berichte/
 bundles/
 cache/
+cache_status.json
 logs/
+raw/
+reports/
+seen.json
+backup/
 backup-*/
 
 # Werkzeug-Artefakte

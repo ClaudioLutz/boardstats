@@ -44,6 +44,7 @@ LOGS = BASE / "logs"
 BERICHTE = BASE / "berichte"
 ARBEIT = BASE / "arbeit"
 CACHE = BASE / "cache"
+EXTRAKTE = BASE / "extrakte"
 
 THROTTLE = 5            # gleichzeitige Sonnet-Aufrufe
 TIMEOUT_EXTRAKT = 600   # je Buendel, Sekunden
@@ -435,6 +436,146 @@ def abdeckung_trennen(text: str) -> tuple[str, str]:
     return text, ""
 
 
+# Schoene Ueberschriften fuer die oeffentliche Markdown-Fassung. Die rohen
+# Abschnittsnamen (Vertrag mit den Extraktions-Prompts) bleiben in Grossschrift,
+# damit ABSCHNITTE weiterhin fuer beide Zwecke passt.
+ABSCHNITT_TITEL = {
+    "THEMA": "Thema",
+    "WERTPAPIERE UND COINS": "Wertpapiere und Coins",
+    "KONKRETE ZAHLEN": "Konkrete Zahlen",
+    "THESEN UND ARGUMENTE": "Thesen und Argumente",
+    "PRAKTISCHES": "Praktisches",
+    "QUELLEN": "Quellen",
+    "FACHBEGRIFFE UND SLANG": "Fachbegriffe und Slang",
+    "OFFENE FRAGEN": "Offene Fragen",
+    "VERLAESSLICHKEIT": "Verlaesslichkeit",
+    "NEU SEIT DEM LETZTEN LAUF": "Neu seit dem letzten Lauf",
+}
+
+MODUS_TEXT = {
+    "voll": "vollstaendig gelesen",
+    "delta": "fortgeschrieben",
+    "unveraendert": "unveraendert seit dem letzten Lauf",
+}
+
+
+def extrakt_zu_markdown(text: str, meta: dict, datum: str) -> str:
+    """Ein Thread-Extrakt als eigenstaendige Markdown-Seite. Die Abschnitte
+    des Extrakts sind bereits mit "- " als Aufzaehlung geschrieben, das ist
+    schon gueltiges Markdown - nur die Grossschrift-Ueberschriften werden zu
+    echten Markdown-Ueberschriften."""
+    zeilen = []
+    for z in text.splitlines():
+        titel = ABSCHNITT_TITEL.get(z.strip())
+        zeilen.append(f"## {titel}" if titel else z)
+    koerper = "\n".join(zeilen).strip()
+
+    modus = MODUS_TEXT.get(meta.get("modus", ""), meta.get("modus", ""))
+    titel = meta.get("betreff") or f"Thread {meta.get('thread', '')}"
+    kopf = [
+        f"# {titel}",
+        "",
+        f"Quelle: [4chan /biz/ Thread {meta.get('thread', '')}]"
+        f"({meta.get('url', '')}) &middot; Stand {datum} &middot; {modus}"
+        + (f" &middot; {meta['posts_gesamt']} Posts insgesamt"
+           if meta.get("posts_gesamt") is not None else ""),
+        "",
+        "Automatisch erstellt aus oeffentlichen Beitraegen des Boards /biz/ "
+        "durch ein Sprachmodell. Aussagen von Postern sind Behauptungen, "
+        "keine Tatsachen und keine Anlageberatung.",
+        "",
+        "---",
+        "",
+    ]
+    return "\n".join(kopf) + koerper + "\n"
+
+
+def markdown_tag_schreiben(manifest: dict, eDir: Path, datum: str) -> Path | None:
+    """Persistiert die Extrakte des laufenden Tages als Markdown im Repo
+    (`extrakte/<datum>/`), zusammen mit einer Tages-Uebersicht. eDir enthaelt
+    zu diesem Zeitpunkt den vollen aktuellen Stand aller Buendel-Threads,
+    auch der unveraenderten (ein_extrakt() kopiert die aus dem Cache).
+    Persistieren macht die Extrakte, nicht nur den fertigen Bericht,
+    nachvollziehbar - inklusive der Abschnitte, die aus der Synthese-Eingabe
+    herausgefiltert wurden (Glossar, offene Fragen bleiben hier erhalten)."""
+    meta_nach_thread = {str(b["thread"]): b for b in manifest["buendel"]}
+    tag_dir = EXTRAKTE / datum
+    tag_dir.mkdir(parents=True, exist_ok=True)
+
+    eintraege = []
+    for e in sorted(eDir.glob("*.txt")):
+        t = e.stem
+        meta = meta_nach_thread.get(t, {"thread": t})
+        md = extrakt_zu_markdown(
+            e.read_text(encoding="utf-8", errors="replace"), meta, datum)
+        (tag_dir / f"{t}.md").write_text(md, encoding="utf-8")
+        eintraege.append(meta)
+
+    if not eintraege:
+        return None
+
+    eintraege.sort(key=lambda m: -(m.get("substanz_summe") or 0.0))
+    zeilen = [f"# /biz/-Lagebericht: Extrakte vom {datum}", "",
+              f"{len(eintraege)} Threads, absteigend nach Substanzdichte.", "",
+              "| Thread | Modus | Posts | Substanz |", "|---|---|---|---|"]
+    for m in eintraege:
+        t = str(m.get("thread", ""))
+        betreff = (m.get("betreff") or t).replace("|", "/").replace("\n", " ")
+        if len(betreff) > 70:
+            betreff = betreff[:67] + "..."
+        modus = MODUS_TEXT.get(m.get("modus", ""), m.get("modus", ""))
+        zeilen.append(
+            f"| [{betreff}]({t}.md) | {modus} | {m.get('posts_gesamt', '')} | "
+            f"{m.get('substanz_summe', 0):.1f} |")
+    (tag_dir / "README.md").write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+    return tag_dir
+
+
+def markdown_index_aktualisieren() -> None:
+    """Baut extrakte/README.md neu aus den vorhandenen Tagesordnern - einfacher
+    als fortzuschreiben, und die Anzahl Tage bleibt uebersichtlich klein."""
+    tage = sorted((p for p in EXTRAKTE.glob("*") if p.is_dir()), reverse=True)
+    zeilen = [
+        "# /biz/-Lagebericht: Extrakt-Archiv", "",
+        "Taegliche, strukturiert extrahierte Zusammenfassungen von Threads aus "
+        "dem 4chan-Board /biz/ (Business & Finance). Ein Sprachmodell liest je "
+        "Thread und zieht Thema, genannte Titel/Coins, konkrete Zahlen, Thesen "
+        "samt Begruendung, Quellen und Fachbegriffe heraus - Diskurs-"
+        "Dokumentation, keine Anlageberatung. Teil des Projekts "
+        "[boardstats](..).", "",
+        "| Datum | Threads |", "|---|---|",
+    ]
+    for t in tage:
+        anzahl = len(list(t.glob("*.md"))) - (1 if (t / "README.md").exists() else 0)
+        zeilen.append(f"| [{t.name}]({t.name}/README.md) | {anzahl} |")
+    (EXTRAKTE / "README.md").write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+
+def git_veroeffentlichen(pfade: list[Path], nachricht: str) -> None:
+    """Committet und pusht nur die genannten Pfade. Ein Fehlschlag (kein
+    Git-Remote, keine Anmeldung, kein Netz) darf den Bericht nicht zu Fall
+    bringen - er wird geloggt, der Lauf laeuft weiter."""
+    rel = [str(p.relative_to(BASE)) for p in pfade]
+    try:
+        subprocess.run(["git", "-C", str(BASE), "add", *rel],
+                       check=True, capture_output=True, text=True)
+        status = subprocess.run(
+            ["git", "-C", str(BASE), "status", "--porcelain", "--", *rel],
+            check=True, capture_output=True, text=True)
+        if not status.stdout.strip():
+            log.info("Keine neuen Extrakte zu veroeffentlichen")
+            return
+        subprocess.run(["git", "-C", str(BASE), "commit", "-q", "-m", nachricht],
+                       check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(BASE), "push", "-q"],
+                       check=True, capture_output=True, text=True)
+        log.info("Extrakte veroeffentlicht: %s", nachricht)
+    except (subprocess.CalledProcessError, OSError) as e:
+        meldung = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)
+        log.warning("Veroeffentlichung auf GitHub fehlgeschlagen (Bericht "
+                    "ist davon unberuehrt): %s", meldung)
+
+
 def stufe3(manifest: dict, eDir: Path, arbeit: Path, empfaenger: str,
            versand: str) -> str:
     meta_nach_thread = {str(b["thread"]): b for b in manifest["buendel"]}
@@ -595,6 +736,8 @@ def main() -> int:
     ap.add_argument("--versand", choices=["mcp", "smtp", "keiner"], default="mcp")
     ap.add_argument("--kein-cache", action="store_true",
                     help="alle Threads voll lesen (Neuaufbau des Caches)")
+    ap.add_argument("--kein-github", action="store_true",
+                    help="Extrakte nicht als Markdown ablegen und veroeffentlichen")
     args = ap.parse_args()
 
     setup_logging()
@@ -637,6 +780,18 @@ def main() -> int:
         return 1
 
     cache_pflegen(manifest, eDir, ergebnisse)
+
+    # Die Extrakte oeffentlich als Markdown ablegen, unabhaengig davon, ob die
+    # Synthese anschliessend gelingt - sie sind ein eigenstaendiges Ergebnis
+    # dieses Laufs. Ein Fehlschlag hier (kein Netz, kein Git) darf den
+    # Bericht nicht verhindern.
+    if not args.kein_github:
+        datum = datetime.now().strftime("%Y-%m-%d")
+        tag_dir = markdown_tag_schreiben(manifest, eDir, datum)
+        if tag_dir is not None:
+            markdown_index_aktualisieren()
+            git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"],
+                                 f"Extrakte vom {datum}")
 
     t2 = time.time()
     try:
