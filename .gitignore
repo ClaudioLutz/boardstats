@@ -1,0 +1,17 @@
+# Laufzeitdaten - enthalten Board-Rohinhalte, gehoeren nicht ins Repo
+arbeit/
+berichte/
+bundles/
+cache/
+logs/
+backup-*/
+
+# Werkzeug-Artefakte
+__pycache__/
+.ruff_cache/
+*.pyc
+
+# Lokale Neben- und Altdateien
+vorschau_mail.html
+*.bak*
+send_report*.ps1

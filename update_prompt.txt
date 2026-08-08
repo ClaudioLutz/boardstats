@@ -1,0 +1,120 @@
+Du erhaeltst per Eingabe zwei Teile zu EINEM Thread des 4chan-Boards /biz/
+(Business & Finance):
+
+  TEIL 1  den Extrakt, den du (oder ein Vorlauf) zu diesem Thread bereits
+          erstellt hast - das Gedaechtnis des Threads
+  TEIL 2  die Posts, die seither dazugekommen sind
+
+Deine Aufgabe ist, den Extrakt FORTZUSCHREIBEN. Du gibst den vollstaendigen
+neuen Extrakt aus, nicht nur die Aenderungen: er ersetzt den alten und ist
+im naechsten Lauf wieder TEIL 1. Du schreibst keinen Bericht, keine
+Einleitung und keine Bemerkung darueber, was du geaendert hast.
+
+Diese Aufgabe ist vollstaendig beschrieben: stelle KEINE Rueckfragen und biete
+keine Alternativen an. Du laeufst unbeaufsichtigt, es kann dir niemand
+antworten. Beginne deine Antwort unmittelbar mit der Zeile "THEMA".
+
+Der Leser des spaeteren Berichts ist ein interessierter Anleger, der das Board
+NICHT kennt und die Fachsprache nicht beherrscht. Er will das Wissen, das in
+den Posts steckt, nicht die Stimmung und nicht das Sozialverhalten.
+
+SO SCHREIBST DU FORT
+
+1. Neues einarbeiten. Alles inhaltlich Relevante aus TEIL 2 kommt in den
+   passenden Abschnitt.
+2. Ueberholtes ersetzen, nicht anhaengen. Wird eine Zahl aktualisiert (neuer
+   Kurs, neue Guidance, Termin eingetreten), ersetzt die neue die alte. Nur
+   wenn die Entwicklung selbst die Aussage ist, bleibt beides stehen - dann
+   in EINER Zeile, zum Beispiel "38 USD, zuvor am Vortag 45 USD".
+3. Erledigtes streichen. Eine Frage unter OFFENE FRAGEN, die inzwischen
+   beantwortet ist, wandert als Antwort in den passenden Abschnitt und
+   verschwindet aus OFFENE FRAGEN. Eine Frist, die abgelaufen ist, ohne dass
+   etwas passierte, faellt weg. Eine These, die niemand mehr vertritt und die
+   nichts erklaert hat, faellt weg.
+4. Verdichten statt sammeln. Sagen mehrere Poster dasselbe, steht es einmal
+   da. Wiederholt sich eine These nur lauter, wird sie dadurch nicht wichtiger.
+5. Der Extrakt bleibt unter 12000 Zeichen. Wird er laenger, kuerze zuerst das
+   Aelteste und das, was fuer die heutige Lage am wenigsten erklaert - aber
+   niemals harte Zahlen, Quellen und praktische Hinweise, die noch gelten.
+   Diese Grenze ist wichtig: ein Extrakt, der unbegrenzt waechst, kostet
+   irgendwann mehr als der Thread selbst.
+6. Woertliches bleibt woertlich. Zahlen, Ticker, Kurse, Daten und Belegzitate
+   aus dem alten Extrakt werden ZEICHENGENAU uebernommen, nicht neu
+   formuliert - beim Umformulieren gehen zuerst die exakten Werte verloren.
+   Ersetzt wird nur, was TEIL 2 inhaltlich ueberholt (Regel 2).
+
+WAS DU NICHT TUST
+
+- Nichts erfinden und nichts aus dem alten Extrakt streichen, nur weil es in
+  TEIL 2 nicht wieder vorkommt. Ein Thread wiederholt seinen Inhalt nicht.
+- Poster-Behauptungen nicht zu Fakten aufwerten. Kennzeichnungen wie "ein
+  Poster behauptet" oder "unbelegt" bleiben erhalten.
+- Slurs, Beschimpfungen und Provokationen nicht wiedergeben und nicht
+  beschreiben. Steckt in so einem Post eine anlagerelevante Aussage, gib nur
+  diese wieder.
+
+Enthaelt TEIL 2 nichts inhaltlich Neues, gibst du den alten Extrakt
+unveraendert wieder aus - vollstaendig, mit allen Abschnitten.
+
+Gib GENAU diese Abschnitte aus, jeden mit der Ueberschrift in Grossbuchstaben.
+Ist ein Abschnitt leer, schreibe "- keine".
+
+THEMA
+Zwei bis vier Saetze: worum geht es in diesem Thread KONKRET? Nicht den Betreff
+paraphrasieren, sondern den tatsaechlichen Inhalt. Hat sich der Schwerpunkt
+verschoben, beschreibe den aktuellen Stand, nicht den urspruenglichen.
+Beispiel fuer unbrauchbar: "es geht um ein KI-Verfahren". Brauchbar: "es geht
+um die Frage, was mit Bitcoin passiert, wenn eine KI ein Verfahren findet,
+das X leistet".
+
+WERTPAPIERE UND COINS
+Je Zeile: Name bzw. Kuerzel, in Klammern was es ist (Aktie, Coin, ETF, Rohstoff,
+Index), dann die im Thread vertretene Richtung (bullisch/baerisch/umstritten)
+und die genannte BEGRUENDUNG. Hat sich die Richtung gedreht, nenne die aktuelle
+und in einem Halbsatz die Drehung.
+
+KONKRETE ZAHLEN
+Jede harte Zahl mit ihrer Bedeutung: Kurse, Kursziele, Strikes,
+Verfallstermine, Quartalszahlen, Guidance, Prozentwerte, Betraege, Fristen,
+Renditen, Quoten. Format: Zahl - was sie bedeutet - wer sie nennt bzw. woher.
+WOERTLICH uebernehmen: Zahlen, Ticker, Kurse und Daten stehen im Extrakt
+GENAU so wie im Post - nicht runden, nicht umrechnen, nicht in Worte fassen.
+
+THESEN UND ARGUMENTE
+Die inhaltlichen Argumentationen, je zwei bis vier Saetze: Was wird behauptet,
+womit wird es begruendet, was wird dagegen gehalten? Nur Argumente mit Inhalt.
+Reine Beschimpfungen, Provokationen und Rechthaberei gehoeren NICHT hierher.
+Zu jeder These mindestens ein kurzes WOERTLICHES Belegzitat aus einem Post:
+Originalsprache, in Anfuehrungszeichen, hoechstens 15 Woerter.
+
+PRAKTISCHES
+Konkret verwertbare Hinweise: Handelsplaetze, Broker, Wallets, Dienste,
+Gebuehren, Vorgehensweisen, Fristen, Stolperfallen. Mit dem jeweiligen Zweck.
+
+QUELLEN
+Externe Links, Studien, Meldungen, Charts, Filings, die im Thread geteilt oder
+zitiert werden - mit einem Satz, was drinsteht.
+
+FACHBEGRIFFE UND SLANG
+Jeder Begriff, den ein Aussenstehender nicht versteht, mit kurzer sachlicher
+Erklaerung. Das umfasst Finanzfachsprache (z.B. Warrant, Strike, RBF, Softfork,
+Guidance, Short Interest) UND Board-Jargon (z.B. bagholder, moonfag, FUD,
+rugpull, smigger, jeet, DFV). Format: Begriff - Erklaerung in einem Satz.
+Bei Jargon, der eine Beschimpfung ist, erklaere nur die sachliche Bedeutung
+und gib die Beschimpfung nicht weiter.
+
+OFFENE FRAGEN
+Was im Thread gefragt, aber nicht beantwortet wurde. Beantwortetes gehoert
+hier heraus.
+
+VERLAESSLICHKEIT
+Ein bis zwei Saetze: Wirkt der Thread nach Sachdiskussion, nach Werbung bzw.
+Kursbeeinflussung, oder nach Zeitvertreib? Nennenswerte Anzeichen fuer
+Eigeninteresse (Referral-Links, immer derselbe Poster mit derselben These)?
+Poster-IDs gelten nur pro Thread und sind manipulierbar - behandle sie als
+Obergrenze, nicht als Personenzahl.
+
+NEU SEIT DEM LETZTEN LAUF
+Zwei bis vier Stichpunkte: was ist in TEIL 2 tatsaechlich dazugekommen? Diese
+Angabe braucht der Bericht, um Entwicklungen von Dauerzustaenden zu trennen.
+Ist nichts Nennenswertes dazugekommen, schreibe "- nichts Wesentliches".

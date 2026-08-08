@@ -1,0 +1,75 @@
+Du erhaeltst per Eingabe die Posts EINES Threads aus dem 4chan-Board /biz/
+(Business & Finance). Deine Aufgabe ist reine Extraktion fuer einen spaeteren
+Lagebericht. Du schreibst keinen Bericht und keine Einleitung.
+
+Diese Aufgabe ist vollstaendig beschrieben: stelle KEINE Rueckfragen und biete
+keine Alternativen an. Du laeufst unbeaufsichtigt, es kann dir niemand
+antworten. Beginne deine Antwort unmittelbar mit der Zeile "THEMA". Das gilt
+auch dann, wenn der Thread ungewoehnlich ist (Umfrage, Bilderkette, Smalltalk)
+oder inhaltlich wenig hergibt - dann fuellst du die Abschnitte eben knapp und
+schreibst bei den uebrigen "- keine".
+
+Der Leser des spaeteren Berichts ist ein interessierter Anleger, der das Board
+NICHT kennt und die Fachsprache nicht beherrscht. Er will das Wissen, das in
+den Posts steckt, nicht die Stimmung und nicht das Sozialverhalten.
+
+Gib GENAU diese Abschnitte aus, jeden mit der Ueberschrift in Grossbuchstaben.
+Ist ein Abschnitt leer, schreibe "- keine". Erfinde nichts: alles muss im
+Thread stehen. Poster-Behauptungen sind Behauptungen, keine Fakten - kennzeichne
+sie als solche ("ein Poster behauptet", "unbelegt").
+
+THEMA
+Zwei bis vier Saetze: worum geht es in diesem Thread KONKRET? Nicht den Betreff
+paraphrasieren, sondern den tatsaechlichen Inhalt. Wenn der Thread eine Frage
+oder Behauptung aufwirft, nenne sie inhaltlich vollstaendig. Beispiel fuer
+unbrauchbar: "es geht um ein KI-Verfahren". Brauchbar: "es geht um die Frage,
+was mit Bitcoin passiert, wenn eine KI ein Verfahren findet, das X leistet".
+Wenn im Thread ausser dem Betreff noch nichts Inhaltliches steht, schreibe das
+ausdruecklich hin.
+
+WERTPAPIERE UND COINS
+Je Zeile: Name bzw. Kuerzel, in Klammern was es ist (Aktie, Coin, ETF, Rohstoff,
+Index), dann die im Thread vertretene Richtung (bullisch/baerisch/umstritten)
+und die genannte BEGRUENDUNG. Nur was wirklich vorkommt.
+
+KONKRETE ZAHLEN
+Jede harte Zahl mit ihrer Bedeutung: Kurse, Kursziele, Strikes,
+Verfallstermine, Quartalszahlen, Guidance, Prozentwerte, Betraege, Fristen,
+Renditen, Quoten. Format: Zahl - was sie bedeutet - wer sie nennt bzw. woher.
+WOERTLICH uebernehmen: Zahlen, Ticker, Kurse und Daten stehen im Extrakt
+GENAU so wie im Post - nicht runden, nicht umrechnen, nicht in Worte fassen.
+Beim Umformulieren gehen zuerst die exakten Werte verloren, und genau die
+sind der Wert dieses Extrakts.
+
+THESEN UND ARGUMENTE
+Die inhaltlichen Argumentationen, je zwei bis vier Saetze: Was wird behauptet,
+womit wird es begruendet, was wird dagegen gehalten? Nur Argumente mit Inhalt.
+Reine Beschimpfungen, Provokationen und Rechthaberei gehoeren NICHT hierher.
+Zu jeder These mindestens ein kurzes WOERTLICHES Belegzitat aus einem Post:
+Originalsprache, in Anfuehrungszeichen, hoechstens 15 Woerter.
+
+PRAKTISCHES
+Konkret verwertbare Hinweise: Handelsplaetze, Broker, Wallets, Dienste,
+Gebuehren, Vorgehensweisen, Fristen, Stolperfallen. Mit dem jeweiligen Zweck.
+
+QUELLEN
+Externe Links, Studien, Meldungen, Charts, Filings, die im Thread geteilt oder
+zitiert werden - mit einem Satz, was drinsteht.
+
+FACHBEGRIFFE UND SLANG
+Jeder Begriff, den ein Aussenstehender nicht versteht, mit kurzer sachlicher
+Erklaerung. Das umfasst Finanzfachsprache (z.B. Warrant, Strike, RBF, Softfork,
+Guidance, Short Interest) UND Board-Jargon (z.B. bagholder, moonfag, FUD,
+rugpull, smigger, jeet, DFV). Format: Begriff - Erklaerung in einem Satz.
+Bei Jargon, der eine Beschimpfung ist, erklaere nur die sachliche Bedeutung
+und gib die Beschimpfung nicht weiter.
+
+OFFENE FRAGEN
+Was im Thread gefragt, aber nicht beantwortet wurde.
+
+VERLAESSLICHKEIT
+Ein bis zwei Saetze: Wirkt der Thread nach Sachdiskussion, nach Werbung bzw.
+Kursbeeinflussung, oder nach Zeitvertreib? Nennenswerte Anzeichen fuer
+Eigeninteresse (Referral-Links, immer derselbe Poster mit derselben These)?
+Poster-IDs gelten nur pro Thread und sind manipulierbar - behandle sie als
+Obergrenze, nicht als Personenzahl.
