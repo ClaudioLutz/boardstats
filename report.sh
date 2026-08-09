@@ -2,9 +2,9 @@
 # ============================================================
 #  boardstats /biz/ - Lagebericht (hp-ubuntu)
 #
-#  Laeuft abends nach dem 20:20-Crawl und versendet den Bericht per SMTP.
-#  Bewusst auf dem Server und nicht auf dem Windows-Laptop: so kommt der
-#  Bericht auch dann, wenn der Laptop aus ist.
+#  Versendet den Bericht per SMTP. Bewusst auf dem Server und nicht auf
+#  dem Windows-Laptop: so kommt der Bericht auch dann, wenn der Laptop
+#  aus ist.
 #
 #  Voraussetzungen (einmalig einzurichten):
 #    1. claude ist angemeldet   -> claude  (interaktiv, einmalig)
@@ -14,10 +14,15 @@ set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
 
-# nvm-Node 22: Claude Code verlangt >= 22, das System-Node ist 18.
-export NVM_DIR="$HOME/.nvm"
-# shellcheck disable=SC1091
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" --no-use
+# Nur den PATH um Node 22 (nvm) erweitern - claude selbst braucht das,
+# python3/run_report.py findet die Binary auch so ueber claude_pfad().
+# BEWUSST NICHT `. nvm.sh` sourcen: das lief am 08.08. um 21:00 spurlos
+# gegen `set -e` - Cron bestaetigte den Start, aber report_cron.log blieb
+# leer und "No MTA installed, discarding output" zeigte unabgefangenen
+# Output vor der eigenen Log-Umleitung. nvm.sh kann beim Sourcen intern
+# einen Nicht-Null-Status hinterlassen, den `[ -s ... ] &&` dann als
+# Fehlschlag des ganzen Befehls wertet - unter `set -e` toedlich, und
+# fuer diesen Zweck ohnehin unnoetig: es wird nur der PATH gebraucht.
 export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:$PATH"
 
 mkdir -p logs
