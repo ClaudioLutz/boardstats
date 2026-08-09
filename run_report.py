@@ -599,6 +599,23 @@ def git_veroeffentlichen(pfade: list[Path], nachricht: str) -> None:
                     "ist davon unberuehrt): %s", meldung)
 
 
+REPO_URL = "https://github.com/ClaudioLutz/boardstats/blob/main"
+
+
+def voriger_bericht(datum: str) -> tuple[str, str] | None:
+    """Neuester veroeffentlichter Bericht vor `datum` - Text und oeffentliche
+    URL, damit die Synthese Unveraendertes verlinken statt wiederholen kann.
+    None bei erstem Lauf oder wenn --kein-github das Archiv nie gefuellt hat."""
+    kandidaten = sorted(
+        (p for p in EXTRAKTE.glob("*/bericht.md") if p.parent.name < datum),
+        reverse=True)
+    if not kandidaten:
+        return None
+    p = kandidaten[0]
+    text = p.read_text(encoding="utf-8", errors="replace")
+    return text, f"{REPO_URL}/extrakte/{p.parent.name}/bericht.md"
+
+
 def bericht_zu_markdown(bericht: str, datum: str) -> str:
     """Der versandte Bericht als eigenstaendige, oeffentliche Markdown-Seite.
     Nutzt dieselbe Ueberschriften-Erkennung wie der HTML-Mailversand
@@ -638,7 +655,7 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
 
 
 def stufe3(manifest: dict, eDir: Path, arbeit: Path, empfaenger: str,
-           versand: str) -> str:
+           versand: str, datum: str) -> str:
     meta_nach_thread = {str(b["thread"]): b for b in manifest["buendel"]}
     extrakte = sandwich(sorted(eDir.glob("*.txt")), meta_nach_thread)
     anteil = len(extrakte) / max(1, len(manifest["buendel"]))
@@ -647,6 +664,18 @@ def stufe3(manifest: dict, eDir: Path, arbeit: Path, empfaenger: str,
         luecke = (f"ACHTUNG: nur {len(extrakte)} von {len(manifest['buendel'])} "
                   "Threads konnten ausgewertet werden. Weise im Bericht in der "
                   "ersten Zeile darauf hin, dass die Lage unvollstaendig erfasst ist.")
+
+    vorbericht = voriger_bericht(datum)
+    delta_block = ""
+    if vorbericht:
+        vor_text, vor_url = vorbericht
+        delta_block = f"""
+GESTRIGER BERICHT (nur zum Abgleich, NICHT Teil der heutigen Extrakte):
+Quelle: {vor_url}
+{"=" * 74}
+{vor_text}
+{"=" * 74}
+"""
     teile = [
         f"DATENSTAND: {manifest.get('snapshot_zeit_lokal')} Ortszeit (Europe/Zurich)",
         f"BOARD: {manifest.get('threads_im_board')} Threads im Katalog",
@@ -674,6 +703,8 @@ def stufe3(manifest: dict, eDir: Path, arbeit: Path, empfaenger: str,
             ohne_cache_abschnitte(e.read_text(encoding="utf-8", errors="replace")),
             "",
         ]
+    if delta_block:
+        teile.append(delta_block)
     eingabe = "\n".join(teile)
     (arbeit / "synthese_eingabe.txt").write_text(eingabe, encoding="utf-8")
 
@@ -742,6 +773,26 @@ Regeln:
    Der Abschnitt NEU SEIT DEM LETZTEN LAUF in den Extrakten sagt dir das.
    Ein Thread, der als unverändert gekennzeichnet ist, liefert Hintergrund,
    aber keine Neuigkeit - stelle ihn nicht als aktuelle Entwicklung dar.
+9b. NICHT WIEDERHOLEN, WAS SCHON IM GESTRIGEN BERICHT STAND (falls einer als
+    GESTRIGER BERICHT mitgegeben ist - sonst schreibst du wie gewohnt
+    vollständig). Vergleiche Thema für Thema mit dem gestrigen Bericht:
+    - Ist ein Thema seit gestern inhaltlich unverändert (keine neuen Zahlen,
+      Thesen, Quellen, Kursziele), schreibe es NICHT erneut aus. Schreibe
+      stattdessen GENAU EINEN Satz, der das Thema so konkret benennt, dass
+      der Leser OHNE Klick weiss, worum es geht - nenne die Kernaussage oder
+      die wichtigste Zahl, nicht nur ein Schlagwort ("Halbleiter-Debatte:
+      unverändert" ist zu wenig, "Halbleiter-Debatte (ASML-Monopol bei
+      Lithographie, Logic- gegen Memory-Chips): unverändert seit dem
+      Vortag" ist richtig). Danach die URL des gestrigen Berichts aus der
+      Zeile "Quelle:" oben, unverändert übernommen, auf eigener Zeile.
+    - Hat sich etwas geändert oder ist neu dazugekommen, schreibe NUR das
+      Neue ausführlich; den unveränderten Hintergrund dazu fasse in einem
+      Halbsatz zusammen (wie oben, mit Verweis-URL), nicht neu erklären.
+    - Ein Thema, das im gestrigen Bericht gar nicht vorkam, ist komplett neu
+      und wird wie gewohnt vollständig geschrieben, ganz ohne Verweiszeile.
+    - Verwechsle "Thread unverändert" (Extrakt-Metadatum) nicht mit "Thema
+      unverändert": Ein Thread kann neue Posts haben, ohne dass sich am
+      berichtsrelevanten Thema etwas ändert - dann gilt trotzdem diese Regel.
 10. Der Abschnitt GERADE SCHNELL FÜLLENDE THREADS beschreibt, was in diesen
     Threads INHALTLICH steht, nicht nur dass sie schnell wachsen. Nenne den
     Beschleunigungsfaktor gegenüber dem eigenen Schnitt des Threads, wo er in
@@ -858,7 +909,7 @@ def main() -> int:
 
     t2 = time.time()
     try:
-        out = stufe3(manifest, eDir, arbeit, args.empfaenger, args.versand)
+        out = stufe3(manifest, eDir, arbeit, args.empfaenger, args.versand, datum)
     except subprocess.TimeoutExpired:
         log.error("Synthese ueberschritt %ds - kein Bericht", TIMEOUT_SYNTH)
         return 1
