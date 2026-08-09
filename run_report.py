@@ -39,6 +39,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+from bericht_html import _ist_ueberschrift as ist_ueberschrift
+
 BASE = Path(__file__).resolve().parent
 LOGS = BASE / "logs"
 BERICHTE = BASE / "berichte"
@@ -421,7 +423,12 @@ def glossar_bauen(bericht: str, eDir: Path, maximal: int = 18) -> str:
         key=lambda be: be[0].lower())
     if not treffer:
         return ""
-    return "GLOSSAR\n\n" + "\n".join(f"{b} - {e}" for b, e in treffer[:maximal])
+    # "- " davor: macht aus der Zeilenfolge eine echte Aufzaehlung statt eines
+    # von GitHub zu einem Absatz verschmolzenen Fliesstexts, sobald der
+    # Bericht als Markdown veroeffentlicht wird. bericht_html._glossar()
+    # entfernt einen fuehrenden Bindestrich ohnehin schon, bleibt also
+    # kompatibel mit dem HTML-Mailversand.
+    return "GLOSSAR\n\n" + "\n".join(f"- {b} - {e}" for b, e in treffer[:maximal])
 
 
 def abdeckung_trennen(text: str) -> tuple[str, str]:
@@ -490,6 +497,32 @@ def extrakt_zu_markdown(text: str, meta: dict, datum: str) -> str:
     return "\n".join(kopf) + koerper + "\n"
 
 
+def _tag_readme_bauen(manifest: dict, datum: str, tag_dir: Path) -> str:
+    """Die Tages-Uebersicht wird zweimal geschrieben (vor und nach der
+    Synthese) - einmal neu aufgebaut statt fortgeschrieben, damit der Link
+    auf den Bericht sauber erscheint, sobald `bericht.md` existiert, ohne
+    eine zweite Codepfad fuers Nachtragen zu brauchen."""
+    eintraege = sorted(manifest["buendel"],
+                        key=lambda m: -(m.get("substanz_summe") or 0.0))
+    zeilen = [f"# /biz/-Lagebericht: {datum}", ""]
+    if (tag_dir / "bericht.md").exists():
+        zeilen += ["[Bericht dieses Tages](bericht.md)", ""]
+    zeilen += [f"{len(eintraege)} Threads, absteigend nach Substanzdichte.", "",
+               "| Thread | Modus | Posts | Substanz |", "|---|---|---|---|"]
+    for m in eintraege:
+        t = str(m.get("thread", ""))
+        if not (tag_dir / f"{t}.md").exists():
+            continue
+        betreff = (m.get("betreff") or t).replace("|", "/").replace("\n", " ")
+        if len(betreff) > 70:
+            betreff = betreff[:67] + "..."
+        modus = MODUS_TEXT.get(m.get("modus", ""), m.get("modus", ""))
+        zeilen.append(
+            f"| [{betreff}]({t}.md) | {modus} | {m.get('posts_gesamt', '')} | "
+            f"{m.get('substanz_summe', 0):.1f} |")
+    return "\n".join(zeilen) + "\n"
+
+
 def markdown_tag_schreiben(manifest: dict, eDir: Path, datum: str) -> Path | None:
     """Persistiert die Extrakte des laufenden Tages als Markdown im Repo
     (`extrakte/<datum>/`), zusammen mit einer Tages-Uebersicht. eDir enthaelt
@@ -502,32 +535,20 @@ def markdown_tag_schreiben(manifest: dict, eDir: Path, datum: str) -> Path | Non
     tag_dir = EXTRAKTE / datum
     tag_dir.mkdir(parents=True, exist_ok=True)
 
-    eintraege = []
+    geschrieben = False
     for e in sorted(eDir.glob("*.txt")):
         t = e.stem
         meta = meta_nach_thread.get(t, {"thread": t})
         md = extrakt_zu_markdown(
             e.read_text(encoding="utf-8", errors="replace"), meta, datum)
         (tag_dir / f"{t}.md").write_text(md, encoding="utf-8")
-        eintraege.append(meta)
+        geschrieben = True
 
-    if not eintraege:
+    if not geschrieben:
         return None
 
-    eintraege.sort(key=lambda m: -(m.get("substanz_summe") or 0.0))
-    zeilen = [f"# /biz/-Lagebericht: Extrakte vom {datum}", "",
-              f"{len(eintraege)} Threads, absteigend nach Substanzdichte.", "",
-              "| Thread | Modus | Posts | Substanz |", "|---|---|---|---|"]
-    for m in eintraege:
-        t = str(m.get("thread", ""))
-        betreff = (m.get("betreff") or t).replace("|", "/").replace("\n", " ")
-        if len(betreff) > 70:
-            betreff = betreff[:67] + "..."
-        modus = MODUS_TEXT.get(m.get("modus", ""), m.get("modus", ""))
-        zeilen.append(
-            f"| [{betreff}]({t}.md) | {modus} | {m.get('posts_gesamt', '')} | "
-            f"{m.get('substanz_summe', 0):.1f} |")
-    (tag_dir / "README.md").write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+    (tag_dir / "README.md").write_text(
+        _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
     return tag_dir
 
 
@@ -546,8 +567,10 @@ def markdown_index_aktualisieren() -> None:
         "| Datum | Threads |", "|---|---|",
     ]
     for t in tage:
-        anzahl = len(list(t.glob("*.md"))) - (1 if (t / "README.md").exists() else 0)
-        zeilen.append(f"| [{t.name}]({t.name}/README.md) | {anzahl} |")
+        anzahl = len([p for p in t.glob("*.md")
+                      if p.name not in ("README.md", "bericht.md")])
+        bericht_stern = " (mit Bericht)" if (t / "bericht.md").exists() else ""
+        zeilen.append(f"| [{t.name}]({t.name}/README.md) | {anzahl}{bericht_stern} |")
     (EXTRAKTE / "README.md").write_text("\n".join(zeilen) + "\n", encoding="utf-8")
 
 
@@ -569,11 +592,49 @@ def git_veroeffentlichen(pfade: list[Path], nachricht: str) -> None:
                        check=True, capture_output=True, text=True)
         subprocess.run(["git", "-C", str(BASE), "push", "-q"],
                        check=True, capture_output=True, text=True)
-        log.info("Extrakte veroeffentlicht: %s", nachricht)
+        log.info("Auf GitHub veroeffentlicht: %s", nachricht)
     except (subprocess.CalledProcessError, OSError) as e:
         meldung = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)
         log.warning("Veroeffentlichung auf GitHub fehlgeschlagen (Bericht "
                     "ist davon unberuehrt): %s", meldung)
+
+
+def bericht_zu_markdown(bericht: str, datum: str) -> str:
+    """Der versandte Bericht als eigenstaendige, oeffentliche Markdown-Seite.
+    Nutzt dieselbe Ueberschriften-Erkennung wie der HTML-Mailversand
+    (bericht_html._ist_ueberschrift), damit beide Darstellungen aus derselben
+    Quelle konsistent bleiben - Aufzaehlungen sind schon "- "-Zeilen, also
+    gueltiges Markdown, und muessen nicht extra umgeformt werden."""
+    zeilen = bericht.replace("\r\n", "\n").split("\n")
+    kopf = ""
+    if zeilen and zeilen[0].lower().startswith("datenstand"):
+        kopf = zeilen[0].strip()
+        zeilen = zeilen[1:]
+
+    koerper = [f"## {z.strip()}" if z.strip() and ist_ueberschrift(z.strip()) else z
+               for z in zeilen]
+    return (
+        f"# /biz/-Lagebericht {datum}\n\n"
+        + (f"*{kopf}*\n\n" if kopf else "")
+        + "[Extrakte und Quell-Threads dieses Tages](README.md)\n\n---\n\n"
+        + "\n".join(koerper).strip() + "\n"
+    )
+
+
+def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
+                             manifest: dict) -> None:
+    """Legt den fertigen Bericht in denselben Tagesordner wie die Extrakte
+    und veroeffentlicht ihn. Getrennt von markdown_tag_schreiben(), weil der
+    Bericht erst nach der Synthese existiert, die Extrakte aber schon vorher
+    veroeffentlicht werden sollen (unabhaengige Fehlerquellen)."""
+    if tag_dir is None:
+        return
+    (tag_dir / "bericht.md").write_text(
+        bericht_zu_markdown(bericht, datum), encoding="utf-8")
+    (tag_dir / "README.md").write_text(
+        _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
+    markdown_index_aktualisieren()
+    git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"], f"Bericht vom {datum}")
 
 
 def stufe3(manifest: dict, eDir: Path, arbeit: Path, empfaenger: str,
@@ -784,9 +845,11 @@ def main() -> int:
     # Die Extrakte oeffentlich als Markdown ablegen, unabhaengig davon, ob die
     # Synthese anschliessend gelingt - sie sind ein eigenstaendiges Ergebnis
     # dieses Laufs. Ein Fehlschlag hier (kein Netz, kein Git) darf den
-    # Bericht nicht verhindern.
+    # Bericht nicht verhindern. tag_dir wird unten nochmal gebraucht, um den
+    # fertigen Bericht in denselben Tagesordner zu legen.
+    datum = datetime.now().strftime("%Y-%m-%d")
+    tag_dir = None
     if not args.kein_github:
-        datum = datetime.now().strftime("%Y-%m-%d")
         tag_dir = markdown_tag_schreiben(manifest, eDir, datum)
         if tag_dir is not None:
             markdown_index_aktualisieren()
@@ -836,6 +899,9 @@ def main() -> int:
     ziel.write_text(bericht + "\n", encoding="utf-8")
     log.info("Stufe 3 fertig in %ds, Bericht gespeichert: %s",
              time.time() - t2, ziel)
+
+    if not args.kein_github:
+        bericht_veroeffentlichen(bericht, datum, tag_dir, manifest)
 
     if args.versand == "smtp":
         from send_mail import versende

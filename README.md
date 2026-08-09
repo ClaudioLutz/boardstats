@@ -27,15 +27,17 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
 Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
 SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
 
-## Extrakt-Archiv
+## Öffentliches Archiv
 
-Die strukturierten Thread-Extrakte aus Stufe 2 werden zusätzlich als Markdown
-unter [`extrakte/<datum>/`](extrakte/) abgelegt — je Thread eine Seite (Thema,
-Zahlen, Thesen, Quellen, Fachbegriffe, ...) und eine Tages-Übersicht. Das
-passiert automatisch bei jedem Lauf (`markdown_tag_schreiben()` in
-`run_report.py`, Commit + Push per `git_veroeffentlichen()`; mit
-`--kein-github` abschaltbar). Anders als der versandte Bericht bleiben hier
-auch das Glossar und die offenen Fragen je Thread erhalten.
+Unter [`extrakte/<datum>/`](extrakte/) liegt pro Tag sowohl der versandte
+**Bericht** (`bericht.md`, `bericht_zu_markdown()`) als auch je Thread eine
+**Extrakt**-Seite (Thema, Zahlen, Thesen, Quellen, Fachbegriffe, ...) plus
+eine Tages-Übersicht. Das passiert automatisch bei jedem Lauf — Extrakte
+gleich nach Stufe 2 (`markdown_tag_schreiben()`), der Bericht nach Stufe 3
+(`bericht_veroeffentlichen()`) —, jeweils mit eigenem Commit + Push
+(`git_veroeffentlichen()`; mit `--kein-github` abschaltbar). Anders als der
+versandte Bericht behalten die Extrakt-Seiten auch das Glossar und die
+offenen Fragen je Thread.
 
 ## Dateien
 
