@@ -30,6 +30,7 @@ import os
 import smtplib
 import ssl
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from email.message import EmailMessage
@@ -85,8 +86,17 @@ def _access_token(konto: str) -> tuple[str, str]:
     req = urllib.request.Request(
         cred.get("token_uri", "https://oauth2.googleapis.com/token"),
         data=daten, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        antwort = json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            antwort = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        # Ohne das hier auszulesen, verrät "HTTP Error 400: Bad Request" im
+        # Aufruferlog nur, DASS es fehlschlug - Googles Fehlerkoerper (meist
+        # {"error": "invalid_grant", ...}) sagt, WARUM, z.B. dass der
+        # Aktualisierungstoken widerrufen wurde und eine interaktive
+        # Neuanmeldung noetig ist.
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(f"Token-Erneuerung fehlgeschlagen ({e.code}): {detail}") from e
 
     tok["access_token"] = antwort["access_token"]
     tok["expiry_date"] = int((time.time() + antwort.get("expires_in", 3600)) * 1000)
