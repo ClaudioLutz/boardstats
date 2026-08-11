@@ -1,5 +1,7 @@
 # /biz/-Lagebericht: 2026-08-11
 
+[Bericht dieses Tages](bericht.md)
+
 17 Threads, absteigend nach Substanzdichte.
 
 | Thread | Modus | Posts | Substanz |
