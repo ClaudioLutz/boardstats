@@ -4,6 +4,7 @@ Taegliche, strukturiert extrahierte Zusammenfassungen von Threads aus dem 4chan-
 
 | Datum | Threads |
 |---|---|
+| [2026-08-13](2026-08-13/README.md) | 15 |
 | [2026-08-12](2026-08-12/README.md) | 15 (mit Bericht) |
 | [2026-08-11](2026-08-11/README.md) | 17 (mit Bericht) |
 | [2026-08-10](2026-08-10/README.md) | 15 (mit Bericht) |
