@@ -51,6 +51,7 @@ EXTRAKTE = BASE / "extrakte"
 THROTTLE = 5            # gleichzeitige Sonnet-Aufrufe
 TIMEOUT_EXTRAKT = 600   # je Buendel, Sekunden
 TIMEOUT_SYNTH = 1800    # Synthese, Sekunden
+TIMEOUT_UEBERSETZUNG = 600  # englische Uebersetzung des fertigen Berichts
 MIN_EXTRAKTE = 0.6      # Anteil, ab dem die Synthese als vollstaendig gilt
 # Re-Anchoring: fortgeschriebene Extrakte driften (gemessen in der Literatur:
 # strukturierte Fortschreibung verliert ueber 7 Runden ~5 Prozentpunkte Recall,
@@ -638,6 +639,47 @@ def bericht_zu_markdown(bericht: str, datum: str) -> str:
     )
 
 
+# Rueckuebersetzung, keine gewoehnliche Uebersetzung: die Quelle des Berichts
+# ist das englischsprachige Board /biz/, der Bericht selbst ist deutsch. Der
+# Jargon muss also in seiner originalen englischen Form REKONSTRUIERT werden
+# ("chain split", nicht "chain splitting"), sonst klingt das Ergebnis nach
+# woertlicher Uebersetzung. Ein einziger Sonnet-Aufruf auf den fertigen
+# Bericht (~3'000 Tokens) statt einer zweiten Opus-Synthese aus allen
+# Extrakten - das ist der token-schonende Teil (Entscheid 14.08.2026).
+UEBERSETZUNG_PROMPT = """\
+Du bekommst den heutigen /biz/-Lagebericht als Markdown auf Deutsch.
+Uebersetze ihn vollstaendig ins Englische.
+
+Wichtig: Das ist eine Rueckuebersetzung. Die Quelle des Berichts ist das
+englischsprachige 4chan-Board /biz/ (Business & Finance) - Fachbegriffe,
+Meme-Sprache und Jargon muessen in der originalen englischen Form der
+Community stehen, nicht woertlich uebersetzt (z. B. "chain split",
+"difficulty adjustment", "rug pull", "bagholder").
+
+Regeln:
+- Ticker, Coin-Namen, Zahlen, Prozentwerte, Datumsangaben und URLs
+  unveraendert uebernehmen.
+- Markdown-Struktur exakt beibehalten: gleiche Ueberschriften-Ebenen,
+  gleiche Aufzaehlungen, gleiche Absatzgrenzen, Trennlinien und Links
+  (relative Link-Ziele wie README.md unveraendert lassen).
+- Die Titelzeile lautet "# /biz/ Situation Report <datum>".
+- Die kursive Datenstand-Zeile beginnt mit "*Data as of:".
+- Die Glossar-Ueberschrift lautet "## GLOSSARY".
+- Gib NUR das uebersetzte Markdown aus, ohne Vor- oder Nachbemerkungen.
+"""
+
+
+def bericht_uebersetzen(bericht_md: str) -> str:
+    """Uebersetzt den veroeffentlichten bericht.md ins Englische (Sonnet)."""
+    out = claude_ruf(UEBERSETZUNG_PROMPT, bericht_md, "sonnet",
+                     TIMEOUT_UEBERSETZUNG).strip()
+    # Plausibilitaet statt blindem Vertrauen: eine CLI-Fehlermeldung beginnt
+    # nie mit der Markdown-Titelzeile und darf nie als Bericht abgelegt werden.
+    if not out.startswith("# "):
+        raise RuntimeError(f"Uebersetzung unbrauchbar: {out[:200]!r}")
+    return out + "\n"
+
+
 def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
                              manifest: dict) -> None:
     """Legt den fertigen Bericht in denselben Tagesordner wie die Extrakte
@@ -646,8 +688,17 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
     veroeffentlicht werden sollen (unabhaengige Fehlerquellen)."""
     if tag_dir is None:
         return
-    (tag_dir / "bericht.md").write_text(
-        bericht_zu_markdown(bericht, datum), encoding="utf-8")
+    bericht_md = bericht_zu_markdown(bericht, datum)
+    (tag_dir / "bericht.md").write_text(bericht_md, encoding="utf-8")
+    try:
+        log.info("Uebersetze Bericht ins Englische (Sonnet) ...")
+        (tag_dir / "bericht_en.md").write_text(
+            bericht_uebersetzen(bericht_md), encoding="utf-8")
+    except Exception as e:
+        # Die englische Fassung ist ein Zusatzprodukt - ihr Scheitern darf
+        # weder Versand noch Veroeffentlichung des deutschen Berichts stoppen.
+        log.warning("Englische Uebersetzung fehlgeschlagen (deutscher "
+                    "Bericht unberuehrt): %s", e)
     (tag_dir / "README.md").write_text(
         _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
     markdown_index_aktualisieren()

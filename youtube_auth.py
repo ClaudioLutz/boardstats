@@ -29,6 +29,7 @@ CLIENT_DATEI = KONFIG_DIR / "youtube_client.json"
 TOKEN_DATEI = KONFIG_DIR / "youtube_token.json"
 SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
+THUMBNAIL_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 
 
 def _client() -> dict:
@@ -119,3 +120,26 @@ def hochladen(video_pfad: Path, titel: str, beschreibung: str,
 
     video_id = antwort["id"]
     return video_id, f"https://youtu.be/{video_id}"
+
+
+def thumbnail_setzen(video_id: str, bild_pfad: Path) -> None:
+    """Setzt das Vorschaubild eines Videos (max. 2 MB, ideal 1280x720).
+
+    Der youtube.upload-Scope deckt thumbnails/set ab; zusaetzlich verlangt
+    YouTube aber einen fuer eigene Thumbnails verifizierten Kanal
+    (Telefon-Verifizierung), sonst kommt ein 403 - der Aufrufer soll das
+    abfangen, ein fehlendes Vorschaubild ist kein Upload-Fehler."""
+    token = access_token()
+    daten = bild_pfad.read_bytes()
+    typ = "image/png" if bild_pfad.suffix.lower() == ".png" else "image/jpeg"
+    req = urllib.request.Request(
+        f"{THUMBNAIL_URL}?videoId={urllib.parse.quote(video_id)}",
+        data=daten, method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": typ,
+                 "Content-Length": str(len(daten))})
+    try:
+        with urllib.request.urlopen(req, timeout=60):
+            pass
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(f"Thumbnail-Setzen fehlgeschlagen ({e.code}): {detail}") from e

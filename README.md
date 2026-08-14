@@ -22,14 +22,20 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    (stärkster zuerst, zweitstärkster zuletzt, gegen den "lost in the
    middle"-Positionsbias), und die Synthese legt je Thread Rechenschaft ab
    (verwendet oder ausgelassen mit Grund). Das Glossar entsteht
-   deterministisch in Python aus den Extrakt-Glossaren.
+   deterministisch in Python aus den Extrakt-Glossaren. Der fertige Bericht
+   wird anschliessend in einem einzigen Sonnet-Aufruf ins Englische
+   rückübersetzt (`bericht_en.md`) — Rückübersetzung deshalb, weil die
+   Quelle englischsprachig ist und der /biz/-Jargon in seiner originalen
+   Form rekonstruiert werden muss, nicht wörtlich übersetzt.
 
 Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
 SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
 
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
-   liest das bereits veröffentlichte `extrakte/<datum>/bericht.md`,
+   läuft zweisprachig (deutsch aus `bericht.md` mit `de-DE-KatjaNeural`,
+   englisch aus `bericht_en.md` mit `en-US-JennyNeural`, Parameter
+   `--sprache`), liest das bereits veröffentlichte `extrakte/<datum>/bericht.md`,
    bereinigt es für die Vertonung (`bloecke_erzeugen()`: Quell-/Beleg-Zeilen,
    nackte Thread-URLs und das GLOSSAR raus; die Blockstruktur — Absätze,
    ##-Überschriften, Aufzählungspunkte — bleibt erhalten), vertont per
@@ -43,18 +49,21 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    derselbe Zeilenstring mit per `\alpha` maskierten Nachbarwörtern und
    dadurch pixelgenau deckungsgleich. Der Text läuft als starrer Block
    entlang einer global verankerten Scroll-Funktion, die sich dem
-   Sprechtempo anpasst. Upload als **unlisted** über die YouTube Data API v3
-   (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
-   `google-api-python-client`). OAuth-Zugangsdaten liegen wie beim
-   Mailversand ausserhalb des Repos
+   Sprechtempo anpasst. Upload als **öffentliches** Video über die YouTube
+   Data API v3 (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
+   `google-api-python-client`); als Vorschaubild wird `assets/thumbnail.jpg`
+   gesetzt (`thumbnails/set`, braucht einen verifizierten Kanal).
+   OAuth-Zugangsdaten liegen wie beim Mailversand ausserhalb des Repos
    (`~/.config/boardstats/youtube_client.json`/`youtube_token.json`,
    einmalig per `youtube_auth_setup.py` interaktiv eingerichtet). Ein
-   Marker (`extrakte/<datum>/video.json`) verhindert Doppel-Uploads.
+   Marker je Sprache (`extrakte/<datum>/video.json` bzw. `video_en.json`)
+   verhindert Doppel-Uploads.
 
 ## Öffentliches Archiv
 
 Unter [`extrakte/<datum>/`](extrakte/) liegt pro Tag sowohl der versandte
-**Bericht** (`bericht.md`, `bericht_zu_markdown()`) als auch je Thread eine
+**Bericht** (`bericht.md`, `bericht_zu_markdown()`; dazu die englische
+Fassung `bericht_en.md`) als auch je Thread eine
 **Extrakt**-Seite (Thema, Zahlen, Thesen, Quellen, Fachbegriffe, ...) plus
 eine Tages-Übersicht. Das passiert automatisch bei jedem Lauf — Extrakte
 gleich nach Stufe 2 (`markdown_tag_schreiben()`), der Bericht nach Stufe 3

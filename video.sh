@@ -38,6 +38,9 @@ fi
 
 {
     echo "===== Video gestartet: $(date '+%Y-%m-%d %H:%M:%S') ====="
-    "$VENV_PY" video_report.py
+    # beide Sprachen unabhaengig: ein Fehler beim deutschen Video darf das
+    # englische nicht verhindern (und umgekehrt)
+    "$VENV_PY" video_report.py --sprache de || echo "deutsches Video fehlgeschlagen (Status $?)"
+    "$VENV_PY" video_report.py --sprache en || echo "englisches Video fehlgeschlagen (Status $?)"
     echo "===== Video beendet:  $(date '+%Y-%m-%d %H:%M:%S') ====="
 } >> "$LOG" 2>&1

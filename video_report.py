@@ -28,9 +28,16 @@ Aufzaehlungen mit haengendem Einzug. Gerendert werden die Quell-Tokens des
 Berichts (mit Satzzeichen), nicht die WordBoundary-Texte von edge-tts (die
 sind satzzeichenlos); die gesprochenen Woerter liefern nur noch die
 Zeitfenster fuer die Hervorhebung.
+
+Seit 14.08.2026 zweisprachig: --sprache en vertont die englische Fassung
+(bericht_en.md, von run_report.py per Sonnet rueckuebersetzt) mit englischer
+Stimme; Layout, Zuordnung und Scroll sind sprachunabhaengig. Beide Sprachen
+laufen nacheinander im selben Cron (video.sh), Uploads sind oeffentlich,
+das Vorschaubild kommt aus assets/thumbnail.jpg.
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import re
@@ -46,7 +53,34 @@ import youtube_auth
 BASE = Path(__file__).parent
 EXTRAKTE = BASE / "extrakte"
 VIDEO_DIR = BASE / "video"
-STIMME = "de-DE-KatjaNeural"
+THUMBNAIL = BASE / "assets" / "thumbnail.jpg"
+
+SPRACHEN: dict[str, dict[str, str]] = {
+    "de": {
+        "bericht": "bericht.md",
+        "marker": "video.json",
+        "suffix": "",
+        "stimme": "de-DE-KatjaNeural",
+        "titel": "/biz/-Lagebericht {datum}",
+        "beschreibung": (
+            "Automatisierter Lagebericht aus dem 4chan-Board /biz/ (Business & "
+            "Finance) vom {datum}. Diskurs-Dokumentation, keine Anlageberatung."
+            "\n\nVollstaendiger Text mit Quellen: {url}"
+        ),
+    },
+    "en": {
+        "bericht": "bericht_en.md",
+        "marker": "video_en.json",
+        "suffix": "_en",
+        "stimme": "en-US-JennyNeural",
+        "titel": "/biz/ Situation Report {datum}",
+        "beschreibung": (
+            "Automated situation report from the 4chan board /biz/ (Business & "
+            "Finance), {datum}. Discourse documentation, not financial advice."
+            "\n\nFull text with sources: {url}"
+        ),
+    },
+}
 FONT_NORMAL_KANDIDATEN = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "C:/Windows/Fonts/arial.ttf",
@@ -107,8 +141,12 @@ def fonts_laden() -> dict[str, ImageFont.FreeTypeFont]:
 
 # ----------------------------------------------------------- Text-Bereinigung
 
-_URL_ZEILE = re.compile(r"^(?:https?://\S+(?:\s+und\s+)?)+$")
-_QUELLEN_ZEILE = re.compile(r"^(Quelle|Quellen|Belege):", re.IGNORECASE)
+_URL_ZEILE = re.compile(r"^(?:https?://\S+(?:\s+(?:und|and)\s+)?)+$")
+_QUELLEN_ZEILE = re.compile(r"^(Quelle|Quellen|Belege|Source|Sources|Evidence):",
+                            re.IGNORECASE)
+# Kursive Kopfzeile unter dem Titel; "*Data as of:" ist das im
+# Uebersetzungs-Prompt (run_report.py) festgelegte englische Gegenstueck.
+_DATENSTAND_PREFIXE = ("*Datenstand:", "*Data as of:")
 
 
 @dataclass
@@ -132,13 +170,13 @@ def bloecke_erzeugen(markdown: str) -> list[Block]:
         z = zeile.strip()
         if i == 0 and z.startswith("# "):
             continue
-        if z.startswith("## GLOSSAR"):
+        if z.startswith("## GLOSSAR"):  # trifft auch das englische "## GLOSSARY"
             break
         if not z or z == "---":
             continue
         if z.startswith("[") and "](README.md)" in z:
             continue
-        if z.startswith("*Datenstand:") and z.endswith("*"):
+        if z.startswith(_DATENSTAND_PREFIXE) and z.endswith("*"):
             continue
         if _URL_ZEILE.match(z):
             continue
@@ -166,7 +204,8 @@ class Wort:
     end: float
 
 
-def tts_mit_worten(text: str, ziel_mp3: Path) -> list[Wort]:
+def tts_mit_worten(text: str, ziel_mp3: Path,
+                   stimme: str = SPRACHEN["de"]["stimme"]) -> list[Wort]:
     """Vertont text und liefert dabei pro gesprochenem Wort Start/Ende (Sekunden).
 
     Nutzt die edge-tts-Bibliothek direkt (nicht die CLI), weil nur der
@@ -174,7 +213,7 @@ def tts_mit_worten(text: str, ziel_mp3: Path) -> list[Wort]:
     import edge_tts
 
     async def _lauf() -> list[Wort]:
-        communicate = edge_tts.Communicate(text, STIMME, boundary="WordBoundary")
+        communicate = edge_tts.Communicate(text, stimme, boundary="WordBoundary")
         worte: list[Wort] = []
         with open(ziel_mp3, "wb") as f:
             async for chunk in communicate.stream():
@@ -499,16 +538,21 @@ def video_erzeugen(audio_mp3: Path, ass_datei: Path, ziel_mp4: Path) -> None:
 # ----------------------------------------------------------- Orchestrierung
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="de")
+    args = ap.parse_args()
+    cfg = SPRACHEN[args.sprache]
+
     datum = date.today().isoformat()
     tag_dir = EXTRAKTE / datum
-    bericht_pfad = tag_dir / "bericht.md"
-    marker_pfad = tag_dir / "video.json"
+    bericht_pfad = tag_dir / cfg["bericht"]
+    marker_pfad = tag_dir / cfg["marker"]
 
     if not bericht_pfad.exists():
         print(f"kein Bericht fuer {datum} unter {bericht_pfad} - nichts zu tun")
         return
     if marker_pfad.exists():
-        print(f"Video fuer {datum} schon hochgeladen: {marker_pfad}")
+        print(f"Video ({args.sprache}) fuer {datum} schon hochgeladen: {marker_pfad}")
         return
 
     markdown = bericht_pfad.read_text(encoding="utf-8")
@@ -517,13 +561,13 @@ def main() -> None:
 
     arbeit = VIDEO_DIR / datum
     arbeit.mkdir(parents=True, exist_ok=True)
-    audio_mp3 = arbeit / "audio.mp3"
-    ass_datei = arbeit / "untertitel.ass"
-    video_mp4 = arbeit / "video.mp4"
+    audio_mp3 = arbeit / f"audio{cfg['suffix']}.mp3"
+    ass_datei = arbeit / f"untertitel{cfg['suffix']}.ass"
+    video_mp4 = arbeit / f"video{cfg['suffix']}.mp4"
 
-    titel = f"/biz/-Lagebericht {datum}"
-    print("erzeuge Vertonung mit Wort-Zeitstempeln ...")
-    worte = tts_mit_worten(text, audio_mp3)
+    titel = cfg["titel"].format(datum=datum)
+    print(f"erzeuge Vertonung ({cfg['stimme']}) mit Wort-Zeitstempeln ...")
+    worte = tts_mit_worten(text, audio_mp3, cfg["stimme"])
     print(f"{len(worte)} Woerter erkannt")
 
     fonts = fonts_laden()
@@ -537,16 +581,28 @@ def main() -> None:
     print("baue Video ...")
     video_erzeugen(audio_mp3, ass_datei, video_mp4)
 
-    beschreibung = (
-        f"Automatisierter Lagebericht aus dem 4chan-Board /biz/ (Business & "
-        f"Finance) vom {datum}. Diskurs-Dokumentation, keine Anlageberatung.\n\n"
-        f"Vollstaendiger Text mit Quellen: "
-        f"https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/{datum}/bericht.md"
+    beschreibung = cfg["beschreibung"].format(
+        datum=datum,
+        url=(f"https://github.com/ClaudioLutz/boardstats/blob/main/"
+             f"extrakte/{datum}/{cfg['bericht']}"),
     )
     print("lade auf YouTube hoch ...")
-    video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung)
+    video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
+                                           privacy_status="public")
     marker_pfad.write_text(json.dumps({"video_id": video_id, "url": url}, indent=2), encoding="utf-8")
     print(f"hochgeladen: {url}")
+
+    # Ein fehlendes Vorschaubild darf den gelungenen Upload nicht entwerten -
+    # thumbnails/set braucht zudem einen fuer eigene Thumbnails verifizierten
+    # Kanal, sonst antwortet YouTube mit 403.
+    if THUMBNAIL.exists():
+        try:
+            youtube_auth.thumbnail_setzen(video_id, THUMBNAIL)
+            print("Vorschaubild gesetzt")
+        except (RuntimeError, OSError) as e:
+            print(f"Vorschaubild nicht gesetzt: {e}")
+    else:
+        print(f"kein Vorschaubild unter {THUMBNAIL}")
 
 
 if __name__ == "__main__":
