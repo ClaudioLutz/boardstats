@@ -10,6 +10,7 @@ reports/
 seen.json
 backup/
 backup-*/
+video/
 
 # Werkzeug-Artefakte
 __pycache__/

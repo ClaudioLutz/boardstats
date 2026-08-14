@@ -27,6 +27,21 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
 Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
 SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
 
+4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
+   Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
+   liest das bereits veröffentlichte `extrakte/<datum>/bericht.md`,
+   bereinigt es für die Vertonung (`text_fuer_tts()`: Markdown-Syntax,
+   Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus, der Rest
+   bleibt unverändert), vertont per `edge-tts` (Stimme `de-DE-KatjaNeural`)
+   und baut mit `ffmpeg` ein Video aus einer generierten Standbild-Titelkarte
+   plus Tonspur. Upload als **unlisted** über die YouTube Data API v3
+   (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
+   `google-api-python-client`). OAuth-Zugangsdaten liegen wie beim
+   Mailversand ausserhalb des Repos
+   (`~/.config/boardstats/youtube_client.json`/`youtube_token.json`,
+   einmalig per `youtube_auth_setup.py` interaktiv eingerichtet). Ein
+   Marker (`extrakte/<datum>/video.json`) verhindert Doppel-Uploads.
+
 ## Öffentliches Archiv
 
 Unter [`extrakte/<datum>/`](extrakte/) liegt pro Tag sowohl der versandte
@@ -51,7 +66,10 @@ offenen Fragen je Thread.
 | `update_prompt.txt` | Prompt Stufe 2, Delta-Fortschreibung |
 | `bericht_html.py` | Klartext-Bericht → HTML-Mail (Inline-Styles) |
 | `send_mail.py` | SMTP-Versand (OAuth-Refresh oder App-Passwort) |
-| `report.sh` / `run.sh` | Cron-Wrapper für Bericht bzw. Crawl |
+| `video_report.py` | Bericht → TTS → Video, Upload zu YouTube |
+| `youtube_auth.py` | YouTube-OAuth-Refresh + Resumable-Upload |
+| `youtube_auth_setup.py` | Einmaliges interaktives YouTube-OAuth-Setup |
+| `report.sh` / `run.sh` / `video.sh` | Cron-Wrapper für Bericht, Crawl bzw. Video |
 
 Laufzeitdaten (`arbeit/`, `berichte/`, `cache/`, `logs/`) sind bewusst
 nicht versioniert — sie enthalten Board-Rohinhalte.
