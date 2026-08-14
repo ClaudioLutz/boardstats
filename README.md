@@ -26,7 +26,11 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    wird anschliessend in einem einzigen Sonnet-Aufruf ins Englische
    rückübersetzt (`bericht_en.md`) — Rückübersetzung deshalb, weil die
    Quelle englischsprachig ist und der /biz/-Jargon in seiner originalen
-   Form rekonstruiert werden muss, nicht wörtlich übersetzt.
+   Form rekonstruiert werden muss, nicht wörtlich übersetzt. Ein weiterer
+   kleiner Sonnet-Aufruf erzeugt aus dem Bericht je Sprache einen
+   reisserischen YouTube-Titel (`titel.json`, Hook + Serien-Suffix); die
+   Titel der letzten 14 Tage gehen als Sperrliste mit, damit sich der
+   Aufhänger auch bei Dauerthemen nicht wiederholt.
 
 Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
 SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
@@ -57,7 +61,10 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    (`~/.config/boardstats/youtube_client.json`/`youtube_token.json`,
    einmalig per `youtube_auth_setup.py` interaktiv eingerichtet). Ein
    Marker je Sprache (`extrakte/<datum>/video.json` bzw. `video_en.json`)
-   verhindert Doppel-Uploads.
+   verhindert Doppel-Uploads. Der Video-Titel kommt aus der vom Report-Lauf
+   erzeugten `titel.json` (dynamischer Tages-Hook); fehlt sie oder ist sie
+   unbrauchbar, fällt der Upload auf den statischen Serientitel
+   «/biz/-Lagebericht {datum}» zurück.
 
 ## Öffentliches Archiv
 

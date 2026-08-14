@@ -52,6 +52,7 @@ THROTTLE = 5            # gleichzeitige Sonnet-Aufrufe
 TIMEOUT_EXTRAKT = 600   # je Buendel, Sekunden
 TIMEOUT_SYNTH = 1800    # Synthese, Sekunden
 TIMEOUT_UEBERSETZUNG = 600  # englische Uebersetzung des fertigen Berichts
+TIMEOUT_TITEL = 300     # reisserischer Video-Titel (kleiner Sonnet-Aufruf)
 MIN_EXTRAKTE = 0.6      # Anteil, ab dem die Synthese als vollstaendig gilt
 # Re-Anchoring: fortgeschriebene Extrakte driften (gemessen in der Literatur:
 # strukturierte Fortschreibung verliert ueber 7 Runden ~5 Prozentpunkte Recall,
@@ -680,6 +681,108 @@ def bericht_uebersetzen(bericht_md: str) -> str:
     return out + "\n"
 
 
+# Der Titel-Prompt ist wie der Synthese-Prompt in korrektem Deutsch mit
+# Umlauten geschrieben (das Modell ahmt den Stil der Anweisung nach, und der
+# deutsche Hook muss echte Umlaute tragen). Die Hooks sind bewusst reisserisch
+# (Entscheid 14.08.2026: voll Clickbait, Hook + Serien-Suffix, keine Emoji,
+# keine Wiederholung ueber die Tage).
+TITEL_PROMPT = """\
+Du bekommst den heutigen /biz/-Lagebericht (Markdown, deutsch), eventuell
+gefolgt von einem Block BEREITS VERWENDETE TITEL.
+
+Schreibe für das YouTube-Video des Tages einen reisserischen Titel-Aufhänger
+(Hook) auf Deutsch und einen auf Englisch.
+
+Regeln:
+- Wähle die EINE zugkräftigste Geschichte des Berichts: die wichtigste
+  Entwicklung, die grösste Zahl oder den stärksten Konflikt.
+- Voll Clickbait: zugespitzt, dringlich, ein bis zwei Wörter in
+  GROSSBUCHSTABEN. Keine Emoji. Nichts erfinden: jede Aussage des Hooks
+  muss durch den Bericht gedeckt sein.
+- Der englische Hook ist KEINE Übersetzung des deutschen: formuliere ihn
+  eigenständig im nativen Jargon des Boards /biz/ (die Quelle ist englisch).
+- Höchstens 75 Zeichen je Hook, kein Punkt am Ende. Deutsch mit echten
+  Umlauten (ä, ö, ü), Schweizer Schreibweise mit "ss" statt "ß".
+- Kein langer Gedankenstrich (—) im Hook: Doppelpunkt oder Komma verwenden.
+- Steht ein Block BEREITS VERWENDETE TITEL in der Eingabe, darf keiner
+  dieser Hooks und keine nahe Umformulierung davon wiederkommen. Bleibt das
+  Tagesthema dasselbe, wähle einen anderen Aspekt, eine neue Zahl oder eine
+  neue Wendung.
+- Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
+  Code-Zaun: {"hook_de": "...", "hook_en": "..."}
+"""
+
+TITEL_SUFFIX = " | /biz/ "
+
+
+def bisherige_titel(datum: str, tage: int = 14) -> list[str]:
+    """Die Video-Titel der letzten Tage aus dem Archiv - damit sich der
+    Aufhaenger nicht wiederholt, auch wenn das Tagesthema dasselbe bleibt."""
+    titel: list[str] = []
+    kandidaten = sorted(
+        (p for p in EXTRAKTE.glob("*/titel.json") if p.parent.name < datum),
+        reverse=True)[:tage]
+    for p in kandidaten:
+        try:
+            daten = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(daten, dict):
+            titel += [v for v in daten.values() if isinstance(v, str) and v.strip()]
+    return titel
+
+
+def _hook_bereinigen(hook: str) -> str:
+    # "<" und ">" sind in YouTube-Titeln verboten; der lange Gedankenstrich
+    # ist im Titel unerwuenscht (Schreibstil-Vorgabe fuer externe Texte);
+    # 75 Zeichen lassen dem Serien-Suffix Platz unter dem 100-Zeichen-Limit.
+    hook = hook.replace("<", "").replace(">", "").replace(" — ", ": ").replace("—", "-")
+    return re.sub(r"\s+", " ", hook).strip()[:75].rstrip()
+
+
+def _hook_normalisiert(hook: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\wäöüÄÖÜ ]+", "", hook.lower())).strip()
+
+
+def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
+    """Reisserischer Tagestitel je Sprache (Hook + Serien-Suffix) in einem
+    Sonnet-Aufruf. Die bisherigen Titel gehen mit, und ein wiederholter Hook
+    bekommt genau einen zweiten Versuch - danach ist der statische
+    Serientitel (Fallback in video_report.py) die bessere Antwort."""
+    gebraucht = bisherige_titel(datum)
+    gesehen = {_hook_normalisiert(t.split(TITEL_SUFFIX)[0]) for t in gebraucht}
+    eingabe = bericht_md
+    if gebraucht:
+        eingabe += ("\n\nBEREITS VERWENDETE TITEL:\n"
+                    + "\n".join(f"- {t}" for t in gebraucht))
+
+    hinweis = ""
+    doppelt: list[str] = []
+    for _ in range(2):
+        out = claude_ruf(TITEL_PROMPT + hinweis, eingabe, "sonnet",
+                         TIMEOUT_TITEL).strip()
+        out = re.sub(r"^```(?:json)?\s*|\s*```$", "", out)
+        # Plausibilitaet wie bei bericht_uebersetzen(): eine CLI-Fehlermeldung
+        # parst nie als genau dieses JSON.
+        try:
+            daten = json.loads(out)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Titel-Ausgabe kein JSON: {out[:200]!r}") from e
+        hooks = {s: _hook_bereinigen(str(daten.get(f"hook_{s}") or ""))
+                 for s in ("de", "en")}
+        if not all(hooks.values()):
+            raise RuntimeError(f"Titel-Ausgabe unvollstaendig: {out[:200]!r}")
+        doppelt = [h for h in hooks.values() if _hook_normalisiert(h) in gesehen]
+        if not doppelt:
+            j, m, t = datum.split("-")
+            return {"de": f"{hooks['de']}{TITEL_SUFFIX}{t}.{m}.{j}",
+                    "en": f"{hooks['en']}{TITEL_SUFFIX}{datum}"}
+        hinweis = ("\nZUSATZ: Dein letzter Vorschlag wiederholte einen schon "
+                   "verwendeten Hook (" + "; ".join(doppelt)
+                   + ") - waehle zwingend einen anderen Aufhaenger.")
+    raise RuntimeError(f"Hook wiederholt sich trotz zweitem Versuch: {doppelt}")
+
+
 def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
                              manifest: dict) -> None:
     """Legt den fertigen Bericht in denselben Tagesordner wie die Extrakte
@@ -699,6 +802,18 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         # weder Versand noch Veroeffentlichung des deutschen Berichts stoppen.
         log.warning("Englische Uebersetzung fehlgeschlagen (deutscher "
                     "Bericht unberuehrt): %s", e)
+    try:
+        log.info("Erzeuge Video-Titel (Sonnet) ...")
+        titel = titel_generieren(bericht_md, datum)
+        (tag_dir / "titel.json").write_text(
+            json.dumps(titel, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        log.info("Video-Titel: %s", titel["de"])
+    except Exception as e:
+        # Ohne titel.json nimmt video_report.py den statischen Serientitel -
+        # ein Titelfehler darf den Upload nie verhindern.
+        log.warning("Titel-Generierung fehlgeschlagen (Video nimmt den "
+                    "statischen Serientitel): %s", e)
     (tag_dir / "README.md").write_text(
         _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
     markdown_index_aktualisieren()

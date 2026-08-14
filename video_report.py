@@ -537,6 +537,26 @@ def video_erzeugen(audio_mp3: Path, ass_datei: Path, ziel_mp4: Path) -> None:
 
 # ----------------------------------------------------------- Orchestrierung
 
+def titel_laden(tag_dir: Path, sprache: str, fallback: str) -> str:
+    """Dynamischer, reisserischer Tagestitel aus titel.json (erzeugt vom
+    Report-Lauf in run_report.py). Bei jedem Problem der statische
+    Serientitel - ein Titelfehler darf den Upload nie verhindern."""
+    pfad = tag_dir / "titel.json"
+    try:
+        wert = json.loads(pfad.read_text(encoding="utf-8")).get(sprache)
+    except (OSError, json.JSONDecodeError, AttributeError):
+        print(f"kein dynamischer Titel ({pfad}) - nehme Serientitel")
+        return fallback
+    if not isinstance(wert, str) or not wert.strip():
+        print(f"titel.json ohne brauchbaren Eintrag {sprache!r} - nehme Serientitel")
+        return fallback
+    # "<" und ">" sind in YouTube-Titeln verboten, das API-Limit ist 100
+    # Zeichen - defensiv nochmals bereinigen, auch wenn run_report.py das
+    # schon getan hat.
+    titel = re.sub(r"\s+", " ", wert.replace("<", "").replace(">", "")).strip()
+    return titel[:100].rstrip()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="de")
@@ -565,7 +585,8 @@ def main() -> None:
     ass_datei = arbeit / f"untertitel{cfg['suffix']}.ass"
     video_mp4 = arbeit / f"video{cfg['suffix']}.mp4"
 
-    titel = cfg["titel"].format(datum=datum)
+    titel = titel_laden(tag_dir, args.sprache, cfg["titel"].format(datum=datum))
+    print(f"Titel: {titel}")
     print(f"erzeuge Vertonung ({cfg['stimme']}) mit Wort-Zeitstempeln ...")
     worte = tts_mit_worten(text, audio_mp3, cfg["stimme"])
     print(f"{len(worte)} Woerter erkannt")
