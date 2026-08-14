@@ -9,10 +9,18 @@ E-Mail-Versand zu gefaehrden.
 
 v2: der Text scrollt kontinuierlich als Untertitel-Video (.ass, per ffmpeg
 libass eingebrannt), das jeweils gesprochene Wort wird farblich
-hervorgehoben. Jede Zeile ist eine eigenstaendige, in sich geschlossene
-Scroll-Bewegung (von unten ins Bild bis oben hinaus) - dadurch bleibt die
-Wort-Hervorhebung immer exakt deckungsgleich mit der Zeile, unabhaengig von
-Sprechtempo-Schwankungen zwischen Zeilen.
+hervorgehoben.
+
+v3: dichtes Fliesstext-Layout statt einzeln durchlaufender Zeilen. Jede
+Zeile hat eine feste Position im Gesamtlayout (Master-Y), Absaetze und
+Ueberschriften des Berichts bleiben sichtbar (Abstand bzw. eigene
+Farbe/Groesse). Die Scroll-Geschwindigkeit jeder Zeile wird aus dem lokalen
+Sprechtempo abgeleitet und ueber Nachbarzeilen geglaettet - so bleiben die
+Zeilenabstaende auf dem Bildschirm nahezu konstant (~ZEILENHOEHE) und es
+sind viele Zeilen gleichzeitig lesbar, waehrend die gerade gesprochene
+Zeile um die Leseposition herum steht. Basistext und Wort-Hervorhebung
+teilen sich pro Zeile exakt dieselbe lineare Bewegung, dadurch bleibt die
+Hervorhebung deckungsgleich.
 """
 from __future__ import annotations
 
@@ -39,13 +47,19 @@ FONT_KANDIDATEN = [
 
 CANVAS_W = 1280
 CANVAS_H = 720
-FONTSIZE = 44
-ZEILENHOEHE = 64
+FONTSIZE = 34
+UEBERSCHRIFT_FONTSIZE = 40
+ZEILENHOEHE = 44
+ABSATZ_ABSTAND = 20        # zusaetzlicher Abstand vor einem neuen Absatz
+UEBERSCHRIFT_ABSTAND = 36  # zusaetzlicher Abstand vor einer Ueberschrift
+PUNKT_ABSTAND = 12         # zusaetzlicher Abstand vor einem Aufzaehlungspunkt
 ZEILENBREITE_MAX = int(CANVAS_W * 0.88)
-LEAD_IN_S = 2.5
-LEAD_OUT_S = 2.5
+LESEPOSITION_Y = int(CANVAS_H * 0.45)  # hier steht die gerade gesprochene Zeile
+V_MAX = 60.0      # px/s, Tempo-Deckel gegen Spruenge bei sehr dichten Ankern
+ANKER_SCHRITT = 8  # alle N Zeilen ein Scroll-Anker (Tempo-Anpassung ans Sprechen)
 FARBE_TEXT = "&H00FFFFFF&"
-FARBE_AKZENT = "&H0066D1FF&"
+FARBE_AKZENT = "&H0066D1FF&"        # amber (BGR)
+FARBE_UEBERSCHRIFT = "&H00FFD166&"  # hellblau (BGR)
 HINTERGRUND = "0x1a1a2e"
 
 
@@ -62,16 +76,23 @@ _URL_ZEILE = re.compile(r"^(?:https?://\S+(?:\s+und\s+)?)+$")
 _QUELLEN_ZEILE = re.compile(r"^(Quelle|Quellen|Belege):", re.IGNORECASE)
 
 
-def text_fuer_tts(markdown: str) -> str:
+@dataclass
+class Block:
+    art: str  # "absatz", "ueberschrift" oder "punkt" (Aufzaehlung)
+    text: str
+
+
+def bloecke_erzeugen(markdown: str) -> list[Block]:
     """Reduziert den veroeffentlichten bericht.md-Text auf das Vorlesbare.
 
-    Markdown-Syntax (Titel, Archiv-Link, Trennlinie, ##-Ueberschriften) kann
-    man nicht hoeren; Quell-/Beleg-Zeilen und nackte Thread-URLs sind fuer
-    einen Leser gedacht, der klicken kann, nicht fuer einen Zuhoerer. Das
-    GLOSSAR ist zum Nachschlagen gedacht, nicht zum Anhoeren, und entfaellt
-    komplett - es bleibt oeffentlich im bericht.md sichtbar."""
+    Markdown-Syntax (Titel, Archiv-Link, Trennlinie) kann man nicht hoeren;
+    Quell-/Beleg-Zeilen und nackte Thread-URLs sind fuer einen Leser gedacht,
+    der klicken kann, nicht fuer einen Zuhoerer. Das GLOSSAR ist zum
+    Nachschlagen gedacht, nicht zum Anhoeren, und entfaellt komplett - es
+    bleibt oeffentlich im bericht.md sichtbar. Die Blockstruktur (Absatz vs.
+    ##-Ueberschrift) bleibt erhalten, damit das Video sie darstellen kann."""
     zeilen = markdown.splitlines()
-    ergebnis: list[str] = []
+    ergebnis: list[Block] = []
     for i, zeile in enumerate(zeilen):
         z = zeile.strip()
         if i == 0 and z.startswith("# "):
@@ -89,9 +110,16 @@ def text_fuer_tts(markdown: str) -> str:
         if _QUELLEN_ZEILE.match(z):
             continue
         if z.startswith("## "):
-            z = z[3:]
-        ergebnis.append(z)
-    return "\n\n".join(ergebnis)
+            ergebnis.append(Block("ueberschrift", z[3:]))
+        elif z.startswith("- "):
+            ergebnis.append(Block("punkt", z[2:]))
+        else:
+            ergebnis.append(Block("absatz", z))
+    return ergebnis
+
+
+def text_fuer_tts(markdown: str) -> str:
+    return "\n\n".join(b.text for b in bloecke_erzeugen(markdown))
 
 
 # ----------------------------------------------------------- TTS mit Wort-Zeitstempeln
@@ -128,11 +156,46 @@ def tts_mit_worten(text: str, ziel_mp3: Path) -> list[Wort]:
     return asyncio.run(_lauf())
 
 
+# ----------------------------------------------------------- Wort-zu-Block-Zuordnung
+
+def worte_zu_bloecken(worte: list[Wort], bloecke: list[Block]) -> list[list[Wort]]:
+    """Ordnet die flachen WordBoundary-Woerter den Quell-Bloecken zu.
+
+    edge-tts liefert nur einen flachen Wortstrom ohne Absatzinformation.
+    Die Zuordnung laeuft ueber einen Token-Zeiger durch die Quell-Tokens
+    (Reihenfolge ist bei TTS garantiert); Teilstring-Vergleich in beide
+    Richtungen faengt Satzzeichen-Differenzen ab ("geworden" vs.
+    "geworden."), kleiner Lookahead faengt einzelne Tokenisierungs-
+    Abweichungen ab. Nicht zuordenbare Woerter bleiben im aktuellen Block."""
+    tokens: list[tuple[str, int]] = []
+    for bi, block in enumerate(bloecke):
+        for tok in block.text.split():
+            tokens.append((tok, bi))
+
+    ergebnis: list[list[Wort]] = [[] for _ in bloecke]
+    ti = 0
+    aktueller_block = 0
+    for wort in worte:
+        wt = wort.text.strip()
+        if wt and ti < len(tokens):
+            for k in range(ti, min(ti + 4, len(tokens))):
+                tok, bi = tokens[k]
+                if wt in tok or tok in wt:
+                    aktueller_block = bi
+                    ti = k + 1
+                    break
+        ergebnis[aktueller_block].append(wort)
+    return ergebnis
+
+
 # ----------------------------------------------------------- Zeilenumbruch
 
 @dataclass
 class Zeile:
     worte: list[Wort]
+    art: str = "absatz"
+    blockanfang: bool = False
+    y_master: float = 0.0
 
     @property
     def start(self) -> float:
@@ -147,19 +210,22 @@ class Zeile:
         return " ".join(w.text for w in self.worte)
 
 
-def in_zeilen_umbrechen(worte: list[Wort], font: ImageFont.FreeTypeFont) -> list[Zeile]:
+def in_zeilen_umbrechen(worte: list[Wort], font: ImageFont.FreeTypeFont,
+                        art: str = "absatz") -> list[Zeile]:
     zeilen: list[Zeile] = []
     aktuell: list[Wort] = []
     for wort in worte:
         kandidat = aktuell + [wort]
         breite = font.getlength(" ".join(w.text for w in kandidat))
         if aktuell and breite > ZEILENBREITE_MAX:
-            zeilen.append(Zeile(aktuell))
+            zeilen.append(Zeile(aktuell, art=art))
             aktuell = [wort]
         else:
             aktuell = kandidat
     if aktuell:
-        zeilen.append(Zeile(aktuell))
+        zeilen.append(Zeile(aktuell, art=art))
+    if zeilen:
+        zeilen[0].blockanfang = True
     return zeilen
 
 
@@ -195,59 +261,158 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def ass_erzeugen(zeilen: list[Zeile], font: ImageFont.FreeTypeFont, ziel_ass: Path) -> None:
-    """Baut pro Zeile eine eigenstaendige Scroll-Bewegung (unten rein, oben raus).
+def _anker_berechnen(zeilen: list[Zeile]) -> list[tuple[float, float]]:
+    """Stuetzpunkte (zeit, master_y) der globalen Scroll-Funktion P(t).
 
-    Jede Zeile wird wortweise gerendert (nicht als ein zusammenhaengender
-    String) und die Hervorhebung nutzt exakt dieselben x-Positionen wie die
-    weisse Basis-Darstellung desselben Worts - PIL (Zeilenumbruch/Metriken)
-    und libass/HarfBuzz (tatsaechliches Rendering) shapen Text sonst leicht
-    unterschiedlich, was bei laengeren Zeilen zu sichtbarem Positionsdrift
-    zwischen Overlay und Basistext fuehrt, wenn man die Zeile als ein Stueck
-    misst und einzeln ueberlagert."""
+    Alle ANKER_SCHRITT Zeilen ein Anker an der Sprechzeit-Mitte der Zeile -
+    dazwischen laeuft der gesamte Text mit konstanter Geschwindigkeit als
+    starrer Block. Zeiten werden streng monoton gehalten und das Tempo pro
+    Segment auf V_MAX gedeckelt."""
+    anker: list[tuple[float, float]] = []
+    indizes = list(range(0, len(zeilen), ANKER_SCHRITT))
+    if indizes[-1] != len(zeilen) - 1:
+        indizes.append(len(zeilen) - 1)
+    for i in indizes:
+        z = zeilen[i]
+        t = (z.start + z.end) / 2
+        if anker:
+            dy = z.y_master - anker[-1][1]
+            if dy <= 0:
+                continue
+            t = max(t, anker[-1][0] + dy / V_MAX)
+        anker.append((t, z.y_master))
+    return anker
+
+
+def _p_wert(anker: list[tuple[float, float]], t: float) -> float:
+    """P(t): Master-Y, das zur Zeit t an der Leseposition steht.
+
+    Vor dem ersten bzw. nach dem letzten Anker wird die Steigung des
+    Randsegments fortgesetzt."""
+    if len(anker) == 1:
+        return anker[0][1] + (t - anker[0][0]) * 20.0
+    if t <= anker[0][0]:
+        (t1, y1), (t2, y2) = anker[0], anker[1]
+    elif t >= anker[-1][0]:
+        (t1, y1), (t2, y2) = anker[-2], anker[-1]
+    else:
+        for k in range(len(anker) - 1):
+            if anker[k][0] <= t <= anker[k + 1][0]:
+                (t1, y1), (t2, y2) = anker[k], anker[k + 1]
+                break
+    return y1 + (y2 - y1) * (t - t1) / (t2 - t1)
+
+
+def _p_invers(anker: list[tuple[float, float]], y: float) -> float:
+    """Umkehrung von P: Zeit, zu der Master-Y y die Leseposition passiert."""
+    if len(anker) == 1:
+        return anker[0][0] + (y - anker[0][1]) / 20.0
+    if y <= anker[0][1]:
+        (t1, y1), (t2, y2) = anker[0], anker[1]
+    elif y >= anker[-1][1]:
+        (t1, y1), (t2, y2) = anker[-2], anker[-1]
+    else:
+        for k in range(len(anker) - 1):
+            if anker[k][1] <= y <= anker[k + 1][1]:
+                (t1, y1), (t2, y2) = anker[k], anker[k + 1]
+                break
+    return t1 + (t2 - t1) * (y - y1) / (y2 - y1)
+
+
+def _segmente(anker: list[tuple[float, float]], von: float, bis: float) -> list[tuple[float, float]]:
+    """Zerlegt [von, bis] an den Ankerzeiten - innerhalb jedes Teilstuecks
+    ist P(t) linear und laesst sich exakt als ein \\move ausdruecken."""
+    punkte = [von] + [t for t, _ in anker if von < t < bis] + [bis]
+    return [(punkte[k], punkte[k + 1]) for k in range(len(punkte) - 1)
+            if punkte[k + 1] - punkte[k] > 1e-4]
+
+
+def ass_erzeugen(zeilen: list[Zeile], fonts: dict[str, ImageFont.FreeTypeFont],
+                 ziel_ass: Path) -> None:
+    """Baut das Untertitel-Skript: dichtes Fliesstext-Layout, das nach oben scrollt.
+
+    Der gesamte Text scrollt als starrer Block entlang der globalen
+    Scroll-Funktion P(t) - die Abstaende auf dem Bildschirm entsprechen
+    dadurch immer exakt dem Master-Layout (keine Kollisionen, keine
+    schwankenden Zeilenabstaende), waehrend das Tempo sich an den Ankern
+    dem Sprechtempo anpasst. Jede Zeile wird wortweise gerendert (nicht als
+    ein zusammenhaengender String) und die Hervorhebung nutzt exakt
+    dieselben x-Positionen und dieselbe y-Bewegung wie die Basis-Darstellung
+    desselben Worts - PIL (Zeilenumbruch/Metriken) und libass/HarfBuzz
+    (tatsaechliches Rendering) shapen Text sonst leicht unterschiedlich, was
+    zu sichtbarem Positionsdrift zwischen Overlay und Basistext fuehrt, wenn
+    man die Zeile als ein Stueck misst und einzeln ueberlagert."""
+    # Master-Layout: feste vertikale Position jeder Zeile im Gesamttext
+    y = 0.0
+    for i, zeile in enumerate(zeilen):
+        if i > 0 and zeile.blockanfang:
+            y += {"ueberschrift": UEBERSCHRIFT_ABSTAND,
+                  "punkt": PUNKT_ABSTAND}.get(zeile.art, ABSATZ_ABSTAND)
+        zeile.y_master = y
+        y += ZEILENHOEHE
+
+    anker = _anker_berechnen(zeilen)
     y_enter = CANVAS_H + ZEILENHOEHE
-    y_exit = -ZEILENHOEHE
+    y_exit = -(ZEILENHOEHE + UEBERSCHRIFT_FONTSIZE)
     events: list[str] = []
 
     for zeile in zeilen:
-        fenster_start = max(0.0, zeile.start - LEAD_IN_S)
-        fenster_end = zeile.end + LEAD_OUT_S
-        dauer = fenster_end - fenster_start
-        if dauer <= 0:
+        # Bildschirm-Y der Zeile: versatz - P(t)
+        versatz = LESEPOSITION_Y + zeile.y_master
+        fenster_start = max(0.0, _p_invers(anker, versatz - y_enter))
+        fenster_end = _p_invers(anker, versatz - y_exit)
+        if fenster_end <= fenster_start:
             continue
 
-        def y_bei(t: float, _start: float = fenster_start, _dauer: float = dauer) -> float:
-            anteil = (t - _start) / _dauer
-            return y_enter + (y_exit - y_enter) * anteil
+        font = fonts[zeile.art]
+        if zeile.art == "ueberschrift":
+            stil_basis = f"\\fs{UEBERSCHRIFT_FONTSIZE}\\c{FARBE_UEBERSCHRIFT}"
+            stil_akzent = f"\\fs{UEBERSCHRIFT_FONTSIZE}\\c{FARBE_AKZENT}"
+        else:
+            stil_basis = ""
+            stil_akzent = f"\\c{FARBE_AKZENT}"
 
         wort_breiten = [font.getlength(w.text) for w in zeile.worte]
         leerzeichen_breite = font.getlength(" ") * 0.6
         gesamtbreite = sum(wort_breiten) + leerzeichen_breite * (len(zeile.worte) - 1)
         cursor = (CANVAS_W - gesamtbreite) / 2
+        zeilen_segmente = _segmente(anker, fenster_start, fenster_end)
 
-        y1_zeile = y_bei(fenster_start)
-        y2_zeile = y_bei(fenster_end)
+        if zeile.art == "punkt" and zeile.blockanfang:
+            # haengendes Aufzaehlungszeichen links vor der ersten Zeile
+            punkt_x = cursor - leerzeichen_breite * 2 - font.getlength("•") / 2
+            for t_a, t_b in zeilen_segmente:
+                y1 = versatz - _p_wert(anker, t_a)
+                y2 = versatz - _p_wert(anker, t_b)
+                events.append(
+                    f"Dialogue: 0,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
+                    f"{{\\move({punkt_x:.0f},{y1:.0f},{punkt_x:.0f},{y2:.0f})}}•"
+                )
 
         for wort, wort_breite in zip(zeile.worte, wort_breiten):
             mitte_x = cursor + wort_breite / 2
             cursor += wort_breite + leerzeichen_breite
             wort_text = _ass_escape(wort.text)
 
-            events.append(
-                f"Dialogue: 0,{_ass_zeit(fenster_start)},{_ass_zeit(fenster_end)},Report,,0,0,0,,"
-                f"{{\\move({mitte_x:.0f},{y1_zeile:.0f},{mitte_x:.0f},{y2_zeile:.0f})}}"
-                f"{wort_text}"
-            )
+            for t_a, t_b in zeilen_segmente:
+                y1 = versatz - _p_wert(anker, t_a)
+                y2 = versatz - _p_wert(anker, t_b)
+                events.append(
+                    f"Dialogue: 0,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
+                    f"{{\\move({mitte_x:.0f},{y1:.0f},{mitte_x:.0f},{y2:.0f}){stil_basis}}}"
+                    f"{wort_text}"
+                )
 
             w_start = max(fenster_start, wort.start)
             w_end = max(w_start + 0.01, min(fenster_end, wort.end))
-            y1 = y_bei(w_start)
-            y2 = y_bei(w_end)
-            events.append(
-                f"Dialogue: 1,{_ass_zeit(w_start)},{_ass_zeit(w_end)},Report,,0,0,0,,"
-                f"{{\\move({mitte_x:.0f},{y1:.0f},{mitte_x:.0f},{y2:.0f})\\c{FARBE_AKZENT}}}"
-                f"{wort_text}"
-            )
+            for t_a, t_b in _segmente(anker, w_start, w_end):
+                y1 = versatz - _p_wert(anker, t_a)
+                y2 = versatz - _p_wert(anker, t_b)
+                events.append(
+                    f"Dialogue: 1,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
+                    f"{{\\move({mitte_x:.0f},{y1:.0f},{mitte_x:.0f},{y2:.0f}){stil_akzent}}}"
+                    f"{wort_text}"
+                )
 
     ziel_ass.write_text(ASS_HEADER + "\n".join(events) + "\n", encoding="utf-8")
 
@@ -282,7 +447,8 @@ def main() -> None:
         return
 
     markdown = bericht_pfad.read_text(encoding="utf-8")
-    text = text_fuer_tts(markdown)
+    bloecke = bloecke_erzeugen(markdown)
+    text = "\n\n".join(b.text for b in bloecke)
 
     arbeit = VIDEO_DIR / datum
     arbeit.mkdir(parents=True, exist_ok=True)
@@ -295,10 +461,19 @@ def main() -> None:
     worte = tts_mit_worten(text, audio_mp3)
     print(f"{len(worte)} Woerter erkannt")
 
-    font = ImageFont.truetype(font_pfad(), FONTSIZE)
-    zeilen = in_zeilen_umbrechen(worte, font)
-    print(f"{len(zeilen)} Zeilen")
-    ass_erzeugen(zeilen, font, ass_datei)
+    pfad = font_pfad()
+    fliesstext_font = ImageFont.truetype(pfad, FONTSIZE)
+    fonts = {
+        "absatz": fliesstext_font,
+        "punkt": fliesstext_font,
+        "ueberschrift": ImageFont.truetype(pfad, UEBERSCHRIFT_FONTSIZE),
+    }
+    zeilen: list[Zeile] = []
+    for block, block_worte in zip(bloecke, worte_zu_bloecken(worte, bloecke)):
+        if block_worte:
+            zeilen.extend(in_zeilen_umbrechen(block_worte, fonts[block.art], block.art))
+    print(f"{len(zeilen)} Zeilen in {len(bloecke)} Bloecken")
+    ass_erzeugen(zeilen, fonts, ass_datei)
 
     print("baue Video ...")
     video_erzeugen(audio_mp3, ass_datei, video_mp4)

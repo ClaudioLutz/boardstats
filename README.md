@@ -30,13 +30,16 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
    liest das bereits veröffentlichte `extrakte/<datum>/bericht.md`,
-   bereinigt es für die Vertonung (`text_fuer_tts()`: Markdown-Syntax,
-   Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus, der Rest
-   bleibt unverändert), vertont per `edge-tts` (Stimme `de-DE-KatjaNeural`)
-   und baut mit `ffmpeg`/`libass` ein Video, in dem der Text kontinuierlich
+   bereinigt es für die Vertonung (`bloecke_erzeugen()`: Quell-/Beleg-Zeilen,
+   nackte Thread-URLs und das GLOSSAR raus; die Blockstruktur — Absätze,
+   ##-Überschriften, Aufzählungspunkte — bleibt erhalten), vertont per
+   `edge-tts` (Stimme `de-DE-KatjaNeural`) und baut mit `ffmpeg`/`libass`
+   ein Video, in dem der Bericht als dichter, formatierter Fliesstext
+   (Absatzabstände, farbige Überschriften, Aufzählungszeichen) kontinuierlich
    durchs Bild scrollt und das jeweils gesprochene Wort farblich hervorgehoben
    wird (generiertes `.ass`, pro Wort ein deckungsgleiches Overlay statt
-   nativem ASS-Karaoke). Upload als **unlisted** über die YouTube Data API v3
+   nativem ASS-Karaoke; der Text läuft als starrer Block entlang einer
+   global verankerten Scroll-Funktion, die sich dem Sprechtempo anpasst). Upload als **unlisted** über die YouTube Data API v3
    (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
    `google-api-python-client`). OAuth-Zugangsdaten liegen wie beim
    Mailversand ausserhalb des Repos
