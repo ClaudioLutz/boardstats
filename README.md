@@ -33,8 +33,10 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    bereinigt es für die Vertonung (`text_fuer_tts()`: Markdown-Syntax,
    Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus, der Rest
    bleibt unverändert), vertont per `edge-tts` (Stimme `de-DE-KatjaNeural`)
-   und baut mit `ffmpeg` ein Video aus einer generierten Standbild-Titelkarte
-   plus Tonspur. Upload als **unlisted** über die YouTube Data API v3
+   und baut mit `ffmpeg`/`libass` ein Video, in dem der Text kontinuierlich
+   durchs Bild scrollt und das jeweils gesprochene Wort farblich hervorgehoben
+   wird (generiertes `.ass`, pro Wort ein deckungsgleiches Overlay statt
+   nativem ASS-Karaoke). Upload als **unlisted** über die YouTube Data API v3
    (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
    `google-api-python-client`). OAuth-Zugangsdaten liegen wie beim
    Mailversand ausserhalb des Repos
