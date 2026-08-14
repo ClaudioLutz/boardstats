@@ -9,8 +9,13 @@
 #  nicht gefaehrden.
 #
 #  Voraussetzungen (einmalig einzurichten):
-#    1. pipx install edge-tts   (installiert nach ~/.local/bin)
-#    2. ffmpeg ist installiert  -> ffmpeg -version
+#    1. venv ~/.venvs/boardstats-video mit edge-tts + pillow
+#       (python3 -m venv ~/.venvs/boardstats-video && .../pip install
+#        edge-tts pillow) - noetig, weil video_report.py die edge-tts-
+#       Python-Bibliothek direkt nutzt (Wort-Zeitstempel fuer Karaoke-Scroll)
+#       und Pillow fuer Textmetriken braucht; beides via pip statt apt/pipx,
+#       da es Bibliotheken und keine CLI-Tools sind.
+#    2. ffmpeg ist installiert (mit libass)  -> ffmpeg -version
 #    3. ~/.config/boardstats/youtube_client.json (OAuth-Client aus Google
 #       Cloud Console) und youtube_token.json (per youtube_auth_setup.py
 #       einmalig interaktiv erzeugt)
@@ -19,9 +24,11 @@ set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
 
-# pipx installiert edge-tts nach ~/.local/bin, das ist im Cron-PATH nicht
-# enthalten (gleicher Grund wie die Node-PATH-Erweiterung in report.sh).
-export PATH="$HOME/.local/bin:$PATH"
+VENV_PY="$HOME/.venvs/boardstats-video/bin/python3"
+if [ ! -x "$VENV_PY" ]; then
+    echo "venv $VENV_PY fehlt - siehe Voraussetzungen oben" >&2
+    exit 1
+fi
 
 mkdir -p logs
 LOG="logs/video_cron.log"
@@ -31,6 +38,6 @@ fi
 
 {
     echo "===== Video gestartet: $(date '+%Y-%m-%d %H:%M:%S') ====="
-    python3 video_report.py
+    "$VENV_PY" video_report.py
     echo "===== Video beendet:  $(date '+%Y-%m-%d %H:%M:%S') ====="
 } >> "$LOG" 2>&1
