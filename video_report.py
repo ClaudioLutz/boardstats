@@ -21,6 +21,13 @@ sind viele Zeilen gleichzeitig lesbar, waehrend die gerade gesprochene
 Zeile um die Leseposition herum steht. Basistext und Wort-Hervorhebung
 teilen sich pro Zeile exakt dieselbe lineare Bewegung, dadurch bleibt die
 Hervorhebung deckungsgleich.
+
+v4: Darstellung wie der Markdown-Bericht selbst - linksbuendig mit festem
+Rand, Fliesstext normalgewichtig, Ueberschriften fett und groesser,
+Aufzaehlungen mit haengendem Einzug. Gerendert werden die Quell-Tokens des
+Berichts (mit Satzzeichen), nicht die WordBoundary-Texte von edge-tts (die
+sind satzzeichenlos); die gesprochenen Woerter liefern nur noch die
+Zeitfenster fuer die Hervorhebung.
 """
 from __future__ import annotations
 
@@ -40,7 +47,11 @@ BASE = Path(__file__).parent
 EXTRAKTE = BASE / "extrakte"
 VIDEO_DIR = BASE / "video"
 STIMME = "de-DE-KatjaNeural"
-FONT_KANDIDATEN = [
+FONT_NORMAL_KANDIDATEN = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
+FONT_FETT_KANDIDATEN = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "C:/Windows/Fonts/arialbd.ttf",
 ]
@@ -48,26 +59,50 @@ FONT_KANDIDATEN = [
 CANVAS_W = 1280
 CANVAS_H = 720
 FONTSIZE = 34
-UEBERSCHRIFT_FONTSIZE = 40
+UEBERSCHRIFT_FONTSIZE = 44
 ZEILENHOEHE = 44
 ABSATZ_ABSTAND = 20        # zusaetzlicher Abstand vor einem neuen Absatz
 UEBERSCHRIFT_ABSTAND = 36  # zusaetzlicher Abstand vor einer Ueberschrift
 PUNKT_ABSTAND = 12         # zusaetzlicher Abstand vor einem Aufzaehlungspunkt
-ZEILENBREITE_MAX = int(CANVAS_W * 0.88)
+MARGIN_LINKS = 80          # fester linker Textrand (linksbuendig wie der Bericht)
+PUNKT_EINZUG = 40          # haengender Einzug fuer Aufzaehlungstext hinter dem «•»
+ZEILENBREITE_MAX = CANVAS_W - 2 * MARGIN_LINKS
 LESEPOSITION_Y = int(CANVAS_H * 0.45)  # hier steht die gerade gesprochene Zeile
 V_MAX = 60.0      # px/s, Tempo-Deckel gegen Spruenge bei sehr dichten Ankern
 ANKER_SCHRITT = 8  # alle N Zeilen ein Scroll-Anker (Tempo-Anpassung ans Sprechen)
 FARBE_TEXT = "&H00FFFFFF&"
 FARBE_AKZENT = "&H0066D1FF&"        # amber (BGR)
-FARBE_UEBERSCHRIFT = "&H00FFD166&"  # hellblau (BGR)
 HINTERGRUND = "0x1a1a2e"
 
 
-def font_pfad() -> str:
-    for f in FONT_KANDIDATEN:
+def font_pfad(kandidaten: list[str]) -> str:
+    for f in kandidaten:
         if Path(f).exists():
             return f
-    raise SystemExit(f"keine der FONT_KANDIDATEN gefunden: {FONT_KANDIDATEN}")
+    raise SystemExit(f"keiner der Font-Kandidaten gefunden: {kandidaten}")
+
+
+# libass setzt die ASS-Fontsize VSFilter-kompatibel als Gesamthoehe
+# (Ascent+Descent), PIL dagegen als em-Groesse - libass rendert dadurch rund
+# 15 Prozent schmaler, als PIL bei gleicher Fontsize misst (DejaVu Sans,
+# empirisch 0.82-0.88 je nach Wort). Nur fuer den Zeilenumbruch relevant;
+# positioniert wird nichts mehr ueber PIL-Metriken.
+LIBASS_BREITEN_FAKTOR = 0.855
+
+
+def _breite(font: ImageFont.FreeTypeFont, text: str) -> float:
+    """Erwartete libass-Renderbreite von text (PIL-Messung, kalibriert)."""
+    return font.getlength(text) * LIBASS_BREITEN_FAKTOR
+
+
+def fonts_laden() -> dict[str, ImageFont.FreeTypeFont]:
+    fliesstext = ImageFont.truetype(font_pfad(FONT_NORMAL_KANDIDATEN), FONTSIZE)
+    return {
+        "absatz": fliesstext,
+        "punkt": fliesstext,
+        "ueberschrift": ImageFont.truetype(font_pfad(FONT_FETT_KANDIDATEN),
+                                           UEBERSCHRIFT_FONTSIZE),
+    }
 
 
 # ----------------------------------------------------------- Text-Bereinigung
@@ -159,32 +194,59 @@ def tts_mit_worten(text: str, ziel_mp3: Path) -> list[Wort]:
 # ----------------------------------------------------------- Wort-zu-Block-Zuordnung
 
 def worte_zu_bloecken(worte: list[Wort], bloecke: list[Block]) -> list[list[Wort]]:
-    """Ordnet die flachen WordBoundary-Woerter den Quell-Bloecken zu.
+    """Uebertraegt die WordBoundary-Zeitfenster auf die Quell-Tokens der Bloecke.
 
-    edge-tts liefert nur einen flachen Wortstrom ohne Absatzinformation.
-    Die Zuordnung laeuft ueber einen Token-Zeiger durch die Quell-Tokens
-    (Reihenfolge ist bei TTS garantiert); Teilstring-Vergleich in beide
-    Richtungen faengt Satzzeichen-Differenzen ab ("geworden" vs.
-    "geworden."), kleiner Lookahead faengt einzelne Tokenisierungs-
-    Abweichungen ab. Nicht zuordenbare Woerter bleiben im aktuellen Block."""
+    edge-tts liefert nur einen flachen Wortstrom ohne Absatzinformation, und
+    die WordBoundary-Texte sind satzzeichenlos ("geworden" statt "geworden.").
+    Gerendert werden deshalb die Quell-Tokens des Berichts; die gesprochenen
+    Woerter liefern nur die Zeitfenster. Die Zuordnung laeuft ueber einen
+    Token-Zeiger durch die Quell-Tokens (Reihenfolge ist bei TTS garantiert);
+    Teilstring-Vergleich in beide Richtungen faengt Satzzeichen-Differenzen
+    ab, kleiner Lookahead faengt einzelne Tokenisierungs-Abweichungen ab.
+    Nicht zuordenbare gesprochene Woerter verlaengern das Fenster des zuletzt
+    getroffenen Tokens; nie getroffene Tokens (z. B. von TTS zusammengezogen
+    oder verschluckt) bekommen das Fenster zwischen ihren Nachbarn."""
     tokens: list[tuple[str, int]] = []
     for bi, block in enumerate(bloecke):
         for tok in block.text.split():
             tokens.append((tok, bi))
 
-    ergebnis: list[list[Wort]] = [[] for _ in bloecke]
+    zeiten: list[list[tuple[float, float]]] = [[] for _ in tokens]
     ti = 0
-    aktueller_block = 0
+    zuletzt = 0
     for wort in worte:
         wt = wort.text.strip()
-        if wt and ti < len(tokens):
-            for k in range(ti, min(ti + 4, len(tokens))):
-                tok, bi = tokens[k]
-                if wt in tok or tok in wt:
-                    aktueller_block = bi
-                    ti = k + 1
-                    break
-        ergebnis[aktueller_block].append(wort)
+        if not wt:
+            continue
+        for k in range(ti, min(ti + 4, len(tokens))):
+            tok, _ = tokens[k]
+            if wt in tok or tok in wt:
+                zuletzt = k
+                ti = k + 1
+                break
+        else:
+            k = zuletzt
+        zeiten[k].append((wort.start, wort.end))
+
+    # naechstbekannte Startzeit je Position (fuer Tokens ohne eigenes Fenster)
+    naechster_start = [0.0] * len(tokens)
+    ns = worte[-1].end if worte else 0.0
+    for k in range(len(tokens) - 1, -1, -1):
+        if zeiten[k]:
+            ns = min(t for t, _ in zeiten[k])
+        naechster_start[k] = ns
+
+    ergebnis: list[list[Wort]] = [[] for _ in bloecke]
+    letzte_end = 0.0
+    for k, (tok, bi) in enumerate(tokens):
+        if zeiten[k]:
+            start = min(t for t, _ in zeiten[k])
+            end = max(t for _, t in zeiten[k])
+        else:
+            start = letzte_end
+            end = max(letzte_end, naechster_start[k])
+        letzte_end = end
+        ergebnis[bi].append(Wort(tok, start, end))
     return ergebnis
 
 
@@ -212,12 +274,13 @@ class Zeile:
 
 def in_zeilen_umbrechen(worte: list[Wort], font: ImageFont.FreeTypeFont,
                         art: str = "absatz") -> list[Zeile]:
+    max_breite = ZEILENBREITE_MAX - (PUNKT_EINZUG if art == "punkt" else 0)
     zeilen: list[Zeile] = []
     aktuell: list[Wort] = []
     for wort in worte:
         kandidat = aktuell + [wort]
-        breite = font.getlength(" ".join(w.text for w in kandidat))
-        if aktuell and breite > ZEILENBREITE_MAX:
+        breite = _breite(font, " ".join(w.text for w in kandidat))
+        if aktuell and breite > max_breite:
             zeilen.append(Zeile(aktuell, art=art))
             aktuell = [wort]
         else:
@@ -254,7 +317,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Report,DejaVu Sans,{FONTSIZE},{FARBE_TEXT},{FARBE_TEXT},&H00000000&,&H00000000&,-1,0,0,0,100,100,0,0,1,2,0,8,20,20,20,1
+Style: Report,DejaVu Sans,{FONTSIZE},{FARBE_TEXT},{FARBE_TEXT},&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,2,0,7,20,20,20,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -327,21 +390,22 @@ def _segmente(anker: list[tuple[float, float]], von: float, bis: float) -> list[
             if punkte[k + 1] - punkte[k] > 1e-4]
 
 
-def ass_erzeugen(zeilen: list[Zeile], fonts: dict[str, ImageFont.FreeTypeFont],
-                 ziel_ass: Path) -> None:
+def ass_erzeugen(zeilen: list[Zeile], ziel_ass: Path) -> None:
     """Baut das Untertitel-Skript: dichtes Fliesstext-Layout, das nach oben scrollt.
 
     Der gesamte Text scrollt als starrer Block entlang der globalen
     Scroll-Funktion P(t) - die Abstaende auf dem Bildschirm entsprechen
     dadurch immer exakt dem Master-Layout (keine Kollisionen, keine
     schwankenden Zeilenabstaende), waehrend das Tempo sich an den Ankern
-    dem Sprechtempo anpasst. Jede Zeile wird wortweise gerendert (nicht als
-    ein zusammenhaengender String) und die Hervorhebung nutzt exakt
-    dieselben x-Positionen und dieselbe y-Bewegung wie die Basis-Darstellung
-    desselben Worts - PIL (Zeilenumbruch/Metriken) und libass/HarfBuzz
-    (tatsaechliches Rendering) shapen Text sonst leicht unterschiedlich, was
-    zu sichtbarem Positionsdrift zwischen Overlay und Basistext fuehrt, wenn
-    man die Zeile als ein Stueck misst und einzeln ueberlagert."""
+    dem Sprechtempo anpasst. Jede Zeile wird als EIN zusammenhaengender
+    String gerendert (libass setzt die Wortabstaende selbst, natuerlicher
+    Textsatz); die Wort-Hervorhebung ist derselbe Zeilenstring noch einmal,
+    bei dem alle Woerter ausser dem gerade gesprochenen per \\alpha
+    unsichtbar sind - identischer Glyphenlauf, also pixelgenau
+    deckungsgleich. Woerter einzeln per PIL-Metriken zu positionieren
+    funktioniert dagegen nicht zuverlaessig: PIL und libass/HarfBuzz messen
+    pro Wort um +-2 Prozent unterschiedlich (Kerning/Shaping/Fontskalierung),
+    was je nach Wort klebende oder klaffende Luecken erzeugt."""
     # Master-Layout: feste vertikale Position jeder Zeile im Gesamttext
     y = 0.0
     for i, zeile in enumerate(zeilen):
@@ -364,23 +428,18 @@ def ass_erzeugen(zeilen: list[Zeile], fonts: dict[str, ImageFont.FreeTypeFont],
         if fenster_end <= fenster_start:
             continue
 
-        font = fonts[zeile.art]
         if zeile.art == "ueberschrift":
-            stil_basis = f"\\fs{UEBERSCHRIFT_FONTSIZE}\\c{FARBE_UEBERSCHRIFT}"
-            stil_akzent = f"\\fs{UEBERSCHRIFT_FONTSIZE}\\c{FARBE_AKZENT}"
+            # fett + groesser, wie eine ##-Ueberschrift im Markdown-Bericht
+            stil = f"\\fs{UEBERSCHRIFT_FONTSIZE}\\b1"
         else:
-            stil_basis = ""
-            stil_akzent = f"\\c{FARBE_AKZENT}"
+            stil = ""
 
-        wort_breiten = [font.getlength(w.text) for w in zeile.worte]
-        leerzeichen_breite = font.getlength(" ") * 0.6
-        gesamtbreite = sum(wort_breiten) + leerzeichen_breite * (len(zeile.worte) - 1)
-        cursor = (CANVAS_W - gesamtbreite) / 2
+        links_x = MARGIN_LINKS + (PUNKT_EINZUG if zeile.art == "punkt" else 0)
         zeilen_segmente = _segmente(anker, fenster_start, fenster_end)
 
         if zeile.art == "punkt" and zeile.blockanfang:
-            # haengendes Aufzaehlungszeichen links vor der ersten Zeile
-            punkt_x = cursor - leerzeichen_breite * 2 - font.getlength("•") / 2
+            # haengendes Aufzaehlungszeichen am linken Rand, Text eingezogen
+            punkt_x = MARGIN_LINKS
             for t_a, t_b in zeilen_segmente:
                 y1 = versatz - _p_wert(anker, t_a)
                 y2 = versatz - _p_wert(anker, t_b)
@@ -389,19 +448,25 @@ def ass_erzeugen(zeilen: list[Zeile], fonts: dict[str, ImageFont.FreeTypeFont],
                     f"{{\\move({punkt_x:.0f},{y1:.0f},{punkt_x:.0f},{y2:.0f})}}•"
                 )
 
-        for wort, wort_breite in zip(zeile.worte, wort_breiten):
-            mitte_x = cursor + wort_breite / 2
-            cursor += wort_breite + leerzeichen_breite
-            wort_text = _ass_escape(wort.text)
+        texte = [_ass_escape(w.text) for w in zeile.worte]
+        for t_a, t_b in zeilen_segmente:
+            y1 = versatz - _p_wert(anker, t_a)
+            y2 = versatz - _p_wert(anker, t_b)
+            events.append(
+                f"Dialogue: 0,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
+                f"{{\\move({links_x},{y1:.0f},{links_x},{y2:.0f}){stil}}}"
+                + " ".join(texte)
+            )
 
-            for t_a, t_b in zeilen_segmente:
-                y1 = versatz - _p_wert(anker, t_a)
-                y2 = versatz - _p_wert(anker, t_b)
-                events.append(
-                    f"Dialogue: 0,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
-                    f"{{\\move({mitte_x:.0f},{y1:.0f},{mitte_x:.0f},{y2:.0f}){stil_basis}}}"
-                    f"{wort_text}"
-                )
+        for i, wort in enumerate(zeile.worte):
+            # ganze Zeile noch einmal, nur das aktive Wort sichtbar (Akzent)
+            teile = []
+            if i > 0:
+                teile.append("{\\alpha&HFF&}" + " ".join(texte[:i]) + " ")
+            teile.append(f"{{\\alpha&H00&\\c{FARBE_AKZENT}}}{texte[i]}")
+            if i < len(texte) - 1:
+                teile.append("{\\alpha&HFF&} " + " ".join(texte[i + 1:]))
+            hervorhebung = "".join(teile)
 
             w_start = max(fenster_start, wort.start)
             w_end = max(w_start + 0.01, min(fenster_end, wort.end))
@@ -410,8 +475,8 @@ def ass_erzeugen(zeilen: list[Zeile], fonts: dict[str, ImageFont.FreeTypeFont],
                 y2 = versatz - _p_wert(anker, t_b)
                 events.append(
                     f"Dialogue: 1,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
-                    f"{{\\move({mitte_x:.0f},{y1:.0f},{mitte_x:.0f},{y2:.0f}){stil_akzent}}}"
-                    f"{wort_text}"
+                    f"{{\\move({links_x},{y1:.0f},{links_x},{y2:.0f}){stil}}}"
+                    f"{hervorhebung}"
                 )
 
     ziel_ass.write_text(ASS_HEADER + "\n".join(events) + "\n", encoding="utf-8")
@@ -461,19 +526,13 @@ def main() -> None:
     worte = tts_mit_worten(text, audio_mp3)
     print(f"{len(worte)} Woerter erkannt")
 
-    pfad = font_pfad()
-    fliesstext_font = ImageFont.truetype(pfad, FONTSIZE)
-    fonts = {
-        "absatz": fliesstext_font,
-        "punkt": fliesstext_font,
-        "ueberschrift": ImageFont.truetype(pfad, UEBERSCHRIFT_FONTSIZE),
-    }
+    fonts = fonts_laden()
     zeilen: list[Zeile] = []
     for block, block_worte in zip(bloecke, worte_zu_bloecken(worte, bloecke)):
         if block_worte:
             zeilen.extend(in_zeilen_umbrechen(block_worte, fonts[block.art], block.art))
     print(f"{len(zeilen)} Zeilen in {len(bloecke)} Bloecken")
-    ass_erzeugen(zeilen, fonts, ass_datei)
+    ass_erzeugen(zeilen, ass_datei)
 
     print("baue Video ...")
     video_erzeugen(audio_mp3, ass_datei, video_mp4)

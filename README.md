@@ -34,12 +34,16 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    nackte Thread-URLs und das GLOSSAR raus; die Blockstruktur — Absätze,
    ##-Überschriften, Aufzählungspunkte — bleibt erhalten), vertont per
    `edge-tts` (Stimme `de-DE-KatjaNeural`) und baut mit `ffmpeg`/`libass`
-   ein Video, in dem der Bericht als dichter, formatierter Fliesstext
-   (Absatzabstände, farbige Überschriften, Aufzählungszeichen) kontinuierlich
-   durchs Bild scrollt und das jeweils gesprochene Wort farblich hervorgehoben
-   wird (generiertes `.ass`, pro Wort ein deckungsgleiches Overlay statt
-   nativem ASS-Karaoke; der Text läuft als starrer Block entlang einer
-   global verankerten Scroll-Funktion, die sich dem Sprechtempo anpasst). Upload als **unlisted** über die YouTube Data API v3
+   ein Video, in dem der Bericht wie im Markdown gesetzt kontinuierlich
+   durchs Bild scrollt — linksbündig, Fliesstext mit Satzzeichen, fette
+   Überschriften, Aufzählungen mit hängendem Einzug — und das jeweils
+   gesprochene Wort farblich hervorgehoben wird. Gerendert werden die
+   Quell-Tokens des Berichts (edge-tts-WordBoundary-Texte sind
+   satzzeichenlos und liefern nur die Zeitfenster); die Hervorhebung ist
+   derselbe Zeilenstring mit per `\alpha` maskierten Nachbarwörtern und
+   dadurch pixelgenau deckungsgleich. Der Text läuft als starrer Block
+   entlang einer global verankerten Scroll-Funktion, die sich dem
+   Sprechtempo anpasst. Upload als **unlisted** über die YouTube Data API v3
    (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
    `google-api-python-client`). OAuth-Zugangsdaten liegen wie beim
    Mailversand ausserhalb des Repos
