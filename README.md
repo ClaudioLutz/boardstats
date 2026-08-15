@@ -64,7 +64,11 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    verhindert Doppel-Uploads. Der Video-Titel kommt aus der vom Report-Lauf
    erzeugten `titel.json` (dynamischer Tages-Hook); fehlt sie oder ist sie
    unbrauchbar, fällt der Upload auf den statischen Serientitel
-   «/biz/-Lagebericht {datum}» zurück.
+   «/biz/-Lagebericht {datum}» zurück. Die Videobeschreibung enthält den
+   Berichtstext selbst (Markdown-Auszeichnung entfernt) und darunter die
+   Quell-Threads; da YouTube nur 5000 Zeichen zulässt, wird an einer
+   Abschnittsgrenze gekappt, wobei die Thread-Links ihr Budget vorab
+   bekommen. Auf das eigene Repo wird dort nicht verlinkt.
 
 ## Öffentliches Archiv
 

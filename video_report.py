@@ -65,8 +65,10 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "beschreibung": (
             "Automatisierter Lagebericht aus dem 4chan-Board /biz/ (Business & "
             "Finance) vom {datum}. Diskurs-Dokumentation, keine Anlageberatung."
-            "\n\nVollstaendiger Text mit Quellen: {url}"
         ),
+        "quellen": "Quell-Threads (4chan loescht sie nach wenigen Tagen):",
+        "kappung": ("[Text hier gekuerzt - YouTube laesst in der Beschreibung "
+                    "nur 5000 Zeichen zu.]"),
     },
     "en": {
         "bericht": "bericht_en.md",
@@ -77,8 +79,10 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "beschreibung": (
             "Automated situation report from the 4chan board /biz/ (Business & "
             "Finance), {datum}. Discourse documentation, not financial advice."
-            "\n\nFull text with sources: {url}"
         ),
+        "quellen": "Source threads (4chan deletes them after a few days):",
+        "kappung": ("[Text truncated here - YouTube allows only 5000 characters "
+                    "in the description.]"),
     },
 }
 FONT_NORMAL_KANDIDATEN = [
@@ -89,6 +93,11 @@ FONT_FETT_KANDIDATEN = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "C:/Windows/Fonts/arialbd.ttf",
 ]
+
+# YouTube-Limit sind 5000 Zeichen; konservativ in UTF-8-Bytes gerechnet,
+# damit Umlaute die Schranke nicht heimlich sprengen.
+BESCHREIBUNG_MAX_BYTES = 4900
+EIGENES_REPO = "github.com/ClaudioLutz"
 
 CANVAS_W = 1280
 CANVAS_H = 720
@@ -557,6 +566,100 @@ def titel_laden(tag_dir: Path, sprache: str, fallback: str) -> str:
     return titel[:100].rstrip()
 
 
+def thread_links(tag_dir: Path) -> list[str]:
+    """Quell-Thread-URLs des Tages aus der Extrakt-Uebersicht (README.md),
+    in deren Reihenfolge (absteigend nach Substanzdichte)."""
+    try:
+        uebersicht = (tag_dir / "README.md").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    ids: list[str] = []
+    for tid in re.findall(r"\((\d{4,})\.md\)", uebersicht):
+        if tid not in ids:
+            ids.append(tid)
+    return [f"https://boards.4chan.org/biz/thread/{t}" for t in ids]
+
+
+def _bytes(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def _fuer_beschreibung(zeile: str) -> str:
+    """Eine Berichtszeile als Klartext: Markdown-Auszeichnung und jeder Verweis
+    aufs eigene Repo raus, Thread-URLs bleiben stehen."""
+    # Das eigene GitHub-Repo wird in der oeffentlichen Beschreibung nicht
+    # verlinkt - weder als nackte URL noch als Markdown-Link auf eine Datei
+    # darin. Fremde Repos bleiben stehen, sie sind inhaltlicher Beleg.
+    zeile = re.sub(rf"https?://\S*{re.escape(EIGENES_REPO)}\S*", "", zeile)
+    zeile = re.sub(r"\[[^\]]*\]\([^)]*\.md[^)]*\)", "", zeile)
+    zeile = re.sub(r"\[([^\]]*)\]\((https?://[^)]*)\)", r"\1: \2", zeile)
+    if set(zeile.strip()) <= {"-", "*", "_"} and len(zeile.strip()) >= 3:
+        return ""  # horizontale Trennlinie
+    zeile = re.sub(r"^#+\s*", "", zeile)          # Ueberschriften-Marker
+    zeile = zeile.replace("**", "")
+    if zeile.startswith("*") and zeile.rstrip().endswith("*"):
+        zeile = zeile.strip().strip("*")          # kursive Kopfzeile
+    # "<" und ">" sind in YouTube-Metadaten verboten (Greentext im Zitat).
+    return re.sub(r"[ \t]+", " ", zeile.replace("<", "").replace(">", "")).rstrip()
+
+
+def _abschnitte(markdown: str) -> list[str]:
+    """Bericht in bereinigte Abschnitte schneiden (je ab einer ##-Ueberschrift),
+    damit spaeter an einer Abschnittsgrenze gekappt werden kann."""
+    bloecke: list[list[str]] = [[]]
+    for roh in markdown.splitlines():
+        if roh.startswith("# "):
+            continue  # H1 wiederholt nur den Videotitel
+        if roh.startswith("## "):
+            bloecke.append([])
+        zeile = _fuer_beschreibung(roh)
+        if zeile or (bloecke[-1] and bloecke[-1][-1]):
+            bloecke[-1].append(zeile)
+    return [t for t in ("\n".join(b).strip() for b in bloecke) if t]
+
+
+def _auf_bytes_kappen(text: str, budget: int) -> str:
+    if _bytes(text) <= budget:
+        return text
+    aus: list[str] = []
+    rest = budget
+    for zeile in text.split("\n"):
+        if _bytes(zeile) + 1 > rest:
+            break
+        aus.append(zeile)
+        rest -= _bytes(zeile) + 1
+    return "\n".join(aus).rstrip()
+
+
+def beschreibung_bauen(tag_dir: Path, markdown: str, cfg: dict[str, str],
+                       datum: str) -> str:
+    """Kopfzeile + Berichtstext im Rohtext + Liste der Quell-Threads. YouTube
+    laesst nur 5000 Zeichen zu, der Bericht ist gut doppelt so lang - deshalb
+    wird an einer Abschnittsgrenze gekappt. Die Thread-Links bekommen ihr
+    Budget vorab, sie duerfen der Kappung nie zum Opfer fallen."""
+    kopf = cfg["beschreibung"].format(datum=datum)
+    links = thread_links(tag_dir)
+    fuss = "\n\n" + cfg["quellen"] + "\n" + "\n".join(links) if links else ""
+    hinweis = "\n\n" + cfg["kappung"]
+    budget = BESCHREIBUNG_MAX_BYTES - _bytes(kopf) - _bytes(fuss) - _bytes(hinweis)
+
+    abschnitte = _abschnitte(markdown)
+    genommen: list[str] = []
+    rest = budget
+    for abschnitt in abschnitte:
+        if _bytes(abschnitt) + 2 > rest:
+            break
+        genommen.append(abschnitt)
+        rest -= _bytes(abschnitt) + 2
+    if not genommen and abschnitte:  # nicht mal der erste Abschnitt passt
+        genommen = [_auf_bytes_kappen(abschnitte[0], budget)]
+
+    text = kopf + ("\n\n" + "\n\n".join(genommen) if genommen else "")
+    if len(genommen) < len(abschnitte):
+        text += hinweis
+    return text + fuss
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="de")
@@ -602,11 +705,12 @@ def main() -> None:
     print("baue Video ...")
     video_erzeugen(audio_mp3, ass_datei, video_mp4)
 
-    beschreibung = cfg["beschreibung"].format(
-        datum=datum,
-        url=(f"https://github.com/ClaudioLutz/boardstats/blob/main/"
-             f"extrakte/{datum}/{cfg['bericht']}"),
-    )
+    try:
+        beschreibung = beschreibung_bauen(tag_dir, markdown, cfg, datum)
+    except Exception as e:
+        # Ein Fehler beim Zusammenbau darf den Upload nie verhindern.
+        print(f"Beschreibung nicht aufgebaut ({e}) - nehme nur die Kopfzeile")
+        beschreibung = cfg["beschreibung"].format(datum=datum)
     print("lade auf YouTube hoch ...")
     video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
                                            privacy_status="public")
