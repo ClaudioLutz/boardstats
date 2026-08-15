@@ -30,7 +30,17 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    kleiner Sonnet-Aufruf erzeugt aus dem Bericht je Sprache einen
    reisserischen YouTube-Titel (`titel.json`, Hook + Serien-Suffix); die
    Titel der letzten 14 Tage gehen als Sperrliste mit, damit sich der
-   Aufhänger auch bei Dauerthemen nicht wiederholt.
+   Aufhänger auch bei Dauerthemen nicht wiederholt. Derselbe Aufruf liefert
+   je Sprache ein kurzes Schlagwort für das Vorschaubild. Danach sucht der
+   Lauf ein Bildmotiv für dieses Vorschaubild: die Kandidaten kommen aus den
+   Anhängen der ausgewerteten Threads im Crawl-Snapshot (OP-Bilder zuerst,
+   gespoilerte, gelöschte, zu kleine und Bannerformate fallen raus), Sonnet
+   sieht sie mit dem Read-Werkzeug an und wählt höchstens eines aus. Der
+   Standard ist Ablehnung: ohne eigene Bildbeschreibung je Kandidat gilt die
+   Antwort als ungesehen und wird verworfen, und gewählt werden darf nur
+   eine tatsächlich heruntergeladene Datei. Das Motiv landet unter
+   `arbeit/thumbs/` und damit ausserhalb des Repos — fremdes Bildmaterial
+   gehört nicht ins öffentliche Archiv.
 
 Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
 SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
@@ -55,8 +65,12 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    entlang einer global verankerten Scroll-Funktion, die sich dem
    Sprechtempo anpasst. Upload als **öffentliches** Video über die YouTube
    Data API v3 (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
-   `google-api-python-client`); als Vorschaubild wird `assets/thumbnail.jpg`
-   gesetzt (`thumbnails/set`, braucht einen verifizierten Kanal).
+   `google-api-python-client`). Das Vorschaubild baut `thumbnail.py` je
+   Sprache neu: fester Serienrahmen (dunkler Grund, Amber-Akzent, Kopf- und
+   Fusszeile) mit dem Schlagwort des Tages in grosser Schrift, als Motiv
+   rechts das geprüfte Board-Bild aus `arbeit/thumbs/` und ersatzweise das
+   statische `assets/thumbnail.jpg`; gesetzt wird es über `thumbnails/set`,
+   das einen verifizierten Kanal braucht.
    OAuth-Zugangsdaten liegen wie beim Mailversand ausserhalb des Repos
    (`~/.config/boardstats/youtube_client.json`/`youtube_token.json`,
    einmalig per `youtube_auth_setup.py` interaktiv eingerichtet). Ein
@@ -96,6 +110,7 @@ offenen Fragen je Thread.
 | `bericht_html.py` | Klartext-Bericht → HTML-Mail (Inline-Styles) |
 | `send_mail.py` | SMTP-Versand (OAuth-Refresh oder App-Passwort) |
 | `video_report.py` | Bericht → TTS → Video, Upload zu YouTube |
+| `thumbnail.py` | Vorschaubild: Serienrahmen + Tages-Schlagwort + Motiv |
 | `youtube_auth.py` | YouTube-OAuth-Refresh + Resumable-Upload |
 | `youtube_auth_setup.py` | Einmaliges interaktives YouTube-OAuth-Setup |
 | `report.sh` / `run.sh` / `video.sh` | Cron-Wrapper für Bericht, Crawl bzw. Video |

@@ -27,6 +27,7 @@ Extrakte nicht wegwirft: die Synthese laeuft mit dem, was da ist.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import logging
 import os
@@ -35,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -115,16 +117,21 @@ def claude_pfad() -> str:
 
 
 def claude_ruf(prompt: str, eingabe: str, modell: str, timeout: int,
-               tools: str | None = None) -> str:
+               tools: str | None = None, cwd: Path | None = None) -> str:
     """Ein headless-Aufruf. Die Eingabe geht ueber stdin, nicht ueber die
     Kommandozeile: Windows kappt Kommandozeilen bei ~32767 Zeichen, und die
-    Buendel sind groesser."""
+    Buendel sind groesser.
+
+    cwd wird nur dort gesetzt, wo der Aufruf Dateien lesen soll (Sichtpruefung
+    der Bildkandidaten) - Werkzeuge duerfen nur unterhalb des Arbeitsordners
+    zugreifen. Die uebrigen Aufrufe bleiben bewusst ohne."""
     cmd = [claude_pfad(), "-p", prompt, "--model", modell,
            "--output-format", "text"]
     if tools:
         cmd += ["--allowedTools", tools]
     r = subprocess.run(cmd, input=eingabe, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=timeout)
+                       encoding="utf-8", errors="replace", timeout=timeout,
+                       cwd=cwd)
     return (r.stdout or "") + (("\n" + r.stderr) if r.returncode and r.stderr else "")
 
 
@@ -708,11 +715,20 @@ Regeln:
   dieser Hooks und keine nahe Umformulierung davon wiederkommen. Bleibt das
   Tagesthema dasselbe, wähle einen anderen Aspekt, eine neue Zahl oder eine
   neue Wendung.
-- Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
-  Code-Zaun: {"hook_de": "...", "hook_en": "..."}
+
+Schreibe ausserdem je Sprache das Schlagwort für das Vorschaubild des
+Videos: höchstens drei Wörter und 20 Zeichen, der Kern des Hooks (etwa
+"CHAIN SPLIT" oder "MONERO GEDOXXT"). Es steht auf dem Bild in grossen
+Lettern und muss auf einem Handy lesbar bleiben, also keine ganzen Sätze
+und keine Satzzeichen.
+
+Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
+Code-Zaun: {"hook_de": "...", "hook_en": "...", "thumb_de": "...",
+"thumb_en": "..."}
 """
 
 TITEL_SUFFIX = " | /biz/ "
+THUMB_MAX_ZEICHEN = 20  # Schlagwort fuers Vorschaubild, Handy-Lesbarkeit
 
 
 def bisherige_titel(datum: str, tage: int = 14) -> list[str]:
@@ -727,8 +743,14 @@ def bisherige_titel(datum: str, tage: int = 14) -> list[str]:
             daten = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(daten, dict):
-            titel += [v for v in daten.values() if isinstance(v, str) and v.strip()]
+        if not isinstance(daten, dict):
+            continue
+        # Nur die Titel selbst: titel.json fuehrt daneben die Schlagworte
+        # fuers Vorschaubild, die keine Wiederholungssperre brauchen.
+        for schluessel in ("de", "en"):
+            wert = daten.get(schluessel)
+            if isinstance(wert, str) and wert.strip():
+                titel.append(wert)
     return titel
 
 
@@ -738,6 +760,27 @@ def _hook_bereinigen(hook: str) -> str:
     # 75 Zeichen lassen dem Serien-Suffix Platz unter dem 100-Zeichen-Limit.
     hook = hook.replace("<", "").replace(">", "").replace(" — ", ": ").replace("—", "-")
     return re.sub(r"\s+", " ", hook).strip()[:75].rstrip()
+
+
+def _thumb_bereinigen(schlagwort: str, hook: str) -> str:
+    """Schlagwort fuers Vorschaubild: Grossbuchstaben, keine Satzzeichen,
+    hoechstens THUMB_MAX_ZEICHEN. Fehlt es oder bleibt nichts uebrig, wird es
+    aus dem Hook abgeleitet - dessen grossgeschriebene Woerter sind genau die
+    Zuspitzung, die aufs Bild gehoert."""
+    def saeubern(roh: str) -> str:
+        return re.sub(r"\s+", " ",
+                      re.sub(r"[^0-9A-Za-zÄÖÜäöü %$&+.-]+", " ", roh)).strip().upper()
+
+    kandidat = saeubern(schlagwort)
+    if not kandidat:
+        gross = [w for w in hook.split() if len(w) > 2 and w.isupper()]
+        kandidat = saeubern(" ".join(gross) or hook)
+    aus = ""
+    for wort in kandidat.split()[:3]:
+        if aus and len(f"{aus} {wort}") > THUMB_MAX_ZEICHEN:
+            break
+        aus = f"{aus} {wort}".strip()
+    return aus[:THUMB_MAX_ZEICHEN].strip()
 
 
 def _hook_normalisiert(hook: str) -> str:
@@ -775,12 +818,206 @@ def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
         doppelt = [h for h in hooks.values() if _hook_normalisiert(h) in gesehen]
         if not doppelt:
             j, m, t = datum.split("-")
+            # Das Bild-Schlagwort ist Beiwerk: fehlt es, wird es aus dem Hook
+            # abgeleitet statt den ganzen Titel scheitern zu lassen.
             return {"de": f"{hooks['de']}{TITEL_SUFFIX}{t}.{m}.{j}",
-                    "en": f"{hooks['en']}{TITEL_SUFFIX}{datum}"}
+                    "en": f"{hooks['en']}{TITEL_SUFFIX}{datum}",
+                    "thumb_de": _thumb_bereinigen(
+                        str(daten.get("thumb_de") or ""), hooks["de"]),
+                    "thumb_en": _thumb_bereinigen(
+                        str(daten.get("thumb_en") or ""), hooks["en"])}
         hinweis = ("\nZUSATZ: Dein letzter Vorschlag wiederholte einen schon "
                    "verwendeten Hook (" + "; ".join(doppelt)
                    + ") - waehle zwingend einen anderen Aufhaenger.")
     raise RuntimeError(f"Hook wiederholt sich trotz zweitem Versuch: {doppelt}")
+
+
+# ------------------------------------------------- Motiv fuers Vorschaubild
+
+MOTIV_THREADS = 8        # so viele der substanzstaerksten Threads liefern Bilder
+MOTIV_KANDIDATEN = 5     # so viele gehen an die Sichtpruefung
+MOTIV_MIN_BREITE = 500   # schmaler wird auf der halben Bildflaeche matschig
+MOTIV_MIN_HOEHE = 400
+MOTIV_MAX_BYTES = 4_000_000
+MOTIV_ENDUNGEN = (".jpg", ".jpeg", ".png")
+MOTIV_MAGIC = (b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")
+MOTIV_SEITE = (0.5, 2.2)  # Banner und schmale Streifen taugen nicht als Motiv
+TIMEOUT_MOTIV = 420
+BILD_BASIS = "https://i.4cdn.org/biz"
+BILD_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; boardstats/1.0)"}
+
+MOTIV_PROMPT = """\
+Du wählst das Motiv für das YouTube-Vorschaubild eines Nachrichtenvideos aus.
+Die Kandidaten stammen aus den heute ausgewerteten Threads des 4chan-Boards
+/biz/ und sind ungeprüftes Fremdmaterial.
+
+Sieh dir JEDES unten genannte Bild mit dem Read-Werkzeug an. Urteile nur nach
+dem, was du wirklich siehst, und rate nichts.
+
+Ein Bild ist NUR dann geeignet, wenn alles zutrifft:
+- Es verstösst nicht gegen die YouTube-Richtlinien für Vorschaubilder: keine
+  Nacktheit und nichts Sexualisiertes, keine Gewalt, kein Blut, keine Hass-
+  oder Extremismus-Symbolik, keine Beschimpfungen im Bildtext, keine Drogen,
+  keine reale Person in kompromittierender Lage.
+- Es passt zum Thema des Tages, das dir in der Eingabe genannt wird.
+- Es wirkt als Vorschaubild: ein klar erkennbares Motiv, das auch klein noch
+  wirkt. Screenshots mit viel Kleinschrift, nichtssagende Charts und reine
+  Textbilder sind ungeeignet.
+Im Zweifel ist ein Bild ungeeignet.
+
+Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
+Code-Zaun. Die Beschreibung ist Pflicht und benennt sachlich, was auf genau
+diesem Bild zu sehen ist:
+{"bilder": [{"datei": "...", "beschreibung": "...", "geeignet": true,
+"grund": "..."}], "wahl": "Dateiname des besten geeigneten Bildes oder null"}
+"""
+
+
+def _snapshot_posts(threads: set[str]) -> dict[str, list[dict]]:
+    """Posts der genannten Threads aus dem juengsten Crawl-Snapshot. Leer,
+    wenn keiner da ist: mit --host laeuft der Crawl auf einem anderen Rechner,
+    dann gibt es hier keine Rohdaten und damit kein Board-Bild."""
+    snapshots = sorted((BASE / "raw").glob("*.jsonl.gz"))
+    if not snapshots:
+        return {}
+    posts: dict[str, list[dict]] = {}
+    with gzip.open(snapshots[-1], "rt", encoding="utf-8") as f:
+        for zeile in f:
+            try:
+                daten = json.loads(zeile)
+            except json.JSONDecodeError:
+                continue
+            no = str(daten.get("thread"))
+            if no in threads:
+                posts[no] = daten.get("posts") or []
+    return posts
+
+
+def motiv_kandidaten(manifest: dict) -> list[dict]:
+    """Bild-Anhaenge der substanzstaerksten Threads des Tages. Nur was als
+    Vorschaubild taugen kann: gaengiges Format, gross genug, nicht gespoilert,
+    nicht geloescht, je Bild nur einmal. OP-Bilder zuerst - sie tragen das
+    Thema des Threads."""
+    threads = [str(b["thread"]) for b in manifest.get("buendel", [])][:MOTIV_THREADS]
+    posts = _snapshot_posts(set(threads))
+    gesehen: set[str] = set()
+    aus: list[dict] = []
+    for no in threads:  # Reihenfolge des Manifests = Substanzdichte
+        for post in posts.get(no, []):
+            tim, ext = post.get("tim"), str(post.get("ext") or "").lower()
+            if not tim or ext not in MOTIV_ENDUNGEN:
+                continue
+            # Gespoilerte Bilder sind ueberproportional NSFW, von Moderatoren
+            # geloeschte gibt es ohnehin nicht mehr.
+            if post.get("spoiler") or post.get("filedeleted"):
+                continue
+            breite, hoehe = post.get("w") or 0, post.get("h") or 0
+            if (breite < MOTIV_MIN_BREITE or hoehe < MOTIV_MIN_HOEHE
+                    or (post.get("fsize") or 0) > MOTIV_MAX_BYTES
+                    or not MOTIV_SEITE[0] <= breite / hoehe <= MOTIV_SEITE[1]):
+                continue
+            md5 = str(post.get("md5") or tim)
+            if md5 in gesehen:
+                continue
+            gesehen.add(md5)
+            aus.append({"thread": no, "datei": f"{tim}{ext}",
+                        "url": f"{BILD_BASIS}/{tim}{ext}",
+                        "op": (post.get("resto") or 0) == 0})
+    aus.sort(key=lambda k: not k["op"])  # stabil: OP-Bilder nach vorn
+    return aus[:MOTIV_KANDIDATEN]
+
+
+def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
+    """Kandidaten herunterladen, mit dem Rate-Limit des Crawlers (1 req/s).
+    Was kein Bild ist, fliegt sofort raus."""
+    if ziel_dir.exists():
+        shutil.rmtree(ziel_dir)  # Kandidaten des Vortags nicht mitschleppen
+    ziel_dir.mkdir(parents=True, exist_ok=True)
+    geladen: list[Path] = []
+    for k in kandidaten:
+        try:
+            req = urllib.request.Request(k["url"], headers=BILD_HEADERS)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                daten = resp.read(MOTIV_MAX_BYTES + 1)
+        except Exception as e:
+            log.info("Motiv %s nicht geladen: %s", k["datei"], e)
+            continue
+        finally:
+            time.sleep(1.0)
+        if len(daten) > MOTIV_MAX_BYTES or not daten.startswith(MOTIV_MAGIC):
+            continue
+        ziel = ziel_dir / k["datei"]
+        ziel.write_bytes(daten)
+        geladen.append(ziel)
+    return geladen
+
+
+def motiv_pruefen(bilder: list[Path], thema: str) -> Path | None:
+    """Sichtpruefung der Kandidaten durch das Modell.
+
+    Der Standard ist Ablehnung. Benutzt wird ein Board-Bild nur, wenn die
+    Antwort erkennbar aus echtem Hinsehen stammt - je Bild eine eigene,
+    nicht leere Beschreibung - und genau einen der heruntergeladenen
+    Kandidaten waehlt. Ein headless-Aufruf kann sonst ein wohlgeformtes
+    Urteil liefern, ohne die Dateien je geoeffnet zu haben (verweigertes
+    Werkzeug, Pfad ausserhalb des Arbeitsordners), und ungepruefte
+    Board-Bilder als oeffentliches Vorschaubild kosten im schlimmsten Fall
+    den Kanal."""
+    if not bilder:
+        return None
+    nach_name = {p.name: p for p in bilder}
+    eingabe = (f"Thema des Tages: {thema}\n\nKandidaten (Dateiname: Pfad):\n"
+               + "\n".join(f"- {p.name}: {p}" for p in bilder))
+    out = claude_ruf(MOTIV_PROMPT, eingabe, "sonnet", TIMEOUT_MOTIV,
+                     tools="Read", cwd=BASE).strip()
+    out = re.sub(r"^```(?:json)?\s*|\s*```$", "", out)
+    daten = json.loads(out)
+    urteile = daten.get("bilder")
+    if not isinstance(urteile, list) or len(urteile) < len(bilder):
+        raise RuntimeError(f"Sichtpruefung unvollstaendig: {out[:200]!r}")
+    beschreibungen = set()
+    for urteil in urteile:
+        text = re.sub(r"\W+", " ", str(urteil.get("beschreibung") or "")).strip()
+        if len(text) < 20:
+            raise RuntimeError(f"Bild {urteil.get('datei')!r} ohne Beschreibung "
+                               f"- vermutlich ungesehen")
+        beschreibungen.add(text.lower())
+    if len(beschreibungen) < len(urteile):
+        raise RuntimeError("dieselbe Beschreibung fuer mehrere Bilder - "
+                           "vermutlich ungesehen")
+
+    wahl = daten.get("wahl")
+    if not isinstance(wahl, str) or wahl not in nach_name:
+        log.info("Sichtpruefung waehlt kein Board-Bild aus")
+        return None
+    urteil = next((u for u in urteile if u.get("datei") == wahl), None)
+    if not urteil or not urteil.get("geeignet"):
+        log.info("gewaehltes Bild ist nicht als geeignet markiert")
+        return None
+    log.info("Motiv: %s (%s)", wahl, urteil.get("grund"))
+    return nach_name[wahl]
+
+
+def motiv_waehlen(manifest: dict, datum: str, thema: str) -> Path | None:
+    """Board-Bild des Tages fuers Vorschaubild aussuchen und bereitlegen.
+
+    Das Ergebnis landet unter arbeit/ und damit ausserhalb des Repos: fremdes
+    Bildmaterial gehoert nicht ins oeffentliche Archiv. Findet sich keins,
+    nimmt video_report.py das Serienbild aus assets/."""
+    thumbs = ARBEIT / "thumbs"
+    thumbs.mkdir(parents=True, exist_ok=True)
+    for alt in thumbs.glob(f"{datum}.*"):
+        alt.unlink()  # Rest eines frueheren Laufs nicht weiterverwenden
+    kandidaten = motiv_kandidaten(manifest)
+    if not kandidaten:
+        log.info("keine Bild-Kandidaten im Snapshot")
+        return None
+    gewaehlt = motiv_pruefen(motiv_laden(kandidaten, thumbs / "kandidaten"), thema)
+    if gewaehlt is None:
+        return None
+    ziel = thumbs / f"{datum}{gewaehlt.suffix}"
+    shutil.copy2(gewaehlt, ziel)
+    return ziel
 
 
 def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
@@ -802,6 +1039,7 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         # weder Versand noch Veroeffentlichung des deutschen Berichts stoppen.
         log.warning("Englische Uebersetzung fehlgeschlagen (deutscher "
                     "Bericht unberuehrt): %s", e)
+    titel: dict[str, str] = {}
     try:
         log.info("Erzeuge Video-Titel (Sonnet) ...")
         titel = titel_generieren(bericht_md, datum)
@@ -814,6 +1052,15 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         # ein Titelfehler darf den Upload nie verhindern.
         log.warning("Titel-Generierung fehlgeschlagen (Video nimmt den "
                     "statischen Serientitel): %s", e)
+    try:
+        log.info("Suche Motiv fuers Vorschaubild (Sonnet, Sichtpruefung) ...")
+        thema = titel.get("de") or bericht_md[:400]
+        log.info("Vorschaubild-Motiv: %s",
+                 motiv_waehlen(manifest, datum, thema) or "keins, Serienbild")
+    except Exception as e:
+        # Auch hier gilt: das Video entsteht mit dem Serienbild weiter.
+        log.warning("Motiv-Auswahl fehlgeschlagen (Video nimmt das "
+                    "Serienbild): %s", e)
     (tag_dir / "README.md").write_text(
         _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
     markdown_index_aktualisieren()

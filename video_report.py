@@ -48,12 +48,15 @@ from pathlib import Path
 
 from PIL import ImageFont
 
+import thumbnail
 import youtube_auth
 
 BASE = Path(__file__).parent
 EXTRAKTE = BASE / "extrakte"
 VIDEO_DIR = BASE / "video"
-THUMBNAIL = BASE / "assets" / "thumbnail.jpg"
+THUMBNAIL = BASE / "assets" / "thumbnail.jpg"   # Serienbild, wenn der Tag keins hat
+MOTIV_DIR = BASE / "arbeit" / "thumbs"          # Board-Bild des Tages (Report-Lauf)
+THUMB_MAX_ZEICHEN = 20
 
 SPRACHEN: dict[str, dict[str, str]] = {
     "de": {
@@ -66,6 +69,7 @@ SPRACHEN: dict[str, dict[str, str]] = {
             "Automatisierter Lagebericht aus dem 4chan-Board /biz/ (Business & "
             "Finance) vom {datum}. Diskurs-Dokumentation, keine Anlageberatung."
         ),
+        "thumb_fuss": "Lagebericht {datum}",
         "quellen": "Quell-Threads (4chan loescht sie nach wenigen Tagen):",
         "kappung": ("[Text hier gekuerzt - YouTube laesst in der Beschreibung "
                     "nur 5000 Zeichen zu.]"),
@@ -80,6 +84,7 @@ SPRACHEN: dict[str, dict[str, str]] = {
             "Automated situation report from the 4chan board /biz/ (Business & "
             "Finance), {datum}. Discourse documentation, not financial advice."
         ),
+        "thumb_fuss": "Situation report {datum}",
         "quellen": "Source threads (4chan deletes them after a few days):",
         "kappung": ("[Text truncated here - YouTube allows only 5000 characters "
                     "in the description.]"),
@@ -566,6 +571,57 @@ def titel_laden(tag_dir: Path, sprache: str, fallback: str) -> str:
     return titel[:100].rstrip()
 
 
+def _thumb_aus_titel(titel: str) -> str:
+    """Notbehelf, wenn titel.json kein Schlagwort fuers Vorschaubild hat:
+    die grossgeschriebenen Woerter des Titels sind dessen Zuspitzung, sonst
+    tun es die ersten Woerter."""
+    ohne_suffix = titel.split(" | ")[0]
+    woerter = [w for w in ohne_suffix.split() if len(w) > 2 and w.isupper()]
+    text = " ".join(woerter or ohne_suffix.split())
+    text = re.sub(r"\s+", " ", re.sub(r"[^0-9A-Za-zÄÖÜäöü %$&+.-]+", " ", text))
+    aus = ""
+    for wort in text.strip().upper().split()[:3]:
+        if aus and len(f"{aus} {wort}") > THUMB_MAX_ZEICHEN:
+            break
+        aus = f"{aus} {wort}".strip()
+    return aus[:THUMB_MAX_ZEICHEN].strip()
+
+
+def thumb_text_laden(tag_dir: Path, sprache: str, titel: str) -> str:
+    """Schlagwort fuers Vorschaubild aus titel.json (Report-Lauf), sonst aus
+    dem Titel abgeleitet."""
+    try:
+        wert = json.loads((tag_dir / "titel.json").read_text(encoding="utf-8")
+                          ).get(f"thumb_{sprache}")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        wert = None
+    if isinstance(wert, str) and wert.strip():
+        return wert.strip()[:THUMB_MAX_ZEICHEN].strip().upper()
+    return _thumb_aus_titel(titel)
+
+
+def vorschaubild(arbeit: Path, tag_dir: Path, cfg: dict[str, str], sprache: str,
+                 datum: str, titel: str) -> Path | None:
+    """Vorschaubild des Tages bauen: fester Serienrahmen mit dem Schlagwort
+    des Tages, als Motiv das vom Report-Lauf geprueft ausgewaehlte Board-Bild
+    und sonst das statische Serienbild. Scheitert der Aufbau, wird das
+    Serienbild unveraendert gesetzt - lieber statisch als gar keins."""
+    motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
+    motiv = motive[0] if motive else (THUMBNAIL if THUMBNAIL.exists() else None)
+    text = thumb_text_laden(tag_dir, sprache, titel)
+    j, m, t = datum.split("-")
+    fuss = cfg["thumb_fuss"].format(datum=f"{t}.{m}.{j}" if sprache == "de"
+                                    else datum)
+    print(f"Vorschaubild: Schlagwort {text!r}, Motiv "
+          f"{motiv.name if motiv else 'keins'}")
+    try:
+        return thumbnail.bauen(text, motiv,
+                               arbeit / f"thumbnail{cfg['suffix']}.jpg", fuss=fuss)
+    except Exception as e:
+        print(f"Vorschaubild nicht gebaut ({e}) - nehme das Serienbild")
+        return THUMBNAIL if THUMBNAIL.exists() else None
+
+
 def thread_links(tag_dir: Path) -> list[str]:
     """Quell-Thread-URLs des Tages aus der Extrakt-Uebersicht (README.md),
     in deren Reihenfolge (absteigend nach Substanzdichte)."""
@@ -736,14 +792,15 @@ def main() -> None:
     # Ein fehlendes Vorschaubild darf den gelungenen Upload nicht entwerten -
     # thumbnails/set braucht zudem einen fuer eigene Thumbnails verifizierten
     # Kanal, sonst antwortet YouTube mit 403.
-    if THUMBNAIL.exists():
+    bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
+    if bild is not None:
         try:
-            youtube_auth.thumbnail_setzen(video_id, THUMBNAIL)
-            print("Vorschaubild gesetzt")
+            youtube_auth.thumbnail_setzen(video_id, bild)
+            print(f"Vorschaubild gesetzt ({bild.name})")
         except (RuntimeError, OSError) as e:
             print(f"Vorschaubild nicht gesetzt: {e}")
     else:
-        print(f"kein Vorschaubild unter {THUMBNAIL}")
+        print(f"kein Vorschaubild gebaut und keins unter {THUMBNAIL}")
 
 
 if __name__ == "__main__":
