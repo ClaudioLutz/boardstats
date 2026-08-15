@@ -40,7 +40,12 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Antwort als ungesehen und wird verworfen, und gewählt werden darf nur
    eine tatsächlich heruntergeladene Datei. Das Motiv landet unter
    `arbeit/thumbs/` und damit ausserhalb des Repos — fremdes Bildmaterial
-   gehört nicht ins öffentliche Archiv.
+   gehört nicht ins öffentliche Archiv. Nach demselben Muster, aber mit
+   bewusst lockerer Messlatte, prüft der Lauf zusätzlich Hintergrundbilder
+   fürs Video: je ausgewertetem Thread bis zu vier Bild-Anhänge, abgelehnt
+   wird nur, was gegen die YouTube-Richtlinien verstösst (das Netz gegen
+   ungesehene Urteile bleibt dasselbe). Die freigegebenen Bilder liegen mit
+   Thread-Zuordnung unter `arbeit/motive/<datum>/`.
 
 Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
 SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
@@ -54,16 +59,21 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    nackte Thread-URLs und das GLOSSAR raus; die Blockstruktur — Absätze,
    ##-Überschriften, Aufzählungspunkte — bleibt erhalten), vertont per
    `edge-tts` (Stimme `de-DE-KatjaNeural`) und baut mit `ffmpeg`/`libass`
-   ein Video, in dem der Bericht wie im Markdown gesetzt kontinuierlich
-   durchs Bild scrollt — linksbündig, Fliesstext mit Satzzeichen, fette
-   Überschriften, Aufzählungen mit hängendem Einzug — und das jeweils
-   gesprochene Wort farblich hervorgehoben wird. Gerendert werden die
-   Quell-Tokens des Berichts (edge-tts-WordBoundary-Texte sind
+   ein Video: der Text erscheint synchron zum Gesprochenen in Happen von
+   höchstens drei Zeilen am unteren Bildrand (linksbündig, Fliesstext mit
+   Satzzeichen, Aufzählungen mit hängendem Einzug), ##-Überschriften stehen
+   während ihrer Sprechzeit als grosse Titelkarte weiter oben, und das
+   jeweils gesprochene Wort wird farblich hervorgehoben. Gerendert werden
+   die Quell-Tokens des Berichts (edge-tts-WordBoundary-Texte sind
    satzzeichenlos und liefern nur die Zeitfenster); die Hervorhebung ist
    derselbe Zeilenstring mit per `\alpha` maskierten Nachbarwörtern und
-   dadurch pixelgenau deckungsgleich. Der Text läuft als starrer Block
-   entlang einer global verankerten Scroll-Funktion, die sich dem
-   Sprechtempo anpasst. Upload als **öffentliches** Video über die YouTube
+   dadurch pixelgenau deckungsgleich. Als Hintergrund laufen — entsättigt,
+   stark abgedunkelt und leicht unscharf — die freigegebenen Bild-Anhänge
+   der gerade besprochenen Threads (`arbeit/motive/<datum>/`, Zuordnung
+   über die Quell-URLs unter jedem Berichtsabschnitt); Abschnitte ohne
+   freigegebenes Bild bekommen das Vorschaubild des Tages, und scheitert
+   der Hintergrund-Aufbau ganz, bleibt die einfarbige Fläche.
+   Upload als **öffentliches** Video über die YouTube
    Data API v3 (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
    `google-api-python-client`). Das Vorschaubild baut `thumbnail.py` je
    Sprache neu: fester Serienrahmen (dunkler Grund, Amber-Akzent, Kopf- und

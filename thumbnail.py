@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 BREITE = 1280
 HOEHE = 720
@@ -41,6 +41,14 @@ ZEILEN_FAKTOR = 1.12
 
 JPEG_QUALITAET = 88
 MAX_BYTES = 2_000_000         # harte Grenze von thumbnails/set
+
+# Videohintergrund: das Bild soll Kulisse hinter dem Untertiteltext sein,
+# nicht Konkurrenz - deshalb deutlich staerker abgedunkelt und entsaettigt
+# als das Thumbnail-Motiv, dazu leicht unscharf (verdeckt auch die
+# Kompressionsartefakte kleiner Board-Bilder auf voller Bildflaeche).
+HG_FARBE = 0.50
+HG_HELLIGKEIT = 0.42
+HG_UNSCHAERFE = 3
 
 # Dieselben Kandidaten wie im Video-Renderer; hier erneut aufgefuehrt, damit
 # das Modul ohne video_report.py nutzbar bleibt (Importrichtung: video -> thumb).
@@ -121,6 +129,35 @@ def _passende_schrift(text: str, breite: int, hoehe: int,
     font = ImageFont.truetype(pfad, GROESSEN[-1])
     zeilen = _umbrechen(text, font, breite, zeichnen) or [text[:18]]
     return font, zeilen[:ZEILEN_MAX]
+
+
+def videohintergrund(quelle: Path | None, ziel: Path) -> Path:
+    """Bild als 1280x720-Videohintergrund aufbereiten (cover-Zuschnitt,
+    entsaettigt, stark abgedunkelt, leicht unscharf). Ohne Quelle oder bei
+    unlesbarer Datei entsteht die einfarbige Grundflaeche - der Anrufer muss
+    sich um kaputte Bilder nicht kuemmern."""
+    bild: Image.Image
+    try:
+        if quelle is None:
+            raise OSError("keine Quelle")
+        bild = Image.open(quelle).convert("RGB")
+    except OSError:
+        Image.new("RGB", (BREITE, HOEHE), GRUND).save(ziel, "JPEG", quality=90)
+        return ziel
+    skala = max(BREITE / bild.width, HOEHE / bild.height)
+    neu = (max(BREITE, int(bild.width * skala + 0.5)),
+           max(HOEHE, int(bild.height * skala + 0.5)))
+    bild = bild.resize(neu, Image.Resampling.LANCZOS)
+    links = (bild.width - BREITE) // 2
+    # oberes Drittel statt Mitte, wie beim Thumbnail-Motiv
+    oben = min((bild.height - HOEHE) // 3, bild.height - HOEHE)
+    bild = bild.crop((links, oben, links + BREITE, oben + HOEHE))
+    bild = ImageEnhance.Color(bild).enhance(HG_FARBE)
+    bild = ImageEnhance.Brightness(bild).enhance(HG_HELLIGKEIT)
+    bild = bild.filter(ImageFilter.GaussianBlur(HG_UNSCHAERFE))
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    bild.save(ziel, "JPEG", quality=90)
+    return ziel
 
 
 def bauen(text: str, motiv: Path | None, ziel: Path, kopf: str = "4CHAN /biz/",

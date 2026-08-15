@@ -31,9 +31,21 @@ Zeitfenster fuer die Hervorhebung.
 
 Seit 14.08.2026 zweisprachig: --sprache en vertont die englische Fassung
 (bericht_en.md, von run_report.py per Sonnet rueckuebersetzt) mit englischer
-Stimme; Layout, Zuordnung und Scroll sind sprachunabhaengig. Beide Sprachen
-laufen nacheinander im selben Cron (video.sh), Uploads sind oeffentlich,
-das Vorschaubild kommt aus assets/thumbnail.jpg.
+Stimme; Layout und Zuordnung sind sprachunabhaengig. Beide Sprachen laufen
+nacheinander im selben Cron (video.sh), Uploads sind oeffentlich.
+
+v5: kein Endlos-Scroll mehr. Der Text erscheint in Happen von hoechstens
+drei Zeilen am unteren Bildrand (Formatierung wie bisher: linksbuendig,
+Aufzaehlungen mit haengendem Einzug, Wort-Hervorhebung per Alpha-Maske),
+##-Ueberschriften stehen waehrend ihrer Sprechzeit als grosse Titelkarte
+weiter oben. Dahinter laufen als Hintergrund die Bild-Anhaenge der gerade
+besprochenen Threads: der Report-Lauf legt sie gesichtet unter
+arbeit/motive/<datum>/ bereit (lockere Pruefung, nur Richtlinienverstoesse
+fallen raus), die Zuordnung Abschnitt -> Thread kommt aus den Quell-URLs
+unter jedem Berichtsabschnitt. Abschnitte ohne freigegebenes Bild bekommen
+das Vorschaubild des Tages als Hintergrund, und scheitert der ganze
+Hintergrund-Aufbau, bleibt die bisherige einfarbige Flaeche - kein
+Bildproblem darf den Upload verhindern.
 """
 from __future__ import annotations
 
@@ -56,6 +68,7 @@ EXTRAKTE = BASE / "extrakte"
 VIDEO_DIR = BASE / "video"
 THUMBNAIL = BASE / "assets" / "thumbnail.jpg"   # Serienbild, wenn der Tag keins hat
 MOTIV_DIR = BASE / "arbeit" / "thumbs"          # Board-Bild des Tages (Report-Lauf)
+HINTERGRUND_DIR = BASE / "arbeit" / "motive"    # Hintergrundbilder je Thread
 THUMB_MAX_ZEICHEN = 20
 
 SPRACHEN: dict[str, dict[str, str]] = {
@@ -107,17 +120,18 @@ EIGENES_REPO = "github.com/ClaudioLutz"
 CANVAS_W = 1280
 CANVAS_H = 720
 FONTSIZE = 34
-UEBERSCHRIFT_FONTSIZE = 44
 ZEILENHOEHE = 44
-ABSATZ_ABSTAND = 20        # zusaetzlicher Abstand vor einem neuen Absatz
-UEBERSCHRIFT_ABSTAND = 36  # zusaetzlicher Abstand vor einer Ueberschrift
-PUNKT_ABSTAND = 12         # zusaetzlicher Abstand vor einem Aufzaehlungspunkt
 MARGIN_LINKS = 80          # fester linker Textrand (linksbuendig wie der Bericht)
 PUNKT_EINZUG = 40          # haengender Einzug fuer Aufzaehlungstext hinter dem «•»
 ZEILENBREITE_MAX = CANVAS_W - 2 * MARGIN_LINKS
-LESEPOSITION_Y = int(CANVAS_H * 0.45)  # hier steht die gerade gesprochene Zeile
-V_MAX = 60.0      # px/s, Tempo-Deckel gegen Spruenge bei sehr dichten Ankern
-ANKER_SCHRITT = 8  # alle N Zeilen ein Scroll-Anker (Tempo-Anpassung ans Sprechen)
+UNTERKANTE = CANVAS_H - 64      # Unterkante des Textblocks am unteren Bildrand
+CHUNK_ZEILEN = 3                # hoechstens so viele Zeilen stehen gleichzeitig
+KARTE_Y = 140                   # Oberkante der Ueberschrift-Titelkarte
+KARTE_FONTSIZES = [58, 50, 44]  # Titelkarte: schrumpfen, bis sie passt
+KARTE_ZEILEN_MAX = 3
+KARTE_ZEILENFAKTOR = 1.22
+BILD_MIN_DAUER = 8.0            # ein Hintergrundbild steht mindestens so lange
+FPS = 25
 FARBE_TEXT = "&H00FFFFFF&"
 FARBE_AKZENT = "&H0066D1FF&"        # amber (BGR)
 HINTERGRUND = "0x1a1a2e"
@@ -144,13 +158,10 @@ def _breite(font: ImageFont.FreeTypeFont, text: str) -> float:
 
 
 def fonts_laden() -> dict[str, ImageFont.FreeTypeFont]:
+    # Ueberschriften brauchen keinen Eintrag: sie werden als Titelkarte mit
+    # eigener, passend geschrumpfter Schrift umbrochen (karte_umbrechen).
     fliesstext = ImageFont.truetype(font_pfad(FONT_NORMAL_KANDIDATEN), FONTSIZE)
-    return {
-        "absatz": fliesstext,
-        "punkt": fliesstext,
-        "ueberschrift": ImageFont.truetype(font_pfad(FONT_FETT_KANDIDATEN),
-                                           UEBERSCHRIFT_FONTSIZE),
-    }
+    return {"absatz": fliesstext, "punkt": fliesstext}
 
 
 # ----------------------------------------------------------- Text-Bereinigung
@@ -163,13 +174,22 @@ _QUELLEN_ZEILE = re.compile(r"^(Quelle|Quellen|Belege|Source|Sources|Evidence):"
 _DATENSTAND_PREFIXE = ("*Datenstand:", "*Data as of:")
 
 
+_THREAD_URL = re.compile(r"boards\.4chan\.org/biz/thread/(\d+)")
+
+
 @dataclass
 class Block:
     art: str  # "absatz", "ueberschrift" oder "punkt" (Aufzaehlung)
     text: str
+    abschnitt: int = 0  # Index in der Abschnittsliste (je ##-Ueberschrift einer)
 
 
-def bloecke_erzeugen(markdown: str) -> list[Block]:
+@dataclass
+class Abschnitt:
+    threads: list[str]  # Thread-IDs aus den Quell-URLs unter dem Abschnitt
+
+
+def abschnitte_erzeugen(markdown: str) -> tuple[list[Block], list[Abschnitt]]:
     """Reduziert den veroeffentlichten bericht.md-Text auf das Vorlesbare.
 
     Markdown-Syntax (Titel, Archiv-Link, Trennlinie) kann man nicht hoeren;
@@ -177,15 +197,23 @@ def bloecke_erzeugen(markdown: str) -> list[Block]:
     der klicken kann, nicht fuer einen Zuhoerer. Das GLOSSAR ist zum
     Nachschlagen gedacht, nicht zum Anhoeren, und entfaellt komplett - es
     bleibt oeffentlich im bericht.md sichtbar. Die Blockstruktur (Absatz vs.
-    ##-Ueberschrift) bleibt erhalten, damit das Video sie darstellen kann."""
+    ##-Ueberschrift) bleibt erhalten, damit das Video sie darstellen kann.
+
+    Nebenher entsteht die Abschnittsliste: je ##-Ueberschrift ein Abschnitt,
+    dem die Thread-IDs seiner Quell-URLs zugeordnet sind - darueber findet
+    der Hintergrund die Bilder der gerade besprochenen Threads."""
     zeilen = markdown.splitlines()
-    ergebnis: list[Block] = []
+    bloecke: list[Block] = []
+    abschnitte = [Abschnitt(threads=[])]  # Index 0: Einleitung vor dem ersten ##
     for i, zeile in enumerate(zeilen):
         z = zeile.strip()
         if i == 0 and z.startswith("# "):
             continue
         if z.startswith("## GLOSSAR"):  # trifft auch das englische "## GLOSSARY"
             break
+        for tid in _THREAD_URL.findall(z):
+            if tid not in abschnitte[-1].threads:
+                abschnitte[-1].threads.append(tid)
         if not z or z == "---":
             continue
         if z.startswith("[") and "](README.md)" in z:
@@ -197,12 +225,17 @@ def bloecke_erzeugen(markdown: str) -> list[Block]:
         if _QUELLEN_ZEILE.match(z):
             continue
         if z.startswith("## "):
-            ergebnis.append(Block("ueberschrift", z[3:]))
+            abschnitte.append(Abschnitt(threads=[]))
+            bloecke.append(Block("ueberschrift", z[3:], len(abschnitte) - 1))
         elif z.startswith("- "):
-            ergebnis.append(Block("punkt", z[2:]))
+            bloecke.append(Block("punkt", z[2:], len(abschnitte) - 1))
         else:
-            ergebnis.append(Block("absatz", z))
-    return ergebnis
+            bloecke.append(Block("absatz", z, len(abschnitte) - 1))
+    return bloecke, abschnitte
+
+
+def bloecke_erzeugen(markdown: str) -> list[Block]:
+    return abschnitte_erzeugen(markdown)[0]
 
 
 def text_fuer_tts(markdown: str) -> str:
@@ -310,7 +343,6 @@ class Zeile:
     worte: list[Wort]
     art: str = "absatz"
     blockanfang: bool = False
-    y_master: float = 0.0
 
     @property
     def start(self) -> float:
@@ -377,176 +409,201 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def _anker_berechnen(zeilen: list[Zeile]) -> list[tuple[float, float]]:
-    """Stuetzpunkte (zeit, master_y) der globalen Scroll-Funktion P(t).
-
-    Alle ANKER_SCHRITT Zeilen ein Anker an der Sprechzeit-Mitte der Zeile -
-    dazwischen laeuft der gesamte Text mit konstanter Geschwindigkeit als
-    starrer Block. Zeiten werden streng monoton gehalten und das Tempo pro
-    Segment auf V_MAX gedeckelt."""
-    anker: list[tuple[float, float]] = []
-    indizes = list(range(0, len(zeilen), ANKER_SCHRITT))
-    if indizes[-1] != len(zeilen) - 1:
-        indizes.append(len(zeilen) - 1)
-    for i in indizes:
-        z = zeilen[i]
-        t = (z.start + z.end) / 2
-        if anker:
-            dy = z.y_master - anker[-1][1]
-            if dy <= 0:
-                continue
-            t = max(t, anker[-1][0] + dy / V_MAX)
-        anker.append((t, z.y_master))
-    return anker
+@dataclass
+class Anzeige:
+    """Ein Stueck Bildschirm-Text: entweder die Titelkarte einer
+    ##-Ueberschrift (gross, weiter oben) oder ein Happen von hoechstens
+    CHUNK_ZEILEN Fliesstext-Zeilen am unteren Bildrand. Zu jedem Zeitpunkt
+    ist genau eine Anzeige sichtbar; ihr Fenster laeuft vom Start ihres
+    ersten gesprochenen Worts bis zum Start der naechsten Anzeige."""
+    zeilen: list[Zeile]
+    art: str            # "karte" oder "text"
+    fontsize: int = 0   # nur fuer Karten (geschrumpft, bis der Text passt)
+    start: float = 0.0
+    end: float = 0.0
 
 
-def _p_wert(anker: list[tuple[float, float]], t: float) -> float:
-    """P(t): Master-Y, das zur Zeit t an der Leseposition steht.
-
-    Vor dem ersten bzw. nach dem letzten Anker wird die Steigung des
-    Randsegments fortgesetzt."""
-    if len(anker) == 1:
-        return anker[0][1] + (t - anker[0][0]) * 20.0
-    if t <= anker[0][0]:
-        (t1, y1), (t2, y2) = anker[0], anker[1]
-    elif t >= anker[-1][0]:
-        (t1, y1), (t2, y2) = anker[-2], anker[-1]
-    else:
-        for k in range(len(anker) - 1):
-            if anker[k][0] <= t <= anker[k + 1][0]:
-                (t1, y1), (t2, y2) = anker[k], anker[k + 1]
-                break
-    return y1 + (y2 - y1) * (t - t1) / (t2 - t1)
+def karte_umbrechen(worte: list[Wort]) -> tuple[list[Zeile], int]:
+    """Ueberschrift als Titelkarte umbrechen: groesste Schrift aus
+    KARTE_FONTSIZES, mit der der Text in KARTE_ZEILEN_MAX Zeilen passt."""
+    pfad = font_pfad(FONT_FETT_KANDIDATEN)
+    zeilen: list[Zeile] = []
+    for fs in KARTE_FONTSIZES:
+        font = ImageFont.truetype(pfad, fs)
+        zeilen = in_zeilen_umbrechen(worte, font, "ueberschrift")
+        if len(zeilen) <= KARTE_ZEILEN_MAX:
+            return zeilen, fs
+    return zeilen, KARTE_FONTSIZES[-1]
 
 
-def _p_invers(anker: list[tuple[float, float]], y: float) -> float:
-    """Umkehrung von P: Zeit, zu der Master-Y y die Leseposition passiert."""
-    if len(anker) == 1:
-        return anker[0][0] + (y - anker[0][1]) / 20.0
-    if y <= anker[0][1]:
-        (t1, y1), (t2, y2) = anker[0], anker[1]
-    elif y >= anker[-1][1]:
-        (t1, y1), (t2, y2) = anker[-2], anker[-1]
-    else:
-        for k in range(len(anker) - 1):
-            if anker[k][1] <= y <= anker[k + 1][1]:
-                (t1, y1), (t2, y2) = anker[k], anker[k + 1]
-                break
-    return t1 + (t2 - t1) * (y - y1) / (y2 - y1)
+def anzeigen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
+                   fonts: dict[str, ImageFont.FreeTypeFont]) -> list[Anzeige]:
+    """Bloecke in die Anzeigefolge uebersetzen und die Fenster setzen.
 
-
-def _segmente(anker: list[tuple[float, float]], von: float, bis: float) -> list[tuple[float, float]]:
-    """Zerlegt [von, bis] an den Ankerzeiten - innerhalb jedes Teilstuecks
-    ist P(t) linear und laesst sich exakt als ein \\move ausdruecken."""
-    punkte = [von] + [t for t, _ in anker if von < t < bis] + [bis]
-    return [(punkte[k], punkte[k + 1]) for k in range(len(punkte) - 1)
-            if punkte[k + 1] - punkte[k] > 1e-4]
-
-
-def ass_erzeugen(zeilen: list[Zeile], ziel_ass: Path) -> None:
-    """Baut das Untertitel-Skript: dichtes Fliesstext-Layout, das nach oben scrollt.
-
-    Der gesamte Text scrollt als starrer Block entlang der globalen
-    Scroll-Funktion P(t) - die Abstaende auf dem Bildschirm entsprechen
-    dadurch immer exakt dem Master-Layout (keine Kollisionen, keine
-    schwankenden Zeilenabstaende), waehrend das Tempo sich an den Ankern
-    dem Sprechtempo anpasst. Jede Zeile wird als EIN zusammenhaengender
-    String gerendert (libass setzt die Wortabstaende selbst, natuerlicher
-    Textsatz); die Wort-Hervorhebung ist derselbe Zeilenstring noch einmal,
-    bei dem alle Woerter ausser dem gerade gesprochenen per \\alpha
-    unsichtbar sind - identischer Glyphenlauf, also pixelgenau
-    deckungsgleich. Woerter einzeln per PIL-Metriken zu positionieren
-    funktioniert dagegen nicht zuverlaessig: PIL und libass/HarfBuzz messen
-    pro Wort um +-2 Prozent unterschiedlich (Kerning/Shaping/Fontskalierung),
-    was je nach Wort klebende oder klaffende Luecken erzeugt."""
-    # Master-Layout: feste vertikale Position jeder Zeile im Gesamttext
-    y = 0.0
-    for i, zeile in enumerate(zeilen):
-        if i > 0 and zeile.blockanfang:
-            y += {"ueberschrift": UEBERSCHRIFT_ABSTAND,
-                  "punkt": PUNKT_ABSTAND}.get(zeile.art, ABSATZ_ABSTAND)
-        zeile.y_master = y
-        y += ZEILENHOEHE
-
-    anker = _anker_berechnen(zeilen)
-    y_enter = CANVAS_H + ZEILENHOEHE
-    y_exit = -(ZEILENHOEHE + UEBERSCHRIFT_FONTSIZE)
-    events: list[str] = []
-
-    for zeile in zeilen:
-        # Bildschirm-Y der Zeile: versatz - P(t)
-        versatz = LESEPOSITION_Y + zeile.y_master
-        fenster_start = max(0.0, _p_invers(anker, versatz - y_enter))
-        fenster_end = _p_invers(anker, versatz - y_exit)
-        if fenster_end <= fenster_start:
+    Text-Happen schneiden nie ueber Blockgrenzen: ein Absatz oder
+    Aufzaehlungspunkt gehoert zusammen, auch wenn dadurch mal eine einzelne
+    Zeile allein steht."""
+    anzeigen: list[Anzeige] = []
+    for block, worte in zip(bloecke, block_worte):
+        if not worte:
             continue
+        if block.art == "ueberschrift":
+            zeilen, fs = karte_umbrechen(worte)
+            anzeigen.append(Anzeige(zeilen, "karte", fs))
+        else:
+            zeilen = in_zeilen_umbrechen(worte, fonts[block.art], block.art)
+            for i in range(0, len(zeilen), CHUNK_ZEILEN):
+                anzeigen.append(Anzeige(zeilen[i:i + CHUNK_ZEILEN], "text"))
+    for i, a in enumerate(anzeigen):
+        a.start = 0.0 if i == 0 else a.zeilen[0].start
+        if i > 0:
+            anzeigen[i - 1].end = a.start
+    if anzeigen:
+        anzeigen[-1].end = anzeigen[-1].zeilen[-1].end + 2.0
+    return anzeigen
 
-        if zeile.art == "ueberschrift":
-            # fett + groesser, wie eine ##-Ueberschrift im Markdown-Bericht
-            stil = f"\\fs{UEBERSCHRIFT_FONTSIZE}\\b1"
+
+def ass_erzeugen(anzeigen: list[Anzeige], ziel_ass: Path) -> None:
+    """Baut das Untertitel-Skript aus der Anzeigefolge.
+
+    Jede Zeile wird als EIN zusammenhaengender String gerendert (libass
+    setzt die Wortabstaende selbst, natuerlicher Textsatz); die
+    Wort-Hervorhebung ist derselbe Zeilenstring noch einmal, bei dem alle
+    Woerter ausser dem gerade gesprochenen per \\alpha unsichtbar sind -
+    identischer Glyphenlauf, also pixelgenau deckungsgleich. Woerter einzeln
+    per PIL-Metriken zu positionieren funktioniert dagegen nicht
+    zuverlaessig: PIL und libass/HarfBuzz messen pro Wort um +-2 Prozent
+    unterschiedlich, was klebende oder klaffende Luecken erzeugt."""
+    events: list[str] = []
+    for a in anzeigen:
+        if a.end - a.start < 1e-3:
+            continue
+        if a.art == "karte":
+            stil = f"\\fs{a.fontsize}\\b1"
+            schritt = int(a.fontsize * KARTE_ZEILENFAKTOR)
+            y0 = KARTE_Y
         else:
             stil = ""
-
-        links_x = MARGIN_LINKS + (PUNKT_EINZUG if zeile.art == "punkt" else 0)
-        zeilen_segmente = _segmente(anker, fenster_start, fenster_end)
-
-        if zeile.art == "punkt" and zeile.blockanfang:
-            # haengendes Aufzaehlungszeichen am linken Rand, Text eingezogen
-            punkt_x = MARGIN_LINKS
-            for t_a, t_b in zeilen_segmente:
-                y1 = versatz - _p_wert(anker, t_a)
-                y2 = versatz - _p_wert(anker, t_b)
+            schritt = ZEILENHOEHE
+            y0 = UNTERKANTE - len(a.zeilen) * ZEILENHOEHE
+        for k, zeile in enumerate(a.zeilen):
+            y = y0 + k * schritt
+            links_x = MARGIN_LINKS + (PUNKT_EINZUG if zeile.art == "punkt" else 0)
+            if zeile.art == "punkt" and zeile.blockanfang:
+                # haengendes Aufzaehlungszeichen am linken Rand, Text eingezogen
                 events.append(
-                    f"Dialogue: 0,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
-                    f"{{\\move({punkt_x:.0f},{y1:.0f},{punkt_x:.0f},{y2:.0f})}}•"
-                )
-
-        texte = [_ass_escape(w.text) for w in zeile.worte]
-        for t_a, t_b in zeilen_segmente:
-            y1 = versatz - _p_wert(anker, t_a)
-            y2 = versatz - _p_wert(anker, t_b)
+                    f"Dialogue: 0,{_ass_zeit(a.start)},{_ass_zeit(a.end)},"
+                    f"Report,,0,0,0,,{{\\pos({MARGIN_LINKS},{y})}}•")
+            texte = [_ass_escape(w.text) for w in zeile.worte]
             events.append(
-                f"Dialogue: 0,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
-                f"{{\\move({links_x},{y1:.0f},{links_x},{y2:.0f}){stil}}}"
-                + " ".join(texte)
-            )
-
-        for i, wort in enumerate(zeile.worte):
-            # ganze Zeile noch einmal, nur das aktive Wort sichtbar (Akzent)
-            teile = []
-            if i > 0:
-                teile.append("{\\alpha&HFF&}" + " ".join(texte[:i]) + " ")
-            teile.append(f"{{\\alpha&H00&\\c{FARBE_AKZENT}}}{texte[i]}")
-            if i < len(texte) - 1:
-                teile.append("{\\alpha&HFF&} " + " ".join(texte[i + 1:]))
-            hervorhebung = "".join(teile)
-
-            w_start = max(fenster_start, wort.start)
-            w_end = max(w_start + 0.01, min(fenster_end, wort.end))
-            for t_a, t_b in _segmente(anker, w_start, w_end):
-                y1 = versatz - _p_wert(anker, t_a)
-                y2 = versatz - _p_wert(anker, t_b)
+                f"Dialogue: 0,{_ass_zeit(a.start)},{_ass_zeit(a.end)},"
+                f"Report,,0,0,0,,{{\\pos({links_x},{y}){stil}}}"
+                + " ".join(texte))
+            for i, wort in enumerate(zeile.worte):
+                # ganze Zeile noch einmal, nur das aktive Wort sichtbar (Akzent)
+                teile = []
+                if i > 0:
+                    teile.append("{\\alpha&HFF&}" + " ".join(texte[:i]) + " ")
+                teile.append(f"{{\\alpha&H00&\\c{FARBE_AKZENT}}}{texte[i]}")
+                if i < len(texte) - 1:
+                    teile.append("{\\alpha&HFF&} " + " ".join(texte[i + 1:]))
+                w_start = max(a.start, wort.start)
+                w_end = max(w_start + 0.01, min(a.end, wort.end))
                 events.append(
-                    f"Dialogue: 1,{_ass_zeit(t_a)},{_ass_zeit(t_b)},Report,,0,0,0,,"
-                    f"{{\\move({links_x},{y1:.0f},{links_x},{y2:.0f}){stil}}}"
-                    f"{hervorhebung}"
-                )
-
+                    f"Dialogue: 1,{_ass_zeit(w_start)},{_ass_zeit(w_end)},"
+                    f"Report,,0,0,0,,{{\\pos({links_x},{y}){stil}}}"
+                    + "".join(teile))
     ziel_ass.write_text(ASS_HEADER + "\n".join(events) + "\n", encoding="utf-8")
+
+
+# ----------------------------------------------------------- Hintergrundbilder
+
+def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
+    """Freigegebene Hintergrundbilder je Thread (Report-Lauf,
+    arbeit/motive/<datum>/). Leer, wenn der Tag keine hat."""
+    ordner = HINTERGRUND_DIR / datum
+    try:
+        threads = json.loads((ordner / "motive.json")
+                             .read_text(encoding="utf-8"))["threads"]
+    except (OSError, json.JSONDecodeError, KeyError):
+        return {}
+    aus: dict[str, list[Path]] = {}
+    for tid, namen in threads.items():
+        pfade = [ordner / n for n in namen if (ordner / n).exists()]
+        if pfade:
+            aus[str(tid)] = pfade
+    return aus
+
+
+def hintergrund_plan(bloecke: list[Block], block_worte: list[list[Wort]],
+                     abschnitte: list[Abschnitt], datum: str,
+                     fallback: Path | None, ende: float
+                     ) -> list[tuple[Path | None, float]]:
+    """Bildfolge fuer den Hintergrund: je Berichtsabschnitt die Bilder seiner
+    Threads, gleichmaessig auf die Abschnittsdauer verteilt (aber keines
+    kuerzer als BILD_MIN_DAUER). Abschnitte ohne Bild bekommen den fallback
+    (das Vorschaubild des Tages); None steht fuer die einfarbige Flaeche."""
+    zuordnung = motiv_zuordnung(datum)
+    start_von: dict[int, float] = {}
+    for block, worte in zip(bloecke, block_worte):
+        if worte and block.abschnitt not in start_von:
+            start_von[block.abschnitt] = worte[0].start
+    grenzen = sorted(start_von.items())  # (abschnitt, startzeit), chronologisch
+    plan: list[tuple[Path | None, float]] = []
+    for i, (nr, start) in enumerate(grenzen):
+        von = 0.0 if i == 0 else start
+        bis = grenzen[i + 1][1] if i + 1 < len(grenzen) else ende
+        dauer = bis - von
+        if dauer <= 0:
+            continue
+        bilder: list[Path | None] = [
+            p for tid in abschnitte[nr].threads for p in zuordnung.get(tid, [])]
+        if not bilder:
+            bilder = [fallback]
+        n = max(1, min(len(bilder), int(dauer // BILD_MIN_DAUER)))
+        plan.extend((b, dauer / n) for b in bilder[:n])
+    return plan
+
+
+def hintergrund_liste(plan: list[tuple[Path | None, float]], arbeit: Path,
+                      suffix: str) -> Path:
+    """Bilder des Plans als Videohintergrund aufbereiten (thumbnail.py) und
+    eine ffconcat-Liste mit den Standzeiten schreiben."""
+    fertig: dict[Path | None, Path] = {}
+    zeilen = ["ffconcat version 1.0"]
+    for quelle, dauer in plan:
+        if quelle not in fertig:
+            fertig[quelle] = thumbnail.videohintergrund(
+                quelle, arbeit / f"bg{suffix}_{len(fertig):02d}.jpg")
+        pfad = str(fertig[quelle]).replace("\\", "/")
+        zeilen += [f"file '{pfad}'", f"duration {dauer:.3f}"]
+    # Eigenheit des concat-Demuxers: die letzte duration zaehlt nur, wenn
+    # der letzte Eintrag noch einmal als file-Zeile wiederholt wird.
+    zeilen.append(zeilen[-2])
+    liste = arbeit / f"bg{suffix}.ffconcat"
+    liste.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+    return liste
 
 
 # ----------------------------------------------------------- Video-Zusammenbau
 
-def video_erzeugen(audio_mp3: Path, ass_datei: Path, ziel_mp4: Path) -> None:
+def video_erzeugen(audio_mp3: Path, ass_datei: Path, ziel_mp4: Path,
+                   konkat: Path | None = None) -> None:
     ass_arg = str(ass_datei).replace("\\", "/").replace(":", r"\:")
+    if konkat is not None:
+        eingabe = ["-f", "concat", "-safe", "0", "-i", str(konkat)]
+        vf = f"fps={FPS},ass={ass_arg}"  # Standbilder auf feste Framerate ziehen
+    else:
+        eingabe = ["-f", "lavfi", "-i",
+                   f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}"]
+        vf = f"ass={ass_arg}"
     subprocess.run(
-        ["ffmpeg", "-y",
-         "-f", "lavfi", "-i", f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}",
+        ["ffmpeg", "-y", *eingabe,
          "-i", str(audio_mp3),
-         "-vf", f"ass={ass_arg}",
-         "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac",
-         "-shortest", str(ziel_mp4)],
-        check=True, timeout=1200)
+         "-vf", vf,
+         "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-shortest", str(ziel_mp4)],
+        check=True, timeout=1800)
 
 
 # ----------------------------------------------------------- Orchestrierung
@@ -722,6 +779,8 @@ def beschreibung_bauen(tag_dir: Path, markdown: str, cfg: dict[str, str],
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="de")
+    ap.add_argument("--nur-video", action="store_true",
+                    help="Video nur bauen, ohne Upload und ohne Marker (Test)")
     args = ap.parse_args()
     cfg = SPRACHEN[args.sprache]
 
@@ -733,12 +792,12 @@ def main() -> None:
     if not bericht_pfad.exists():
         print(f"kein Bericht fuer {datum} unter {bericht_pfad} - nichts zu tun")
         return
-    if marker_pfad.exists():
+    if marker_pfad.exists() and not args.nur_video:
         print(f"Video ({args.sprache}) fuer {datum} schon hochgeladen: {marker_pfad}")
         return
 
     markdown = bericht_pfad.read_text(encoding="utf-8")
-    bloecke = bloecke_erzeugen(markdown)
+    bloecke, abschnitte = abschnitte_erzeugen(markdown)
     text = "\n\n".join(b.text for b in bloecke)
 
     arbeit = VIDEO_DIR / datum
@@ -749,20 +808,37 @@ def main() -> None:
 
     titel = titel_laden(tag_dir, args.sprache, cfg["titel"].format(datum=datum))
     print(f"Titel: {titel}")
+    # Vorschaubild schon jetzt bauen: es ist zugleich der Hintergrund-Fallback
+    # fuer Abschnitte ohne freigegebenes Board-Bild.
+    bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
+
     print(f"erzeuge Vertonung ({cfg['stimme']}) mit Wort-Zeitstempeln ...")
     worte = tts_mit_worten(text, audio_mp3, cfg["stimme"])
     print(f"{len(worte)} Woerter erkannt")
 
-    fonts = fonts_laden()
-    zeilen: list[Zeile] = []
-    for block, block_worte in zip(bloecke, worte_zu_bloecken(worte, bloecke)):
-        if block_worte:
-            zeilen.extend(in_zeilen_umbrechen(block_worte, fonts[block.art], block.art))
-    print(f"{len(zeilen)} Zeilen in {len(bloecke)} Bloecken")
-    ass_erzeugen(zeilen, ass_datei)
+    block_worte = worte_zu_bloecken(worte, bloecke)
+    anzeigen = anzeigen_bauen(bloecke, block_worte, fonts_laden())
+    print(f"{len(anzeigen)} Anzeigen in {len(bloecke)} Bloecken, "
+          f"{len(abschnitte)} Abschnitte")
+    ass_erzeugen(anzeigen, ass_datei)
+
+    konkat: Path | None = None
+    try:
+        ende = (worte[-1].end if worte else 0.0) + 5.0  # Puffer, -shortest kappt
+        plan = hintergrund_plan(bloecke, block_worte, abschnitte, datum,
+                                bild, ende)
+        konkat = hintergrund_liste(plan, arbeit, cfg["suffix"])
+        print(f"Hintergrund: {len(plan)} Standbilder")
+    except Exception as e:
+        # Ohne Hintergrund entsteht das Video wie bisher auf der Grundflaeche.
+        print(f"Hintergrund nicht aufgebaut ({e}) - nehme die Grundflaeche")
 
     print("baue Video ...")
-    video_erzeugen(audio_mp3, ass_datei, video_mp4)
+    video_erzeugen(audio_mp3, ass_datei, video_mp4, konkat)
+
+    if args.nur_video:
+        print(f"nur Video gebaut, kein Upload: {video_mp4}")
+        return
 
     kurz = cfg["beschreibung"].format(datum=datum)
     try:
@@ -792,7 +868,6 @@ def main() -> None:
     # Ein fehlendes Vorschaubild darf den gelungenen Upload nicht entwerten -
     # thumbnails/set braucht zudem einen fuer eigene Thumbnails verifizierten
     # Kanal, sonst antwortet YouTube mit 403.
-    bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
     if bild is not None:
         try:
             youtube_auth.thumbnail_setzen(video_id, bild)

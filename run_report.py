@@ -965,23 +965,14 @@ def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
     return geladen
 
 
-def motiv_pruefen(bilder: list[Path], thema: str) -> Path | None:
-    """Sichtpruefung der Kandidaten durch das Modell.
-
-    Der Standard ist Ablehnung. Benutzt wird ein Board-Bild nur, wenn die
-    Antwort erkennbar aus echtem Hinsehen stammt - je Bild eine eigene,
-    nicht leere Beschreibung - und genau einen der heruntergeladenen
-    Kandidaten waehlt. Ein headless-Aufruf kann sonst ein wohlgeformtes
-    Urteil liefern, ohne die Dateien je geoeffnet zu haben (verweigertes
-    Werkzeug, Pfad ausserhalb des Arbeitsordners), und ungepruefte
-    Board-Bilder als oeffentliches Vorschaubild kosten im schlimmsten Fall
-    den Kanal."""
-    if not bilder:
-        return None
-    nach_name = {p.name: p for p in bilder}
-    eingabe = (f"Thema des Tages: {thema}\n\nKandidaten (Dateiname: Pfad):\n"
-               + "\n".join(f"- {p.name}: {p}" for p in bilder))
-    out = claude_ruf(MOTIV_PROMPT, eingabe, "sonnet", TIMEOUT_MOTIV,
+def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
+                   timeout: int) -> dict:
+    """Gemeinsames Netz aller Sichtpruefungen: Aufruf, Parsen und der Beleg,
+    dass wirklich hingesehen wurde. Ein headless-Aufruf kann sonst ein
+    wohlgeformtes Urteil liefern, ohne die Dateien je geoeffnet zu haben
+    (verweigertes Werkzeug, Pfad ausserhalb des Arbeitsordners) - deshalb
+    braucht jedes Bild eine eigene, nicht leere Beschreibung."""
+    out = claude_ruf(prompt, eingabe, "sonnet", timeout,
                      tools="Read", cwd=BASE).strip()
     out = re.sub(r"^```(?:json)?\s*|\s*```$", "", out)
     daten = json.loads(out)
@@ -998,6 +989,23 @@ def motiv_pruefen(bilder: list[Path], thema: str) -> Path | None:
     if len(beschreibungen) < len(urteile):
         raise RuntimeError("dieselbe Beschreibung fuer mehrere Bilder - "
                            "vermutlich ungesehen")
+    return daten
+
+
+def motiv_pruefen(bilder: list[Path], thema: str) -> Path | None:
+    """Sichtpruefung der Kandidaten durch das Modell.
+
+    Der Standard ist Ablehnung: benutzt wird ein Board-Bild nur, wenn die
+    Antwort das Netz von _sicht_antwort() passiert und genau einen der
+    heruntergeladenen Kandidaten waehlt - ungepruefte Board-Bilder als
+    oeffentliches Vorschaubild kosten im schlimmsten Fall den Kanal."""
+    if not bilder:
+        return None
+    nach_name = {p.name: p for p in bilder}
+    eingabe = (f"Thema des Tages: {thema}\n\nKandidaten (Dateiname: Pfad):\n"
+               + "\n".join(f"- {p.name}: {p}" for p in bilder))
+    daten = _sicht_antwort(MOTIV_PROMPT, bilder, eingabe, TIMEOUT_MOTIV)
+    urteile = daten["bilder"]
 
     wahl = daten.get("wahl")
     if not isinstance(wahl, str) or wahl not in nach_name:
@@ -1031,6 +1039,125 @@ def motiv_waehlen(manifest: dict, datum: str, thema: str) -> Path | None:
     ziel = thumbs / f"{datum}{gewaehlt.suffix}"
     shutil.copy2(gewaehlt, ziel)
     return ziel
+
+
+# ------------------------------------------- Hintergrundbilder fuers Video
+
+HG_JE_THREAD = 4         # so viele Bilder liefert ein Thread hoechstens
+HG_MAX = 36              # Gesamtdeckel fuer die Sichtpruefung
+HG_SEITE = (0.4, 3.5)    # Hintergruende werden cover-beschnitten, fast alles geht
+TIMEOUT_HINTERGRUND = 900
+
+HINTERGRUND_PROMPT = """\
+Du prüfst Bilder für den Videohintergrund eines Nachrichtenvideos über das
+4chan-Board /biz/. Das ist ein "blue board", auf dem die Moderation nicht
+jugendfreies Material entfernt; grob Anstössiges ist dort die Ausnahme. Die
+Bilder laufen stark abgedunkelt und unscharf HINTER dem Untertiteltext. Es
+geht darum, ob ein Bild öffentlich gezeigt werden darf - nicht darum, ob es
+schön ist oder zum Thema passt.
+
+Sieh dir JEDES unten genannte Bild mit dem Read-Werkzeug an. Urteile nur
+nach dem, was du wirklich siehst, und rate nichts.
+
+Ein Bild ist NUR dann ungeeignet, wenn es gegen die YouTube-Richtlinien
+verstösst: Nacktheit oder Sexualisiertes, Gewalt oder Blut, Hass- oder
+Extremismus-Symbolik, Drogen, grobe Beschimpfungen oder Slurs im Bildtext,
+eine reale Person in kompromittierender Lage. Nur bei dieser Frage gilt im
+Zweifel Ablehnung.
+
+ALLES andere ist geeignet: Charts, Screenshots, Textbilder, Memes, Froesche,
+Wojaks, Fotos, auch Bilder ohne jeden Finanzbezug. Lehne nichts wegen
+Qualität, Stil, Kleinteiligkeit oder fehlendem Themenbezug ab - erwartet
+wird, dass die grosse Mehrheit der Kandidaten durchgeht.
+
+Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
+Code-Zaun. Die Beschreibung ist Pflicht und benennt sachlich, was auf genau
+diesem Bild zu sehen ist:
+{"bilder": [{"datei": "...", "beschreibung": "...", "ok": true,
+"grund": "..."}]}
+"""
+
+
+def hintergrund_kandidaten(manifest: dict) -> list[dict]:
+    """Bild-Anhaenge ALLER ausgewerteten Threads, je Thread bis zu
+    HG_JE_THREAD Stueck (OP-Bilder zuerst). Die mechanischen Filter sind
+    dieselben wie beim Vorschaubild-Motiv, nur das Seitenverhaeltnis ist
+    lockerer - Hintergruende werden ohnehin auf 16:9 cover-beschnitten."""
+    threads = [str(b["thread"]) for b in manifest.get("buendel", [])]
+    posts = _snapshot_posts(set(threads))
+    gesehen: set[str] = set()
+    aus: list[dict] = []
+    for no in threads:  # Reihenfolge des Manifests = Substanzdichte
+        je_thread = 0
+        sortiert = sorted(posts.get(no, []),
+                          key=lambda p: (p.get("resto") or 0) != 0)
+        for post in sortiert:
+            if je_thread >= HG_JE_THREAD:
+                break
+            tim, ext = post.get("tim"), str(post.get("ext") or "").lower()
+            if not tim or ext not in MOTIV_ENDUNGEN:
+                continue
+            if post.get("spoiler") or post.get("filedeleted"):
+                continue
+            breite, hoehe = post.get("w") or 0, post.get("h") or 0
+            if (breite < MOTIV_MIN_BREITE or hoehe < MOTIV_MIN_HOEHE
+                    or (post.get("fsize") or 0) > MOTIV_MAX_BYTES
+                    or not HG_SEITE[0] <= breite / hoehe <= HG_SEITE[1]):
+                continue
+            md5 = str(post.get("md5") or tim)
+            if md5 in gesehen:
+                continue
+            gesehen.add(md5)
+            # Threadnummer im Dateinamen: video_report.py ordnet die Bilder
+            # darueber den Berichtsabschnitten zu.
+            aus.append({"thread": no, "datei": f"{no}-{tim}{ext}",
+                        "url": f"{BILD_BASIS}/{tim}{ext}"})
+            je_thread += 1
+    return aus[:HG_MAX]
+
+
+def hintergrund_pruefen(bilder: list[Path]) -> list[Path]:
+    """Lockere Sichtpruefung fuer Videohintergruende: einzige Frage ist der
+    Richtlinienverstoss, alles andere geht durch. Das Netz gegen ungesehene
+    Urteile (_sicht_antwort) bleibt dasselbe wie beim Vorschaubild."""
+    if not bilder:
+        return []
+    nach_name = {p.name: p for p in bilder}
+    eingabe = ("Kandidaten (Dateiname: Pfad):\n"
+               + "\n".join(f"- {p.name}: {p}" for p in bilder))
+    daten = _sicht_antwort(HINTERGRUND_PROMPT, bilder, eingabe,
+                           TIMEOUT_HINTERGRUND)
+    frei: list[Path] = []
+    for urteil in daten["bilder"]:
+        name = str(urteil.get("datei") or "")
+        if urteil.get("ok") and name in nach_name:
+            frei.append(nach_name[name])
+        elif name in nach_name:
+            log.info("Hintergrund %s abgelehnt: %s", name, urteil.get("grund"))
+    return frei
+
+
+def hintergruende_waehlen(manifest: dict, datum: str) -> int:
+    """Freigegebene Hintergrundbilder je Thread unter arbeit/motive/<datum>/
+    bereitlegen (ausserhalb des Repos, wie das Thumbnail-Motiv). Nicht
+    freigegebene Downloads werden geloescht; motive.json haelt die Zuordnung
+    Thread -> Dateien fuer den Video-Lauf fest."""
+    ziel_dir = ARBEIT / "motive" / datum
+    kandidaten = hintergrund_kandidaten(manifest)
+    if not kandidaten:
+        log.info("keine Hintergrund-Kandidaten im Snapshot")
+        return 0
+    geladen = motiv_laden(kandidaten, ziel_dir)
+    frei = set(hintergrund_pruefen(geladen))
+    threads: dict[str, list[str]] = {}
+    for p in geladen:
+        if p not in frei:
+            p.unlink()
+            continue
+        threads.setdefault(p.name.split("-", 1)[0], []).append(p.name)
+    (ziel_dir / "motive.json").write_text(
+        json.dumps({"threads": threads}, indent=2) + "\n", encoding="utf-8")
+    return len(frei)
 
 
 def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
@@ -1074,6 +1201,16 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         # Auch hier gilt: das Video entsteht mit dem Serienbild weiter.
         log.warning("Motiv-Auswahl fehlgeschlagen (Video nimmt das "
                     "Serienbild): %s", e)
+    try:
+        log.info("Pruefe Hintergrundbilder fuers Video (Sonnet, "
+                 "Sichtpruefung) ...")
+        log.info("%d Hintergrundbilder freigegeben",
+                 hintergruende_waehlen(manifest, datum))
+    except Exception as e:
+        # Ohne freigegebene Bilder legt video_report.py das Vorschaubild
+        # als Hintergrund unter den Text - auch das darf nie blockieren.
+        log.warning("Hintergrund-Auswahl fehlgeschlagen (Video nimmt das "
+                    "Vorschaubild als Hintergrund): %s", e)
     (tag_dir / "README.md").write_text(
         _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
     markdown_index_aktualisieren()
