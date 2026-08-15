@@ -599,8 +599,11 @@ def _fuer_beschreibung(zeile: str) -> str:
     zeile = zeile.replace("**", "")
     if zeile.startswith("*") and zeile.rstrip().endswith("*"):
         zeile = zeile.strip().strip("*")          # kursive Kopfzeile
-    # "<" und ">" sind in YouTube-Metadaten verboten (Greentext im Zitat).
-    return re.sub(r"[ \t]+", " ", zeile.replace("<", "").replace(">", "")).rstrip()
+    # "<" und ">" sind in YouTube-Metadaten verboten (Greentext im Zitat);
+    # der lange Gedankenstrich gilt in oeffentlichen Texten als KI-Marker und
+    # weicht dem neutralen Bindestrich (Komma waere nicht immer grammatisch).
+    zeile = zeile.replace("<", "").replace(">", "").replace("—", "-")
+    return re.sub(r"[ \t]+", " ", zeile).rstrip()
 
 
 def _abschnitte(markdown: str) -> list[str]:
@@ -705,15 +708,28 @@ def main() -> None:
     print("baue Video ...")
     video_erzeugen(audio_mp3, ass_datei, video_mp4)
 
+    kurz = cfg["beschreibung"].format(datum=datum)
     try:
         beschreibung = beschreibung_bauen(tag_dir, markdown, cfg, datum)
     except Exception as e:
         # Ein Fehler beim Zusammenbau darf den Upload nie verhindern.
         print(f"Beschreibung nicht aufgebaut ({e}) - nehme nur die Kopfzeile")
-        beschreibung = cfg["beschreibung"].format(datum=datum)
+        beschreibung = kurz
     print("lade auf YouTube hoch ...")
-    video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
-                                           privacy_status="public")
+    try:
+        video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
+                                               privacy_status="public")
+    except RuntimeError as e:
+        # Weist YouTube die Metadaten zurueck, scheitert schon das Oeffnen der
+        # Upload-Session - dann existiert noch kein Video und ein zweiter
+        # Versuch legt kein Duplikat an. Lieber mit kurzer Beschreibung
+        # hochladen als den Tag ganz verlieren.
+        if beschreibung == kurz or "Upload-Session" not in str(e):
+            raise
+        print(f"Beschreibung von YouTube abgelehnt ({e}) - zweiter Versuch "
+              f"nur mit der Kopfzeile")
+        video_id, url = youtube_auth.hochladen(video_mp4, titel, kurz,
+                                               privacy_status="public")
     marker_pfad.write_text(json.dumps({"video_id": video_id, "url": url}, indent=2), encoding="utf-8")
     print(f"hochgeladen: {url}")
 
