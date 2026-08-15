@@ -38,7 +38,7 @@ import sys
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from bericht_html import _ist_ueberschrift as ist_ueberschrift
@@ -846,6 +846,37 @@ TIMEOUT_MOTIV = 420
 BILD_BASIS = "https://i.4cdn.org/biz"
 BILD_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; boardstats/1.0)"}
 
+# Schon gezeigte Bilder (Video-Hintergruende und Thumbnail-Motive) werden
+# per MD5 gemerkt und fuer VERWENDET_TAGE Tage nicht wiederverwendet -
+# langlebige General-Threads wuerden sonst jeden Tag dieselben fruehen
+# Anhaenge liefern. Analog zur 14-Tage-Sperrliste der Videotitel.
+VERWENDET_DATEI = ARBEIT / "motive" / "verwendet.json"
+VERWENDET_TAGE = 14
+
+
+def verwendete_bilder(datum: str) -> dict[str, str]:
+    """MD5 -> Datum der zuletzt gezeigten Bilder, beschnitten auf die
+    letzten VERWENDET_TAGE Tage. Leer bei fehlender/kaputter Datei."""
+    try:
+        daten = json.loads(VERWENDET_DATEI.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    grenze = (date.fromisoformat(datum)
+              - timedelta(days=VERWENDET_TAGE)).isoformat()
+    return {m: d for m, d in daten.items()
+            if isinstance(d, str) and d >= grenze}
+
+
+def verwendete_merken(md5s: list[str], datum: str) -> None:
+    """Die heute gezeigten Bilder in die Merkliste schreiben (alte Eintraege
+    fallen beim Zurueckschneiden von selbst raus)."""
+    liste = verwendete_bilder(datum)
+    for m in md5s:
+        liste[m] = datum
+    VERWENDET_DATEI.parent.mkdir(parents=True, exist_ok=True)
+    VERWENDET_DATEI.write_text(
+        json.dumps(liste, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
 MOTIV_PROMPT = """\
 Du wählst das Motiv für das YouTube-Vorschaubild eines Nachrichtenvideos aus.
 Die Kandidaten stammen aus den heute ausgewerteten Threads des 4chan-Boards
@@ -906,11 +937,12 @@ def _snapshot_posts(threads: set[str]) -> dict[str, list[dict]]:
     return posts
 
 
-def motiv_kandidaten(manifest: dict) -> list[dict]:
+def motiv_kandidaten(manifest: dict,
+                     gesperrt: set[str] | None = None) -> list[dict]:
     """Bild-Anhaenge der substanzstaerksten Threads des Tages. Nur was als
     Vorschaubild taugen kann: gaengiges Format, gross genug, nicht gespoilert,
-    nicht geloescht, je Bild nur einmal. OP-Bilder zuerst - sie tragen das
-    Thema des Threads."""
+    nicht geloescht, je Bild nur einmal und keines aus der Merkliste
+    (gesperrt). OP-Bilder zuerst - sie tragen das Thema des Threads."""
     threads = [str(b["thread"]) for b in manifest.get("buendel", [])][:MOTIV_THREADS]
     posts = _snapshot_posts(set(threads))
     gesehen: set[str] = set()
@@ -930,11 +962,11 @@ def motiv_kandidaten(manifest: dict) -> list[dict]:
                     or not MOTIV_SEITE[0] <= breite / hoehe <= MOTIV_SEITE[1]):
                 continue
             md5 = str(post.get("md5") or tim)
-            if md5 in gesehen:
+            if md5 in gesehen or md5 in (gesperrt or set()):
                 continue
             gesehen.add(md5)
             aus.append({"thread": no, "datei": f"{tim}{ext}",
-                        "url": f"{BILD_BASIS}/{tim}{ext}",
+                        "url": f"{BILD_BASIS}/{tim}{ext}", "md5": md5,
                         "op": (post.get("resto") or 0) == 0})
     aus.sort(key=lambda k: not k["op"])  # stabil: OP-Bilder nach vorn
     return aus[:MOTIV_KANDIDATEN]
@@ -1029,13 +1061,19 @@ def motiv_waehlen(manifest: dict, datum: str, thema: str) -> Path | None:
     thumbs.mkdir(parents=True, exist_ok=True)
     for alt in thumbs.glob(f"{datum}.*"):
         alt.unlink()  # Rest eines frueheren Laufs nicht weiterverwenden
-    kandidaten = motiv_kandidaten(manifest)
+    # Frische Bilder bevorzugen; liefern die Threads nur schon gezeigte,
+    # duerfen die noch einmal ran - lieber Wiederholung als Serienbild.
+    gesperrt = set(verwendete_bilder(datum))
+    kandidaten = motiv_kandidaten(manifest, gesperrt) or motiv_kandidaten(manifest)
     if not kandidaten:
         log.info("keine Bild-Kandidaten im Snapshot")
         return None
     gewaehlt = motiv_pruefen(motiv_laden(kandidaten, thumbs / "kandidaten"), thema)
     if gewaehlt is None:
         return None
+    md5 = next((k["md5"] for k in kandidaten if k["datei"] == gewaehlt.name), "")
+    if md5:
+        verwendete_merken([md5], datum)
     ziel = thumbs / f"{datum}{gewaehlt.suffix}"
     shutil.copy2(gewaehlt, ziel)
     return ziel
@@ -1078,41 +1116,53 @@ diesem Bild zu sehen ist:
 """
 
 
-def hintergrund_kandidaten(manifest: dict) -> list[dict]:
+def hintergrund_kandidaten(manifest: dict,
+                           gesperrt: set[str] | None = None) -> list[dict]:
     """Bild-Anhaenge ALLER ausgewerteten Threads, je Thread bis zu
     HG_JE_THREAD Stueck (OP-Bilder zuerst). Die mechanischen Filter sind
     dieselben wie beim Vorschaubild-Motiv, nur das Seitenverhaeltnis ist
-    lockerer - Hintergruende werden ohnehin auf 16:9 cover-beschnitten."""
+    lockerer - Hintergruende werden ohnehin auf 16:9 cover-beschnitten.
+
+    Bilder aus der Merkliste (gesperrt) werden uebersprungen, damit jeden
+    Tag frische zu sehen sind; liefert ein Thread dadurch gar keins mehr
+    (langlebiger General, dessen fruehe Anhaenge schon liefen), duerfen
+    seine alten in einem zweiten Durchgang noch einmal ran."""
     threads = [str(b["thread"]) for b in manifest.get("buendel", [])]
     posts = _snapshot_posts(set(threads))
     gesehen: set[str] = set()
     aus: list[dict] = []
     for no in threads:  # Reihenfolge des Manifests = Substanzdichte
-        je_thread = 0
+        gefunden: list[dict] = []
         sortiert = sorted(posts.get(no, []),
                           key=lambda p: (p.get("resto") or 0) != 0)
-        for post in sortiert:
-            if je_thread >= HG_JE_THREAD:
+        for alte_erlaubt in (False, True):
+            if gefunden:
                 break
-            tim, ext = post.get("tim"), str(post.get("ext") or "").lower()
-            if not tim or ext not in MOTIV_ENDUNGEN:
-                continue
-            if post.get("spoiler") or post.get("filedeleted"):
-                continue
-            breite, hoehe = post.get("w") or 0, post.get("h") or 0
-            if (breite < MOTIV_MIN_BREITE or hoehe < MOTIV_MIN_HOEHE
-                    or (post.get("fsize") or 0) > MOTIV_MAX_BYTES
-                    or not HG_SEITE[0] <= breite / hoehe <= HG_SEITE[1]):
-                continue
-            md5 = str(post.get("md5") or tim)
-            if md5 in gesehen:
-                continue
-            gesehen.add(md5)
-            # Threadnummer im Dateinamen: video_report.py ordnet die Bilder
-            # darueber den Berichtsabschnitten zu.
-            aus.append({"thread": no, "datei": f"{no}-{tim}{ext}",
-                        "url": f"{BILD_BASIS}/{tim}{ext}"})
-            je_thread += 1
+            for post in sortiert:
+                if len(gefunden) >= HG_JE_THREAD:
+                    break
+                tim, ext = post.get("tim"), str(post.get("ext") or "").lower()
+                if not tim or ext not in MOTIV_ENDUNGEN:
+                    continue
+                if post.get("spoiler") or post.get("filedeleted"):
+                    continue
+                breite, hoehe = post.get("w") or 0, post.get("h") or 0
+                if (breite < MOTIV_MIN_BREITE or hoehe < MOTIV_MIN_HOEHE
+                        or (post.get("fsize") or 0) > MOTIV_MAX_BYTES
+                        or not HG_SEITE[0] <= breite / hoehe <= HG_SEITE[1]):
+                    continue
+                md5 = str(post.get("md5") or tim)
+                if md5 in gesehen:
+                    continue
+                if not alte_erlaubt and md5 in (gesperrt or set()):
+                    continue
+                gesehen.add(md5)
+                # Threadnummer im Dateinamen: video_report.py ordnet die
+                # Bilder darueber den Berichtsabschnitten zu.
+                gefunden.append({"thread": no, "datei": f"{no}-{tim}{ext}",
+                                 "url": f"{BILD_BASIS}/{tim}{ext}",
+                                 "md5": md5})
+        aus.extend(gefunden)
     return aus[:HG_MAX]
 
 
@@ -1143,20 +1193,26 @@ def hintergruende_waehlen(manifest: dict, datum: str) -> int:
     freigegebene Downloads werden geloescht; motive.json haelt die Zuordnung
     Thread -> Dateien fuer den Video-Lauf fest."""
     ziel_dir = ARBEIT / "motive" / datum
-    kandidaten = hintergrund_kandidaten(manifest)
+    gesperrt = set(verwendete_bilder(datum))
+    kandidaten = hintergrund_kandidaten(manifest, gesperrt)
     if not kandidaten:
         log.info("keine Hintergrund-Kandidaten im Snapshot")
         return 0
     geladen = motiv_laden(kandidaten, ziel_dir)
     frei = set(hintergrund_pruefen(geladen))
+    md5_nach_datei = {k["datei"]: k["md5"] for k in kandidaten}
     threads: dict[str, list[str]] = {}
+    gezeigt: list[str] = []
     for p in geladen:
         if p not in frei:
             p.unlink()
             continue
         threads.setdefault(p.name.split("-", 1)[0], []).append(p.name)
+        if p.name in md5_nach_datei:
+            gezeigt.append(md5_nach_datei[p.name])
     (ziel_dir / "motive.json").write_text(
         json.dumps({"threads": threads}, indent=2) + "\n", encoding="utf-8")
+    verwendete_merken(gezeigt, datum)
     return len(frei)
 
 
