@@ -835,7 +835,7 @@ def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
 # ------------------------------------------------- Motiv fuers Vorschaubild
 
 MOTIV_THREADS = 8        # so viele der substanzstaerksten Threads liefern Bilder
-MOTIV_KANDIDATEN = 5     # so viele gehen an die Sichtpruefung
+MOTIV_KANDIDATEN = 8     # so viele gehen an die Sichtpruefung
 MOTIV_MIN_BREITE = 500   # schmaler wird auf der halben Bildflaeche matschig
 MOTIV_MIN_HOEHE = 400
 MOTIV_MAX_BYTES = 4_000_000
@@ -849,7 +849,10 @@ BILD_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; boardstats/1.0)"}
 MOTIV_PROMPT = """\
 Du wählst das Motiv für das YouTube-Vorschaubild eines Nachrichtenvideos aus.
 Die Kandidaten stammen aus den heute ausgewerteten Threads des 4chan-Boards
-/biz/ und sind ungeprüftes Fremdmaterial.
+/biz/. Das ist ein "blue board", auf dem die Moderation nicht jugendfreies
+Material entfernt; grob Anstössiges ist dort die Ausnahme. Deine Hauptfrage
+ist deshalb nicht, ob ein Bild harmlos ist, sondern welches als Vorschaubild
+am besten wirkt.
 
 Sieh dir JEDES unten genannte Bild mit dem Read-Werkzeug an. Urteile nur nach
 dem, was du wirklich siehst, und rate nichts.
@@ -859,17 +862,27 @@ Ein Bild ist NUR dann geeignet, wenn alles zutrifft:
   Nacktheit und nichts Sexualisiertes, keine Gewalt, kein Blut, keine Hass-
   oder Extremismus-Symbolik, keine Beschimpfungen im Bildtext, keine Drogen,
   keine reale Person in kompromittierender Lage.
-- Es passt zum Thema des Tages, das dir in der Eingabe genannt wird.
+- Es passt zum Video: entweder zum Thema des Tages, das dir in der Eingabe
+  genannt wird, oder es ist ein typisches Motiv dieses Boards (gezeichneter
+  Frosch oder Wojak, Trader-Meme, Kurschart, Krypto-Symbolik). Ein Bild ohne
+  jeden Bezug zu Finanzen, Krypto oder der Bildsprache des Boards ist
+  ungeeignet.
 - Es wirkt als Vorschaubild: ein klar erkennbares Motiv, das auch klein noch
   wirkt. Screenshots mit viel Kleinschrift, nichtssagende Charts und reine
   Textbilder sind ungeeignet.
-Im Zweifel ist ein Bild ungeeignet.
+Beim ersten Punkt gilt im Zweifel Ablehnung, denn ein Richtlinienverstoss
+kostet den Kanal. Bei den beiden anderen darfst du zugreifen: ein
+brauchbares Board-Motiv ist besser als gar keines.
 
 Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
 Code-Zaun. Die Beschreibung ist Pflicht und benennt sachlich, was auf genau
 diesem Bild zu sehen ist:
 {"bilder": [{"datei": "...", "beschreibung": "...", "geeignet": true,
 "grund": "..."}], "wahl": "Dateiname des besten geeigneten Bildes oder null"}
+
+Gewählt wird das stärkste geeignete Bild: bevorzugt eines mit Bezug zum
+Thema des Tages, sonst das ausdrucksstärkste Board-Motiv. Ist keines
+geeignet, ist die Wahl null.
 """
 
 
