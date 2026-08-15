@@ -42,7 +42,10 @@ weiter oben. Dahinter laufen als Hintergrund die Bild-Anhaenge der gerade
 besprochenen Threads: der Report-Lauf legt sie gesichtet unter
 arbeit/motive/<datum>/ bereit (lockere Pruefung, nur Richtlinienverstoesse
 fallen raus), die Zuordnung Abschnitt -> Thread kommt aus den Quell-URLs
-unter jedem Berichtsabschnitt. Abschnitte ohne freigegebenes Bild bekommen
+unter jedem Berichtsabschnitt. Die Bilder laufen in voller Qualitaet;
+lesbar bleibt der Text durch den dunklen Verlauf am unteren Rand (backt
+thumbnail.videohintergrund ein) und die halbtransparente Bande hinter den
+Titelkarten. Abschnitte ohne freigegebenes Bild bekommen
 das Vorschaubild des Tages als Hintergrund, und scheitert der ganze
 Hintergrund-Aufbau, bleibt die bisherige einfarbige Flaeche - kein
 Bildproblem darf den Upload verhindern.
@@ -130,6 +133,12 @@ KARTE_Y = 140                   # Oberkante der Ueberschrift-Titelkarte
 KARTE_FONTSIZES = [58, 50, 44]  # Titelkarte: schrumpfen, bis sie passt
 KARTE_ZEILEN_MAX = 3
 KARTE_ZEILENFAKTOR = 1.22
+# Der Hintergrund laeuft oben in voller Qualitaet (abgedunkelt wird nur der
+# untere Verlauf fuer die Textzeilen); die Titelkarte bringt ihre Lesbarkeit
+# deshalb selbst mit: eine halbtransparente schwarze Bande ueber die volle
+# Breite, nur solange die Karte steht.
+KARTE_BANDE_RAND = (30, 20)     # Polster oben/unten um den Kartentext
+KARTE_BANDE_ALPHA = "&H50&"     # ~69 % deckend
 BILD_MIN_DAUER = 8.0            # ein Hintergrundbild steht mindestens so lange
 FPS = 25
 FARBE_TEXT = "&H00FFFFFF&"
@@ -482,6 +491,15 @@ def ass_erzeugen(anzeigen: list[Anzeige], ziel_ass: Path) -> None:
             stil = f"\\fs{a.fontsize}\\b1"
             schritt = int(a.fontsize * KARTE_ZEILENFAKTOR)
             y0 = KARTE_Y
+            # Bande zuerst anhaengen: gleicher Layer, aber libass zeichnet
+            # bei gleichem Layer in Dateireihenfolge - Text liegt darueber.
+            oben = KARTE_Y - KARTE_BANDE_RAND[0]
+            unten = KARTE_Y + len(a.zeilen) * schritt + KARTE_BANDE_RAND[1]
+            events.append(
+                f"Dialogue: 0,{_ass_zeit(a.start)},{_ass_zeit(a.end)},"
+                f"Report,,0,0,0,,{{\\pos(0,0)\\p1\\bord0\\shad0\\blur6"
+                f"\\1c&H000000&\\1a{KARTE_BANDE_ALPHA}}}"
+                f"m 0 {oben} l {CANVAS_W} {oben} {CANVAS_W} {unten} 0 {unten}")
         else:
             stil = ""
             schritt = ZEILENHOEHE

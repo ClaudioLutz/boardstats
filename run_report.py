@@ -1052,7 +1052,7 @@ HINTERGRUND_PROMPT = """\
 Du prüfst Bilder für den Videohintergrund eines Nachrichtenvideos über das
 4chan-Board /biz/. Das ist ein "blue board", auf dem die Moderation nicht
 jugendfreies Material entfernt; grob Anstössiges ist dort die Ausnahme. Die
-Bilder laufen stark abgedunkelt und unscharf HINTER dem Untertiteltext. Es
+Bilder laufen als Kulisse HINTER dem Untertiteltext. Es
 geht darum, ob ein Bild öffentlich gezeigt werden darf - nicht darum, ob es
 schön ist oder zum Thema passt.
 

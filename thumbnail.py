@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 BREITE = 1280
 HOEHE = 720
@@ -42,13 +42,14 @@ ZEILEN_FAKTOR = 1.12
 JPEG_QUALITAET = 88
 MAX_BYTES = 2_000_000         # harte Grenze von thumbnails/set
 
-# Videohintergrund: das Bild soll Kulisse hinter dem Untertiteltext sein,
-# nicht Konkurrenz - deshalb deutlich staerker abgedunkelt und entsaettigt
-# als das Thumbnail-Motiv, dazu leicht unscharf (verdeckt auch die
-# Kompressionsartefakte kleiner Board-Bilder auf voller Bildflaeche).
-HG_FARBE = 0.50
-HG_HELLIGKEIT = 0.42
-HG_UNSCHAERFE = 3
+# Videohintergrund: das Bild bleibt in voller Qualitaet sichtbar; lesbar
+# wird der Untertiteltext durch einen dunklen Verlauf nur am unteren Rand
+# (dort stehen die max. 3 Textzeilen, Oberkante ~524 px). Die Titelkarten
+# oben bekommen ihre Abdunkelung als eigene Bande im ASS-Renderer, weil sie
+# nur zeitweise eingeblendet sind.
+HG_VERLAUF_START = 420        # y, ab dem der Verlauf einsetzt
+HG_VERLAUF_VOLL = 560         # ab hier volle Deckung (Textzone ab ~524)
+HG_VERLAUF_DECKUNG = 0.85     # Schwaerzung in der Textzone (0..1)
 
 # Dieselben Kandidaten wie im Video-Renderer; hier erneut aufgefuehrt, damit
 # das Modul ohne video_report.py nutzbar bleibt (Importrichtung: video -> thumb).
@@ -131,11 +132,27 @@ def _passende_schrift(text: str, breite: int, hoehe: int,
     return font, zeilen[:ZEILEN_MAX]
 
 
+def _bodenverlauf() -> Image.Image:
+    """Alpha-Maske fuer den unteren Abdunkelungs-Verlauf: oben durchsichtig,
+    zwischen HG_VERLAUF_START und HG_VERLAUF_VOLL weich ansteigend, darunter
+    konstant HG_VERLAUF_DECKUNG - so steht jede Textzeile auf gleichmaessig
+    dunklem Grund, waehrend der obere Bildteil unangetastet bleibt."""
+    maske = Image.new("L", (BREITE, HOEHE), 0)
+    zeichnen = ImageDraw.Draw(maske)
+    voll = int(255 * HG_VERLAUF_DECKUNG)
+    spanne = HG_VERLAUF_VOLL - HG_VERLAUF_START
+    for y in range(HG_VERLAUF_START, HOEHE):
+        t = min(1.0, (y - HG_VERLAUF_START) / spanne)
+        zeichnen.line([(0, y), (BREITE, y)], fill=int(voll * t ** 1.5))
+    return maske
+
+
 def videohintergrund(quelle: Path | None, ziel: Path) -> Path:
-    """Bild als 1280x720-Videohintergrund aufbereiten (cover-Zuschnitt,
-    entsaettigt, stark abgedunkelt, leicht unscharf). Ohne Quelle oder bei
-    unlesbarer Datei entsteht die einfarbige Grundflaeche - der Anrufer muss
-    sich um kaputte Bilder nicht kuemmern."""
+    """Bild als 1280x720-Videohintergrund aufbereiten: cover-Zuschnitt in
+    voller Qualitaet, dazu der dunkle Verlauf am unteren Rand fuer die
+    Textzeilen. Ohne Quelle oder bei unlesbarer Datei entsteht die
+    einfarbige Grundflaeche - der Anrufer muss sich um kaputte Bilder
+    nicht kuemmern."""
     bild: Image.Image
     try:
         if quelle is None:
@@ -152,9 +169,8 @@ def videohintergrund(quelle: Path | None, ziel: Path) -> Path:
     # oberes Drittel statt Mitte, wie beim Thumbnail-Motiv
     oben = min((bild.height - HOEHE) // 3, bild.height - HOEHE)
     bild = bild.crop((links, oben, links + BREITE, oben + HOEHE))
-    bild = ImageEnhance.Color(bild).enhance(HG_FARBE)
-    bild = ImageEnhance.Brightness(bild).enhance(HG_HELLIGKEIT)
-    bild = bild.filter(ImageFilter.GaussianBlur(HG_UNSCHAERFE))
+    schwarz = Image.new("RGB", (BREITE, HOEHE), (0, 0, 0))
+    bild = Image.composite(schwarz, bild, _bodenverlauf())
     ziel.parent.mkdir(parents=True, exist_ok=True)
     bild.save(ziel, "JPEG", quality=90)
     return ziel

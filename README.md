@@ -67,10 +67,12 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    die Quell-Tokens des Berichts (edge-tts-WordBoundary-Texte sind
    satzzeichenlos und liefern nur die Zeitfenster); die Hervorhebung ist
    derselbe Zeilenstring mit per `\alpha` maskierten Nachbarwörtern und
-   dadurch pixelgenau deckungsgleich. Als Hintergrund laufen — entsättigt,
-   stark abgedunkelt und leicht unscharf — die freigegebenen Bild-Anhänge
-   der gerade besprochenen Threads (`arbeit/motive/<datum>/`, Zuordnung
-   über die Quell-URLs unter jedem Berichtsabschnitt); Abschnitte ohne
+   dadurch pixelgenau deckungsgleich. Als Hintergrund laufen in voller
+   Bildqualität die freigegebenen Bild-Anhänge der gerade besprochenen
+   Threads (`arbeit/motive/<datum>/`, Zuordnung über die Quell-URLs unter
+   jedem Berichtsabschnitt); lesbar bleibt der Text durch einen dunklen
+   Verlauf am unteren Bildrand, Titelkarten bekommen eine halbtransparente
+   Bande, solange sie stehen. Abschnitte ohne
    freigegebenes Bild bekommen das Vorschaubild des Tages, und scheitert
    der Hintergrund-Aufbau ganz, bleibt die einfarbige Fläche.
    Upload als **öffentliches** Video über die YouTube
