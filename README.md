@@ -73,7 +73,9 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    jedem Berichtsabschnitt); lesbar bleibt der Text durch einen dunklen
    Verlauf am unteren Bildrand, Titelkarten bekommen eine halbtransparente
    Bande, solange sie stehen. Abschnitte ohne
-   freigegebenes Bild bekommen das Vorschaubild des Tages, und scheitert
+   eigenes freigegebenes Bild ziehen reihum aus dem Pool der übrigen
+   Tagesbilder; erst ein Tag ganz ohne Bilder fällt auf ein textloses
+   Standbild (rohes Tagesmotiv bzw. Serienbild) zurück, und scheitert
    der Hintergrund-Aufbau ganz, bleibt die einfarbige Fläche.
    Upload als **öffentliches** Video über die YouTube
    Data API v3 (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein

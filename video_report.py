@@ -45,10 +45,11 @@ fallen raus), die Zuordnung Abschnitt -> Thread kommt aus den Quell-URLs
 unter jedem Berichtsabschnitt. Die Bilder laufen in voller Qualitaet;
 lesbar bleibt der Text durch den dunklen Verlauf am unteren Rand (backt
 thumbnail.videohintergrund ein) und die halbtransparente Bande hinter den
-Titelkarten. Abschnitte ohne freigegebenes Bild bekommen
-das Vorschaubild des Tages als Hintergrund, und scheitert der ganze
-Hintergrund-Aufbau, bleibt die bisherige einfarbige Flaeche - kein
-Bildproblem darf den Upload verhindern.
+Titelkarten. Abschnitte ohne eigenes freigegebenes Bild ziehen reihum aus
+dem Pool der uebrigen Tagesbilder; erst ein Tag ganz ohne Bilder faellt
+auf ein textloses Standbild (rohes Tagesmotiv bzw. Serienbild) zurueck,
+und scheitert der ganze Hintergrund-Aufbau, bleibt die bisherige
+einfarbige Flaeche - kein Bildproblem darf den Upload verhindern.
 """
 from __future__ import annotations
 
@@ -554,32 +555,53 @@ def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
 
 
 def hintergrund_plan(bloecke: list[Block], block_worte: list[list[Wort]],
-                     abschnitte: list[Abschnitt], datum: str,
-                     fallback: Path | None, ende: float
+                     abschnitte: list[Abschnitt], datum: str, ende: float
                      ) -> list[tuple[Path | None, float]]:
     """Bildfolge fuer den Hintergrund: je Berichtsabschnitt die Bilder seiner
     Threads, gleichmaessig auf die Abschnittsdauer verteilt (aber keines
-    kuerzer als BILD_MIN_DAUER). Abschnitte ohne Bild bekommen den fallback
-    (das Vorschaubild des Tages); None steht fuer die einfarbige Flaeche."""
+    kuerzer als BILD_MIN_DAUER). Abschnitte ohne eigenes Bild ziehen reihum
+    aus dem Pool der uebrigen freigegebenen Tagesbilder (bevorzugt noch
+    ungezeigte) - NICHT aus dem Vorschaubild, dessen Tages-Schlagwort passt
+    dort inhaltlich nicht. Hat der Tag gar keine freigegebenen Bilder, tut
+    es das rohe Tagesmotiv bzw. das statische Serienbild (beide textlos);
+    None steht fuer die einfarbige Flaeche."""
     zuordnung = motiv_zuordnung(datum)
     start_von: dict[int, float] = {}
     for block, worte in zip(bloecke, block_worte):
         if worte and block.abschnitt not in start_von:
             start_von[block.abschnitt] = worte[0].start
     grenzen = sorted(start_von.items())  # (abschnitt, startzeit), chronologisch
-    plan: list[tuple[Path | None, float]] = []
+    # Erster Durchgang: eigene Bilder je Abschnitt; None = braucht den Pool.
+    roh: list[tuple[float, list[Path] | None]] = []
+    gezeigt: set[Path] = set()
     for i, (nr, start) in enumerate(grenzen):
         von = 0.0 if i == 0 else start
         bis = grenzen[i + 1][1] if i + 1 < len(grenzen) else ende
         dauer = bis - von
         if dauer <= 0:
             continue
-        bilder: list[Path | None] = [
-            p for tid in abschnitte[nr].threads for p in zuordnung.get(tid, [])]
-        if not bilder:
-            bilder = [fallback]
-        n = max(1, min(len(bilder), int(dauer // BILD_MIN_DAUER)))
-        plan.extend((b, dauer / n) for b in bilder[:n])
+        bilder = [p for tid in abschnitte[nr].threads
+                  for p in zuordnung.get(tid, [])]
+        if bilder:
+            bilder = bilder[:max(1, int(dauer // BILD_MIN_DAUER))]
+            gezeigt.update(bilder)
+        roh.append((dauer, bilder or None))
+    motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
+    ersatz = motive[0] if motive else (THUMBNAIL if THUMBNAIL.exists() else None)
+    alle: list[Path | None] = [p for pfade in zuordnung.values() for p in pfade]
+    pool = [p for p in alle if p not in gezeigt] or alle or [ersatz]
+    # Zweiter Durchgang: Abschnitte ohne eigene Bilder reihum aus dem Pool.
+    naechster = 0
+    plan: list[tuple[Path | None, float]] = []
+    for dauer, eigene in roh:
+        bilder_aus: list[Path | None]
+        if eigene is None:
+            n = max(1, min(len(pool), int(dauer // BILD_MIN_DAUER)))
+            bilder_aus = [pool[(naechster + k) % len(pool)] for k in range(n)]
+            naechster += n
+        else:
+            bilder_aus = list(eigene)
+        plan.extend((b, dauer / len(bilder_aus)) for b in bilder_aus)
     return plan
 
 
@@ -826,8 +848,6 @@ def main() -> None:
 
     titel = titel_laden(tag_dir, args.sprache, cfg["titel"].format(datum=datum))
     print(f"Titel: {titel}")
-    # Vorschaubild schon jetzt bauen: es ist zugleich der Hintergrund-Fallback
-    # fuer Abschnitte ohne freigegebenes Board-Bild.
     bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
 
     print(f"erzeuge Vertonung ({cfg['stimme']}) mit Wort-Zeitstempeln ...")
@@ -843,8 +863,7 @@ def main() -> None:
     konkat: Path | None = None
     try:
         ende = (worte[-1].end if worte else 0.0) + 5.0  # Puffer, -shortest kappt
-        plan = hintergrund_plan(bloecke, block_worte, abschnitte, datum,
-                                bild, ende)
+        plan = hintergrund_plan(bloecke, block_worte, abschnitte, datum, ende)
         konkat = hintergrund_liste(plan, arbeit, cfg["suffix"])
         print(f"Hintergrund: {len(plan)} Standbilder")
     except Exception as e:
