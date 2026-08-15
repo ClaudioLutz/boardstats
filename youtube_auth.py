@@ -79,12 +79,18 @@ def access_token() -> str:
 
 def hochladen(video_pfad: Path, titel: str, beschreibung: str,
               privacy_status: str = "unlisted", category_id: str = "25",
-              tags: list[str] | None = None) -> tuple[str, str]:
+              tags: list[str] | None = None,
+              sprache: str | None = None) -> tuple[str, str]:
     """Laedt ein Video per Resumable-Upload hoch, gibt (video_id, url) zurueck."""
     token = access_token()
     snippet: dict[str, object] = {"title": titel, "description": beschreibung, "categoryId": category_id}
     if tags:
         snippet["tags"] = tags
+    if sprache:
+        # Metadaten- und Tonsprache (BCP-47, z.B. "de"): steuert, welchem
+        # Publikum YouTube das Video zuordnet, und hilft den Auto-Untertiteln.
+        snippet["defaultLanguage"] = sprache
+        snippet["defaultAudioLanguage"] = sprache
     metadaten = {"snippet": snippet, "status": {"privacyStatus": privacy_status}}
     metadaten_bytes = json.dumps(metadaten).encode("utf-8")
     groesse = video_pfad.stat().st_size

@@ -90,6 +90,7 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "quellen": "Quell-Threads (4chan loescht sie nach wenigen Tagen):",
         "kappung": ("[Text hier gekuerzt - YouTube laesst in der Beschreibung "
                     "nur 5000 Zeichen zu.]"),
+        "kapitel_intro": "Einleitung",
     },
     "en": {
         "bericht": "bericht_en.md",
@@ -105,8 +106,22 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "quellen": "Source threads (4chan deletes them after a few days):",
         "kappung": ("[Text truncated here - YouTube allows only 5000 characters "
                     "in the description.]"),
+        "kapitel_intro": "Intro",
     },
 }
+# Feste Serien-Tags je Sprache; dazu kommen beim Upload die Tagesthemen
+# (##-Ueberschriften und Titel-Schlagwort). Tags wirken bei YouTube nur noch
+# schwach, kosten aber nichts.
+FESTE_TAGS: dict[str, list[str]] = {
+    "de": ["4chan", "biz", "krypto", "crypto", "bitcoin", "aktien",
+           "boerse", "finanzen", "lagebericht"],
+    "en": ["4chan", "biz", "crypto", "bitcoin", "stocks", "stock market",
+           "finance", "investing", "market report"],
+}
+TAGS_MAX_ZEICHEN = 450   # YouTube deckelt die Gesamtliste bei 500 Zeichen
+# Die ersten drei Hashtags der Beschreibung zeigt YouTube klickbar ueber
+# dem Videotitel.
+HASHTAG_ZEILE = "#4chan #biz #crypto"
 FONT_NORMAL_KANDIDATEN = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "C:/Windows/Fonts/arial.ttf",
@@ -719,6 +734,56 @@ def vorschaubild(arbeit: Path, tag_dir: Path, cfg: dict[str, str], sprache: str,
         return THUMBNAIL if THUMBNAIL.exists() else None
 
 
+def tags_bauen(sprache: str, titel: str, bloecke: list[Block]) -> list[str]:
+    """Tag-Liste fuer den Upload: feste Serien-Tags plus die Tagesthemen
+    (Titel-Schlagwort und der Themenkopf jeder ##-Ueberschrift, also der
+    Teil vor dem Doppelpunkt). Konservativ unter dem 500-Zeichen-Limit
+    gekappt, das YouTube auf die Gesamtliste rechnet."""
+    tags = list(FESTE_TAGS[sprache])
+    kandidaten = [_thumb_aus_titel(titel)]
+    # Nur Ueberschriften mit Doppelpunkt tragen vorne ein echtes Thema
+    # ("MONERO: ..."); die ohne sind generische Serienrubriken
+    # ("UNVERAENDERT SEIT GESTERN") und als Suchbegriff wertlos.
+    kandidaten += [b.text.split(":")[0] for b in bloecke
+                   if b.art == "ueberschrift" and ":" in b.text]
+    for roh in kandidaten:
+        t = re.sub(r"[^0-9A-Za-zÄÖÜäöü$&. -]+", " ", roh)
+        t = re.sub(r"\s+", " ", t).strip().lower()
+        if t and t not in tags and 2 <= len(t) <= 30:
+            tags.append(t)
+    aus: list[str] = []
+    laenge = 0
+    for t in tags:
+        laenge += len(t) + 2  # Mehrwort-Tags zaehlen bei YouTube mit Quotes
+        if laenge > TAGS_MAX_ZEICHEN:
+            break
+        aus.append(t)
+    return aus
+
+
+def kapitel_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
+                  intro: str) -> str:
+    """Kapitelmarken fuer die Beschreibung: je ##-Ueberschrift ein Kapitel ab
+    dem Start ihres ersten gesprochenen Worts. YouTube zeigt sie als Kapitel
+    und in der Suche als Schluesselmomente, verlangt aber eine erste Marke
+    bei 00:00, mindestens drei Marken und 10 s Mindestabstand - sonst lieber
+    gar keine Liste als eine halb wirksame."""
+    zeilen = [f"00:00 {intro}"]
+    letzte = 0
+    for block, worte in zip(bloecke, block_worte):
+        if block.art != "ueberschrift" or not worte:
+            continue
+        s = int(worte[0].start)
+        if s < letzte + 10:
+            continue
+        letzte = s
+        zeit = (f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
+                if s >= 3600 else f"{s // 60:02d}:{s % 60:02d}")
+        titel = block.text.replace("<", "").replace(">", "").replace("—", "-")
+        zeilen.append(f"{zeit} {titel}")
+    return "\n".join(zeilen) if len(zeilen) >= 3 else ""
+
+
 def thread_links(tag_dir: Path) -> list[str]:
     """Quell-Thread-URLs des Tages aus der Extrakt-Uebersicht (README.md),
     in deren Reihenfolge (absteigend nach Substanzdichte)."""
@@ -788,12 +853,15 @@ def _auf_bytes_kappen(text: str, budget: int) -> str:
 
 
 def beschreibung_bauen(tag_dir: Path, markdown: str, cfg: dict[str, str],
-                       datum: str) -> str:
-    """Kopfzeile + Berichtstext im Rohtext + Liste der Quell-Threads. YouTube
-    laesst nur 5000 Zeichen zu, der Bericht ist gut doppelt so lang - deshalb
-    wird an einer Abschnittsgrenze gekappt. Die Thread-Links bekommen ihr
-    Budget vorab, sie duerfen der Kappung nie zum Opfer fallen."""
-    kopf = cfg["beschreibung"].format(datum=datum)
+                       datum: str, kapitel: str = "") -> str:
+    """Kopfzeile + Hashtags + Kapitelmarken + Berichtstext im Rohtext + Liste
+    der Quell-Threads. YouTube laesst nur 5000 Zeichen zu, der Bericht ist gut
+    doppelt so lang - deshalb wird an einer Abschnittsgrenze gekappt. Die
+    Thread-Links bekommen ihr Budget vorab, sie duerfen der Kappung nie zum
+    Opfer fallen - Hashtags und Kapitel ebenso, sie stehen vor dem Text."""
+    kopf = cfg["beschreibung"].format(datum=datum) + "\n" + HASHTAG_ZEILE
+    if kapitel:
+        kopf += "\n\n" + kapitel
     links = thread_links(tag_dir)
     fuss = "\n\n" + cfg["quellen"] + "\n" + "\n".join(links) if links else ""
     hinweis = "\n\n" + cfg["kappung"]
@@ -879,15 +947,18 @@ def main() -> None:
 
     kurz = cfg["beschreibung"].format(datum=datum)
     try:
-        beschreibung = beschreibung_bauen(tag_dir, markdown, cfg, datum)
+        kapitel = kapitel_bauen(bloecke, block_worte, cfg["kapitel_intro"])
+        beschreibung = beschreibung_bauen(tag_dir, markdown, cfg, datum, kapitel)
     except Exception as e:
         # Ein Fehler beim Zusammenbau darf den Upload nie verhindern.
         print(f"Beschreibung nicht aufgebaut ({e}) - nehme nur die Kopfzeile")
         beschreibung = kurz
     print("lade auf YouTube hoch ...")
+    tags = tags_bauen(args.sprache, titel, bloecke)
     try:
         video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
-                                               privacy_status="public")
+                                               privacy_status="public",
+                                               tags=tags, sprache=args.sprache)
     except RuntimeError as e:
         # Weist YouTube die Metadaten zurueck, scheitert schon das Oeffnen der
         # Upload-Session - dann existiert noch kein Video und ein zweiter
@@ -898,7 +969,8 @@ def main() -> None:
         print(f"Beschreibung von YouTube abgelehnt ({e}) - zweiter Versuch "
               f"nur mit der Kopfzeile")
         video_id, url = youtube_auth.hochladen(video_mp4, titel, kurz,
-                                               privacy_status="public")
+                                               privacy_status="public",
+                                               tags=tags, sprache=args.sprache)
     marker_pfad.write_text(json.dumps({"video_id": video_id, "url": url}, indent=2), encoding="utf-8")
     print(f"hochgeladen: {url}")
 
