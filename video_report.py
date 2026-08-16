@@ -55,12 +55,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import re
 import subprocess
+import time
+import urllib.request
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 from PIL import ImageFont
 
@@ -80,7 +84,8 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "bericht": "bericht.md",
         "marker": "video.json",
         "suffix": "",
-        "stimme": "de-DE-KatjaNeural",
+        "stimme": "de-DE-ConradNeural",
+        "google_stimme": "de-DE-Neural2-H",
         "titel": "/biz/-Lagebericht {datum}",
         "beschreibung": (
             "Automatisierter Lagebericht aus dem 4chan-Board /biz/ (Business & "
@@ -96,7 +101,8 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "bericht": "bericht_en.md",
         "marker": "video_en.json",
         "suffix": "_en",
-        "stimme": "en-US-JennyNeural",
+        "stimme": "en-US-GuyNeural",
+        "google_stimme": "en-US-Neural2-J",
         "titel": "/biz/ Situation Report {datum}",
         "beschreibung": (
             "Automated situation report from the 4chan board /biz/ (Business & "
@@ -276,8 +282,7 @@ class Wort:
     end: float
 
 
-def tts_mit_worten(text: str, ziel_mp3: Path,
-                   stimme: str = SPRACHEN["de"]["stimme"]) -> list[Wort]:
+def edge_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
     """Vertont text und liefert dabei pro gesprochenem Wort Start/Ende (Sekunden).
 
     Nutzt die edge-tts-Bibliothek direkt (nicht die CLI), weil nur der
@@ -300,6 +305,135 @@ def tts_mit_worten(text: str, ziel_mp3: Path,
         return worte
 
     return asyncio.run(_lauf())
+
+
+# Google Cloud TTS (Neural2): bessere Stimmen als edge-tts, Wort-Zeitstempel
+# ueber SSML-<mark>-Tags (enableTimePointing, nur in v1beta1). Der API-Key
+# liegt bewusst ausserhalb des oeffentlichen Repos, analog zu den
+# YouTube-Credentials.
+GOOGLE_TTS_KEY = Path.home() / ".config" / "boardstats" / "google_tts_key.txt"
+GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1beta1/text:synthesize"
+GOOGLE_SSML_MAX_BYTES = 4000    # API-Limit 5000 Bytes je Aufruf, Marks zaehlen mit
+GOOGLE_SPRECHRATE = 1.05        # leicht schneller wirkt draengender
+GOOGLE_ABSATZ_PAUSE = "600ms"   # edge-tts pausierte an Absatzgrenzen von selbst
+
+
+def _mp3_dauer(pfad: Path) -> float:
+    aus = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(pfad)],
+        capture_output=True, text=True, check=True)
+    return float(aus.stdout.strip())
+
+
+def _ssml_gruppen(text: str) -> list[tuple[str, list[str]]]:
+    """Zerlegt den Berichtstext in SSML-Stuecke unter dem API-Byte-Limit.
+
+    Jedes Quell-Token bekommt ein <mark> davor; Absatzgrenzen werden zu
+    <break>-Pausen. Gruppen brechen bevorzugt an Absatzgrenzen, notfalls
+    mitten im Absatz (die Mark-Nummern zaehlen je Gruppe ab 0)."""
+    gruppen: list[tuple[str, list[str]]] = []
+    tokens: list[str] = []
+    pausen: set[int] = set()
+    bytes_offen = 0
+
+    def abschliessen() -> None:
+        nonlocal bytes_offen
+        if not tokens:
+            return
+        teile = []
+        for i, tok in enumerate(tokens):
+            if i in pausen:
+                teile.append(f'<break time="{GOOGLE_ABSATZ_PAUSE}"/>')
+            teile.append(f'<mark name="w{i}"/>{xml_escape(tok)}')
+        gruppen.append(("<speak>" + " ".join(teile) + "</speak>", tokens.copy()))
+        tokens.clear()
+        pausen.clear()
+        bytes_offen = 0
+
+    for absatz in text.split("\n\n"):
+        if tokens:
+            pausen.add(len(tokens))
+        for tok in absatz.split():
+            kosten = len(xml_escape(tok).encode()) + 22  # Token + Mark-Tag
+            if tokens and bytes_offen + kosten > GOOGLE_SSML_MAX_BYTES:
+                abschliessen()
+            tokens.append(tok)
+            bytes_offen += kosten
+    abschliessen()
+    return gruppen
+
+
+def _google_anfrage(body: bytes, schluessel: str) -> dict:
+    fehler: Exception | None = None
+    for versuch in range(3):
+        try:
+            req = urllib.request.Request(
+                GOOGLE_TTS_URL, data=body,
+                headers={"Content-Type": "application/json",
+                         "X-Goog-Api-Key": schluessel})
+            with urllib.request.urlopen(req, timeout=120) as antwort:
+                return json.loads(antwort.read())
+        except Exception as e:  # noqa: BLE001 - Netz/Quota: kurz warten, nochmal
+            fehler = e
+            time.sleep(3 * (versuch + 1))
+    raise RuntimeError(f"Google TTS nach 3 Versuchen gescheitert: {fehler}")
+
+
+def google_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
+    """Vertont per Google Cloud TTS und liefert pro Quell-Token Start/Ende.
+
+    Timepoints liefern nur Startzeiten; das Wortende ist der Start des
+    Folgeworts, das letzte Wort einer Gruppe endet am Gruppenende. Die
+    MP3-Stuecke (gleiche CBR-Kodierung) werden aneinandergehaengt, den
+    Zeitversatz je Gruppe liefert ffprobe auf der wachsenden Datei."""
+    schluessel = GOOGLE_TTS_KEY.read_text(encoding="utf-8").strip()
+    sprache = "-".join(stimme.split("-")[:2])
+    worte: list[Wort] = []
+    ziel_mp3.write_bytes(b"")
+    versatz = 0.0
+    gruppen = _ssml_gruppen(text)
+    for nr, (ssml, tokens) in enumerate(gruppen, 1):
+        body = json.dumps({
+            "input": {"ssml": ssml},
+            "voice": {"languageCode": sprache, "name": stimme},
+            "audioConfig": {"audioEncoding": "MP3",
+                            "speakingRate": GOOGLE_SPRECHRATE},
+            "enableTimePointing": ["SSML_MARK"],
+        }).encode()
+        daten = _google_anfrage(body, schluessel)
+        with open(ziel_mp3, "ab") as f:
+            f.write(base64.b64decode(daten["audioContent"]))
+        marken = {t["markName"]: float(t["timeSeconds"])
+                  for t in daten.get("timepoints", [])}
+        starts: list[float] = []
+        for i in range(len(tokens)):
+            vorher = starts[-1] if starts else 0.0
+            starts.append(max(vorher, marken.get(f"w{i}", vorher)))
+        gesamt = _mp3_dauer(ziel_mp3)
+        for i, tok in enumerate(tokens):
+            ende = starts[i + 1] if i + 1 < len(tokens) else gesamt - versatz
+            worte.append(Wort(tok, versatz + starts[i],
+                              versatz + max(ende, starts[i])))
+        versatz = gesamt
+        print(f"  Google TTS {nr}/{len(gruppen)}: {len(tokens)} Tokens, "
+              f"{gesamt:.1f}s gesamt")
+    return worte
+
+
+def tts_mit_worten(text: str, ziel_mp3: Path, cfg: dict[str, str]) -> list[Wort]:
+    """Google Cloud TTS, wenn der API-Key hinterlegt ist, sonst edge-tts.
+
+    Der Fallback haelt den Cron-Lauf am Leben: fehlt der Key oder scheitert
+    Google (Netz, Quota, ffprobe), wird mit edge-tts vertont statt abgebrochen."""
+    if GOOGLE_TTS_KEY.exists():
+        try:
+            print(f"Vertonung: Google TTS ({cfg['google_stimme']})")
+            return google_tts_mit_worten(text, ziel_mp3, cfg["google_stimme"])
+        except Exception as e:  # noqa: BLE001
+            print(f"Google TTS fehlgeschlagen ({e}) - Fallback auf edge-tts")
+    print(f"Vertonung: edge-tts ({cfg['stimme']})")
+    return edge_tts_mit_worten(text, ziel_mp3, cfg["stimme"])
 
 
 # ----------------------------------------------------------- Wort-zu-Block-Zuordnung
@@ -918,8 +1052,8 @@ def main() -> None:
     print(f"Titel: {titel}")
     bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
 
-    print(f"erzeuge Vertonung ({cfg['stimme']}) mit Wort-Zeitstempeln ...")
-    worte = tts_mit_worten(text, audio_mp3, cfg["stimme"])
+    print("erzeuge Vertonung mit Wort-Zeitstempeln ...")
+    worte = tts_mit_worten(text, audio_mp3, cfg)
     print(f"{len(worte)} Woerter erkannt")
 
     block_worte = worte_zu_bloecken(worte, bloecke)

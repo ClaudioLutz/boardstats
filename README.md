@@ -52,20 +52,25 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
 
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
-   läuft zweisprachig (deutsch aus `bericht.md` mit `de-DE-KatjaNeural`,
-   englisch aus `bericht_en.md` mit `en-US-JennyNeural`, Parameter
+   läuft zweisprachig (deutsch aus `bericht.md` mit `de-DE-Neural2-H`,
+   englisch aus `bericht_en.md` mit `en-US-Neural2-J`, Parameter
    `--sprache`), liest das bereits veröffentlichte `extrakte/<datum>/bericht.md`,
    bereinigt es für die Vertonung (`bloecke_erzeugen()`: Quell-/Beleg-Zeilen,
    nackte Thread-URLs und das GLOSSAR raus; die Blockstruktur — Absätze,
    ##-Überschriften, Aufzählungspunkte — bleibt erhalten), vertont per
-   `edge-tts` (Stimme `de-DE-KatjaNeural`) und baut mit `ffmpeg`/`libass`
+   Google Cloud TTS (Neural2-Stimmen; Wort-Zeitstempel über SSML-`<mark>`-
+   Timepoints, absatzweise gestückelt wegen des 5000-Byte-API-Limits; der
+   API-Key liegt ausserhalb des Repos unter
+   `~/.config/boardstats/google_tts_key.txt`, ohne Key fällt der Lauf auf
+   `edge-tts` mit `de-DE-ConradNeural`/`en-US-GuyNeural` zurück) und baut
+   mit `ffmpeg`/`libass`
    ein Video: der Text erscheint synchron zum Gesprochenen in Happen von
    höchstens drei Zeilen am unteren Bildrand (linksbündig, Fliesstext mit
    Satzzeichen, Aufzählungen mit hängendem Einzug), ##-Überschriften stehen
    während ihrer Sprechzeit als grosse Titelkarte weiter oben, und das
    jeweils gesprochene Wort wird farblich hervorgehoben. Gerendert werden
-   die Quell-Tokens des Berichts (edge-tts-WordBoundary-Texte sind
-   satzzeichenlos und liefern nur die Zeitfenster); die Hervorhebung ist
+   die Quell-Tokens des Berichts (die TTS-Wortereignisse liefern nur die
+   Zeitfenster; bei edge-tts sind sie zudem satzzeichenlos); die Hervorhebung ist
    derselbe Zeilenstring mit per `\alpha` maskierten Nachbarwörtern und
    dadurch pixelgenau deckungsgleich. Als Hintergrund laufen in voller
    Bildqualität die freigegebenen Bild-Anhänge der gerade besprochenen
