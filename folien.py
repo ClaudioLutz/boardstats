@@ -247,21 +247,27 @@ def thema(titel: str, punkte: list[str], sichtbar: int, aktiv: int,
     text_breite = 620 if motiv is not None else B - 2 * MARGIN - 60
     unten = _titelblock(d, titel, 124, text_breite, 48)
 
-    # Stichpunkte: schrumpfen, bis alle in die Flaeche passen; was dann noch
-    # ueberlaeuft, faellt weg (lieber weniger Punkte als Text im Anschnitt).
-    for gr in (29, 26, 24):
+    # Stichpunkte: schrumpfen, bis alle in die Flaeche passen. Reicht selbst
+    # die kleinste Schrift nicht, weichen die AELTESTEN Punkte nach oben
+    # hinaus - ein neu erscheinender Punkt muss immer zu sehen sein.
+    for gr in (29, 26, 24, 22, 20):
         font = _font(False, gr)
         zeilenhoehe = int(gr * 1.38)
-        y = unten + 36
         hoehe = 0
         for p in punkte:
             hoehe += len(_umbrechen(d, p, font, text_breite - 96)) * zeilenhoehe + 14
         if unten + 36 + hoehe <= PUNKTE_UNTEN_MAX:
             break
+
+    def _block_hoehe(p: str) -> int:
+        return len(_umbrechen(d, p, font, text_breite - 96)) * zeilenhoehe + 14
+
+    gezeigt = list(enumerate(punkte[:sichtbar]))
+    while len(gezeigt) > 1 and \
+            unten + 36 + sum(_block_hoehe(p) for _, p in gezeigt) > PUNKTE_UNTEN_MAX:
+        gezeigt.pop(0)
     y = unten + 36
-    for i, p in enumerate(punkte[:sichtbar]):
-        if y >= PUNKTE_UNTEN_MAX - zeilenhoehe:
-            break
+    for i, p in gezeigt:
         farbe = HELL if i == aktiv else GEDIMMT
         d.rectangle([MARGIN + 36, y + 12, MARGIN + 48, y + 24],
                     fill=AKZENT if i == aktiv else GEDIMMT)

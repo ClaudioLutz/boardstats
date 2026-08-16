@@ -709,17 +709,42 @@ def ass_erzeugen(anzeigen: list[Anzeige], ziel_ass: Path) -> None:
 
 # ----------------------------------------------------------- Hintergrundbilder
 
+def motiv_werte(datum: str) -> dict[str, dict]:
+    """Bewertungen der Sichtpruefung je Bilddatei (unterhaltung/themen,
+    1-5; seit 16.08.2026 in motive.json). Leer bei alten Tagen ohne
+    Bewertungen - dann zaehlt jedes Bild als neutrale 3."""
+    try:
+        daten = json.loads((HINTERGRUND_DIR / datum / "motive.json")
+                           .read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    werte = daten.get("werte")
+    return werte if isinstance(werte, dict) else {}
+
+
+def _bild_wert(werte: dict[str, dict], name: str, schluessel: str) -> int:
+    try:
+        roh = (werte.get(name) or {}).get(schluessel)
+        return max(1, min(5, int(roh))) if roh is not None else 3
+    except (TypeError, ValueError, AttributeError):
+        return 3
+
+
 def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
     """Freigegebene Hintergrundbilder je Thread (Report-Lauf,
-    arbeit/motive/<datum>/). Leer, wenn der Tag keine hat."""
+    arbeit/motive/<datum>/), je Thread absteigend nach Unterhaltungswert
+    plus Themennaehe sortiert. Leer, wenn der Tag keine hat."""
     ordner = HINTERGRUND_DIR / datum
     try:
         threads = json.loads((ordner / "motive.json")
                              .read_text(encoding="utf-8"))["threads"]
     except (OSError, json.JSONDecodeError, KeyError):
         return {}
+    werte = motiv_werte(datum)
     aus: dict[str, list[Path]] = {}
     for tid, namen in threads.items():
+        namen = sorted(namen, key=lambda n: _bild_wert(werte, n, "unterhaltung")
+                       + _bild_wert(werte, n, "themen"), reverse=True)
         pfade = [ordner / n for n in namen if (ordner / n).exists()]
         if pfade:
             aus[str(tid)] = pfade
@@ -955,17 +980,42 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
     sichtbaren Stichpunkten, ...) ist ein eigenes Standbild; die Startzeiten
     kommen aus den Wort-Zeitstempeln der zugehoerigen Bloecke."""
     zuteilung = motiv_zuordnung(datum)
+    werte = motiv_werte(datum)
     motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
     tages_motiv = motive[0] if motive else None
-    pool: list[Path] = [p for pfade in zuteilung.values() for p in pfade]
+    # Pool = alle freigegebenen Tagesbilder, die unterhaltsamsten zuerst.
+    # `verwendet` haelt fest, was schon eine Folie traegt - jede Folie soll
+    # ein frisches Bild bekommen, solange der Tag welche hergibt.
+    pool: list[Path] = sorted(
+        {p for pfade in zuteilung.values() for p in pfade},
+        key=lambda p: (-_bild_wert(werte, p.name, "unterhaltung"), p.name))
     pool_i = 0
+    verwendet: set[Path] = set()
 
-    def pool_bild() -> Path | None:
+    def pool_bild(nur_frisch: bool = False) -> Path | None:
+        """Naechstes Pool-Bild, bevorzugt eines, das noch auf keiner Folie
+        war; sind alle durch, geht es reihum weiter (ausser nur_frisch)."""
         nonlocal pool_i
         if not pool:
-            return tages_motiv
+            return None if nur_frisch else tages_motiv
+        for k in range(len(pool)):
+            p = pool[(pool_i + k) % len(pool)]
+            if p not in verwendet:
+                pool_i = (pool_i + k + 1) % len(pool)
+                verwendet.add(p)
+                return p
+        if nur_frisch:
+            return None
         pool_i += 1
         return pool[(pool_i - 1) % len(pool)]
+
+    def eigenes_bild(eigene: list[Path]) -> Path | None:
+        """Erstes noch nicht gezeigtes eigenes Bild des Abschnitts."""
+        for p in eigene:
+            if p not in verwendet:
+                verwendet.add(p)
+                return p
+        return None
 
     nr_bild = 0
     ereignisse: list[tuple[Path, float]] = []
@@ -1018,9 +1068,12 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
                   if isinstance(p, dict) and p.get("text")]
         karte = eintrag.get("karte") if isinstance(eintrag.get("karte"), dict) \
             else None
+        # Frisches eigenes Bild vor frischem Pool-Bild vor Wiederholung -
+        # mehrere Abschnitte desselben Threads teilen sich so kein Motiv mehr.
         eigene = [p for tid in abschnitte[nr].threads
                   for p in zuteilung.get(tid, [])]
-        motiv = eigene[0] if eigene else pool_bild()
+        motiv = (eigenes_bild(eigene) or pool_bild(nur_frisch=True)
+                 or (eigene[0] if eigene else pool_bild()))
         fuss = (f"Source: thread {abschnitte[nr].threads[0]}  ·  "
                 if abschnitte[nr].threads else "") + \
                f"Chapter {k + 1} of {len(koepfe)}"

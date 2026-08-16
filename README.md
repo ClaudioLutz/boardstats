@@ -48,8 +48,11 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    bewusst lockerer Messlatte, prüft der Lauf zusätzlich Hintergrundbilder
    fürs Video: je ausgewertetem Thread bis zu vier Bild-Anhänge, abgelehnt
    wird nur, was gegen die YouTube-Richtlinien verstösst (das Netz gegen
-   ungesehene Urteile bleibt dasselbe). Die freigegebenen Bilder liegen mit
-   Thread-Zuordnung unter `arbeit/motive/<datum>/`.
+   ungesehene Urteile bleibt dasselbe). Jedes freigegebene Bild bekommt
+   dabei zwei Bewertungen von 1 bis 5 (Unterhaltungswert als Kulisse,
+   Themennähe zu Finanzen/Märkten), nach denen der Video-Lauf die
+   Bildauswahl sortiert. Die freigegebenen Bilder liegen mit
+   Thread-Zuordnung und Bewertungen unter `arbeit/motive/<datum>/`.
 
 Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
 SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
@@ -82,9 +85,11 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    auf diesem Pfad nicht mehr per ASS eingebrannt. Die Bilder kommen aus
    den freigegebenen Anhängen der besprochenen Threads
    (`arbeit/motive/<datum>/`, Zuordnung über die Quell-URLs unter jedem
-   Berichtsabschnitt); Abschnitte ohne eigenes Bild ziehen reihum aus dem
-   Pool der übrigen Tagesbilder, ein Tag ganz ohne Bilder läuft auf der
-   dunklen Grundfläche. Fehlt `folien.json` oder scheitert der
+   Berichtsabschnitt, je Thread die bestbewerteten zuerst); jede Folie
+   bekommt ein frisches, noch nicht gezeigtes Bild — zuerst aus dem eigenen
+   Thread, dann aus dem Pool der übrigen Tagesbilder (die unterhaltsamsten
+   zuerst), erst wenn alle durch sind wiederholt sich eines. Ein Tag ganz
+   ohne Bilder läuft auf der dunklen Grundfläche. Fehlt `folien.json` oder scheitert der
    Folien-Aufbau, entsteht das Video im bisherigen Text-Layout
    (Text-Happen unten, Titelkarten oben, Wort-Karaoke per `libass`) — die
    Präsentation darf den Upload nie verhindern.

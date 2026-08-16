@@ -1193,12 +1193,30 @@ Wojaks, Fotos, auch Bilder ohne jeden Finanzbezug. Lehne nichts wegen
 Qualität, Stil, Kleinteiligkeit oder fehlendem Themenbezug ab - erwartet
 wird, dass die grosse Mehrheit der Kandidaten durchgeht.
 
+Bewerte zusätzlich JEDES Bild mit zwei ganzen Zahlen von 1 bis 5 (das
+beeinflusst nur die Reihenfolge im Video, nicht die Freigabe):
+- "unterhaltung": Wie viel macht das Bild als Kulisse her? Memes, Wojaks,
+  Frösche, ausdrucksstarke Fotos und markante Motive hoch; kleinteilige
+  Screenshots, Textwände und triste Tabellen niedrig.
+- "themen": Wie deutlich hat der sichtbare Inhalt mit Finanzen, Märkten,
+  Krypto oder Wirtschaft zu tun? Kurs-Charts und Depot-Screenshots hoch,
+  themenfremde Bilder niedrig.
+
 Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
 Code-Zaun. Die Beschreibung ist Pflicht und benennt sachlich, was auf genau
 diesem Bild zu sehen ist:
 {"bilder": [{"datei": "...", "beschreibung": "...", "ok": true,
-"grund": "..."}]}
+"grund": "...", "unterhaltung": 3, "themen": 3}]}
 """
+
+
+def _wert_1_5(roh: object) -> int:
+    """Bewertung aus der Sichtpruefung als ganze Zahl 1-5; alles
+    Unbrauchbare wird zur neutralen 3."""
+    try:
+        return max(1, min(5, int(roh)))  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return 3
 
 
 def hintergrund_kandidaten(manifest: dict,
@@ -1251,22 +1269,27 @@ def hintergrund_kandidaten(manifest: dict,
     return aus[:HG_MAX]
 
 
-def hintergrund_pruefen(bilder: list[Path]) -> list[Path]:
+def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
     """Lockere Sichtpruefung fuer Videohintergruende: einzige Frage ist der
     Richtlinienverstoss, alles andere geht durch. Das Netz gegen ungesehene
-    Urteile (_sicht_antwort) bleibt dasselbe wie beim Vorschaubild."""
+    Urteile (_sicht_antwort) bleibt dasselbe wie beim Vorschaubild. Liefert
+    je freigegebenem Bild die Bewertungen (unterhaltung/themen, 1-5) - der
+    Video-Lauf sortiert die Bildauswahl danach."""
     if not bilder:
-        return []
+        return {}
     nach_name = {p.name: p for p in bilder}
     eingabe = ("Kandidaten (Dateiname: Pfad):\n"
                + "\n".join(f"- {p.name}: {p}" for p in bilder))
     daten = _sicht_antwort(HINTERGRUND_PROMPT, bilder, eingabe,
                            TIMEOUT_HINTERGRUND)
-    frei: list[Path] = []
+    frei: dict[Path, dict[str, int]] = {}
     for urteil in daten["bilder"]:
         name = str(urteil.get("datei") or "")
         if urteil.get("ok") and name in nach_name:
-            frei.append(nach_name[name])
+            frei[nach_name[name]] = {
+                "unterhaltung": _wert_1_5(urteil.get("unterhaltung")),
+                "themen": _wert_1_5(urteil.get("themen")),
+            }
         elif name in nach_name:
             log.info("Hintergrund %s abgelehnt: %s", name, urteil.get("grund"))
     return frei
@@ -1284,19 +1307,22 @@ def hintergruende_waehlen(manifest: dict, datum: str) -> int:
         log.info("keine Hintergrund-Kandidaten im Snapshot")
         return 0
     geladen = motiv_laden(kandidaten, ziel_dir)
-    frei = set(hintergrund_pruefen(geladen))
+    frei = hintergrund_pruefen(geladen)
     md5_nach_datei = {k["datei"]: k["md5"] for k in kandidaten}
     threads: dict[str, list[str]] = {}
+    werte: dict[str, dict[str, int]] = {}
     gezeigt: list[str] = []
     for p in geladen:
         if p not in frei:
             p.unlink()
             continue
         threads.setdefault(p.name.split("-", 1)[0], []).append(p.name)
+        werte[p.name] = frei[p]
         if p.name in md5_nach_datei:
             gezeigt.append(md5_nach_datei[p.name])
     (ziel_dir / "motive.json").write_text(
-        json.dumps({"threads": threads}, indent=2) + "\n", encoding="utf-8")
+        json.dumps({"threads": threads, "werte": werte}, indent=2) + "\n",
+        encoding="utf-8")
     verwendete_merken(gezeigt, datum)
     return len(frei)
 
