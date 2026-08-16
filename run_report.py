@@ -787,6 +787,21 @@ def _hook_normalisiert(hook: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\wäöüÄÖÜ ]+", "", hook.lower())).strip()
 
 
+def _json_schneiden(out: str) -> str:
+    """Das JSON-Objekt aus einer Modell-Antwort schneiden. Trotz "nur JSON"
+    im Prompt stellt das Modell gelegentlich einen Satz voran (16.08.2026:
+    "All within limits." vor dem ```json-Zaun - der Titel fiel deshalb auf
+    den Serientitel zurueck). Ein Zaun irgendwo in der Antwort gewinnt,
+    sonst zaehlt das aeusserste {...}."""
+    zaun = re.search(r"```(?:json)?\s*(\{.*\})\s*```", out, re.DOTALL)
+    if zaun:
+        return zaun.group(1)
+    anfang, ende = out.find("{"), out.rfind("}")
+    if anfang != -1 and ende > anfang:
+        return out[anfang:ende + 1]
+    return out
+
+
 def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
     """Reisserischer Tagestitel je Sprache (Hook + Serien-Suffix) in einem
     Sonnet-Aufruf. Die bisherigen Titel gehen mit, und ein wiederholter Hook
@@ -804,7 +819,7 @@ def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
     for _ in range(2):
         out = claude_ruf(TITEL_PROMPT + hinweis, eingabe, "sonnet",
                          TIMEOUT_TITEL).strip()
-        out = re.sub(r"^```(?:json)?\s*|\s*```$", "", out)
+        out = _json_schneiden(out)
         # Plausibilitaet wie bei bericht_uebersetzen(): eine CLI-Fehlermeldung
         # parst nie als genau dieses JSON.
         try:
@@ -1006,7 +1021,7 @@ def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
     braucht jedes Bild eine eigene, nicht leere Beschreibung."""
     out = claude_ruf(prompt, eingabe, "sonnet", timeout,
                      tools="Read", cwd=BASE).strip()
-    out = re.sub(r"^```(?:json)?\s*|\s*```$", "", out)
+    out = _json_schneiden(out)
     daten = json.loads(out)
     urteile = daten.get("bilder")
     if not isinstance(urteile, list) or len(urteile) < len(bilder):
