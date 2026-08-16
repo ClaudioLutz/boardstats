@@ -88,8 +88,14 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    Berichtsabschnitt, je Thread die bestbewerteten zuerst); jede Folie
    bekommt ein frisches, noch nicht gezeigtes Bild — zuerst aus dem eigenen
    Thread, dann aus dem Pool der übrigen Tagesbilder (die unterhaltsamsten
-   zuerst), erst wenn alle durch sind wiederholt sich eines. Ein Tag ganz
-   ohne Bilder läuft auf der dunklen Grundfläche. Fehlt `folien.json` oder scheitert der
+   zuerst), erst wenn alle durch sind wiederholt sich eines. Auch innerhalb
+   einer Themen-Folie wechselt das Motiv: mit jedem aufleuchtenden
+   Stichpunkt kommt ein weiteres Bild, bevorzugt aus dem eigenen Thread
+   (notfalls rotieren dessen Bilder), und die Agenda zeigt beim Aufleuchten
+   eines Eintrags das Motiv des zugehörigen Kapitels als Vorschau. Die
+   Fusszeile der Themen-Folie nennt den Original-Betreff des Quell-Threads
+   (aus dem H1 der Extrakt-Seite; nur wenn der fehlt, die Thread-Nummer).
+   Ein Tag ganz ohne Bilder läuft auf der dunklen Grundfläche. Fehlt `folien.json` oder scheitert der
    Folien-Aufbau, entsteht das Video im bisherigen Text-Layout
    (Text-Happen unten, Titelkarten oben, Wort-Karaoke per `libass`) — die
    Präsentation darf den Upload nie verhindern.

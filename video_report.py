@@ -337,7 +337,8 @@ def edge_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
 GOOGLE_TTS_KEY = Path.home() / ".config" / "boardstats" / "google_tts_key.txt"
 GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1beta1/text:synthesize"
 GOOGLE_SSML_MAX_BYTES = 4000    # API-Limit 5000 Bytes je Aufruf, Marks zaehlen mit
-GOOGLE_SPRECHRATE = 1.05        # leicht schneller wirkt draengender
+GOOGLE_SPRECHRATE = 1.15        # schneller wirkt draengender; die <break>-
+                                # Pausen sind Festzeiten und skalieren NICHT mit
 GOOGLE_ABSATZ_PAUSE = "600ms"   # edge-tts pausierte an Absatzgrenzen von selbst
 
 
@@ -730,6 +731,29 @@ def _bild_wert(werte: dict[str, dict], name: str, schluessel: str) -> int:
         return 3
 
 
+def thread_titel(datum: str) -> dict[str, str]:
+    """Thread-Titel je Thread-ID aus den Extrakt-Seiten des Tages: deren H1
+    traegt den Original-Betreff. Fuer die Fusszeile der Themen-Folien -
+    lesbarer als die nackte Thread-Nummer. Fehlt die Seite oder der Titel,
+    bleibt die Nummer der Fallback."""
+    titel: dict[str, str] = {}
+    for pfad in sorted((EXTRAKTE / datum).glob("*.md")):
+        if not pfad.stem.isdigit():
+            continue
+        try:
+            kopf = pfad.read_text(encoding="utf-8").lstrip("﻿ \n") \
+                       .splitlines()[0]
+        except (OSError, IndexError):
+            continue
+        if kopf.startswith("# "):
+            # Betreffzeilen enthalten gern URLs - fuer die Folie wertlos.
+            text = re.sub(r"https?://\S+", "", kopf[2:])
+            text = re.sub(r"\s+", " ", text).strip(" -·|")
+            if text:
+                titel[pfad.stem] = text
+    return titel
+
+
 def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
     """Freigegebene Hintergrundbilder je Thread (Report-Lauf,
     arbeit/motive/<datum>/), je Thread absteigend nach Unterhaltungswert
@@ -1035,21 +1059,39 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
     zahl_idx = [i for i, b in enumerate(bloecke) if b.rolle == "zahl"]
     eintraege = [bloecke[i].text.rstrip(".") for i in agenda_idx]
 
+    # Kapitel und ihre Motive VOR Intro/Agenda bestimmen: die Agenda zeigt
+    # beim Aufleuchten eines Eintrags das Motiv des zugehoerigen Kapitels
+    # als Vorschau und verbraucht so selbst keine frischen Bilder.
+    koepfe = [(i, b.abschnitt) for i, b in enumerate(bloecke)
+              if b.art == "ueberschrift" and not b.rolle]
+    kapitel_eigene: list[list[Path]] = []
+    kapitel_motive: list[Path | None] = []
+    for _, nr in koepfe:
+        # Frisches eigenes Bild vor frischem Pool-Bild vor Wiederholung -
+        # mehrere Abschnitte desselben Threads teilen sich so kein Motiv mehr.
+        eigene = [p for tid in abschnitte[nr].threads
+                  for p in zuteilung.get(tid, [])]
+        kapitel_eigene.append(eigene)
+        kapitel_motive.append(eigenes_bild(eigene)
+                              or pool_bild(nur_frisch=True)
+                              or (eigene[0] if eigene else pool_bild()))
+    titel_map = thread_titel(datum)
+
     # Intro und Agenda
     intro_motiv = tages_motiv or pool_bild()
     zeigen(folien.intro(hook, datum, intro_motiv), 0.0)
-    agenda_motiv = pool_bild()
+    agenda_motiv = pool_bild(nur_frisch=True) or tages_motiv
     kopf_idx = next((i for i, b in enumerate(bloecke)
                      if b.rolle == "agenda_kopf"), None)
     if kopf_idx is not None:
         zeigen(folien.agenda(eintraege, -1, datum, agenda_motiv),
                start_von(kopf_idx))
     for k, i in enumerate(agenda_idx):
-        zeigen(folien.agenda(eintraege, k, datum, agenda_motiv), start_von(i))
+        m = kapitel_motive[k] if k < len(kapitel_motive) else None
+        zeigen(folien.agenda(eintraege, k, datum, m or agenda_motiv),
+               start_von(i))
 
     # Abschnitte: Reveal (Ueberschrift-Sprechzeit) -> Blend -> Stichpunkte
-    koepfe = [(i, b.abschnitt) for i, b in enumerate(bloecke)
-              if b.art == "ueberschrift" and not b.rolle]
     schluss = next((start_von(i) for i, b in enumerate(bloecke)
                     if b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
                    ende)
@@ -1068,32 +1110,55 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
                   if isinstance(p, dict) and p.get("text")]
         karte = eintrag.get("karte") if isinstance(eintrag.get("karte"), dict) \
             else None
-        # Frisches eigenes Bild vor frischem Pool-Bild vor Wiederholung -
-        # mehrere Abschnitte desselben Threads teilen sich so kein Motiv mehr.
-        eigene = [p for tid in abschnitte[nr].threads
-                  for p in zuteilung.get(tid, [])]
-        motiv = (eigenes_bild(eigene) or pool_bild(nur_frisch=True)
-                 or (eigene[0] if eigene else pool_bild()))
-        fuss = (f"Source: thread {abschnitte[nr].threads[0]}  ·  "
-                if abschnitte[nr].threads else "") + \
+        eigene = kapitel_eigene[k]
+        motiv = kapitel_motive[k]
+        # Fusszeile: Thread-Titel statt nackter Nummer (Nummer nur, wenn die
+        # Extrakt-Seite fehlt); die Fusszeile ist klein, also kappen.
+        quelle = (titel_map.get(abschnitte[nr].threads[0])
+                  or f"thread {abschnitte[nr].threads[0]}") \
+            if abschnitte[nr].threads else ""
+        if len(quelle) > 60:
+            quelle = quelle[:59].rstrip() + "…"
+        fuss = (f"Source: {quelle}  ·  " if quelle else "") + \
                f"Chapter {k + 1} of {len(koepfe)}"
 
-        def folie(sichtbar: int, aktiv: int):
+        def folie(sichtbar: int, aktiv: int, m: Path | None):
             return folien.thema(titel, [str(p["text"]) for p in punkte],
-                                sichtbar, aktiv, karte, fuss, datum, motiv)
+                                sichtbar, aktiv, karte, fuss, datum, m)
+
+        eigen_i = 0
+
+        def punkt_motiv(aktuell: Path | None) -> Path | None:
+            """Motivwechsel beim Aufleuchten eines Stichpunkts: frisches
+            eigenes Thread-Bild vor Rotation durch die eigenen vor frischem
+            Pool-Bild; gibt es nichts anderes, bleibt das aktuelle stehen."""
+            nonlocal eigen_i
+            p = eigenes_bild(eigene)
+            if p is not None:
+                return p
+            if len(eigene) >= 2:
+                for _ in range(len(eigene)):
+                    kandidat = eigene[eigen_i % len(eigene)]
+                    eigen_i += 1
+                    if kandidat != aktuell:
+                        return kandidat
+            return pool_bild(nur_frisch=True) or aktuell
 
         if motiv is not None:
             reveal_bild = folien.reveal(titel, datum, motiv)
             zeigen(reveal_bild, kopf_start)
             blend_start = max(kopf_start + 0.4,
                               rumpf_start - BLEND_SCHRITTE * BLEND_DAUER)
-            for s, zw in enumerate(folien.blend(reveal_bild, folie(0, -1),
+            for s, zw in enumerate(folien.blend(reveal_bild,
+                                                folie(0, -1, motiv),
                                                 BLEND_SCHRITTE)):
                 zeigen(zw, blend_start + s * BLEND_DAUER)
-        zeigen(folie(0, -1), rumpf_start)
+        zeigen(folie(0, -1, motiv), rumpf_start)
         zeiten = _punkt_zeiten(punkte, rumpf_worte, rumpf_start, naechster)
+        akt = motiv
         for j, t in enumerate(zeiten):
-            zeigen(folie(j + 1, j), t)
+            akt = punkt_motiv(akt)
+            zeigen(folie(j + 1, j, akt), t)
 
     # Zahlen des Tages und Outro
     karten = [k for k in fdaten.get("zahlen") or []
