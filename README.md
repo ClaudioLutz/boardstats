@@ -134,7 +134,7 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
 Unter [`extrakte/<datum>/`](extrakte/) liegt pro Tag sowohl der
 **Bericht** (`bericht.md`, `bericht_zu_markdown()`) als auch je Thread eine
 **Extrakt**-Seite (Topic, Hard Numbers, Claims, Sources, Slang, ...) plus
-eine Tages-Übersicht. Tage bis zum 16.08.2026 sind deutsch (damals mit
+eine Tages-Übersicht. Tage bis zum 15.08.2026 sind deutsch (damals mit
 englischer Zweitfassung `bericht_en.md`), spätere englisch. Das passiert
 automatisch bei jedem Lauf — Extrakte
 gleich nach Stufe 2 (`markdown_tag_schreiben()`), der Bericht nach Stufe 3
