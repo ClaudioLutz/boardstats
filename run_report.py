@@ -847,6 +847,76 @@ def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
     raise RuntimeError(f"Hook wiederholt sich trotz zweitem Versuch: {doppelt}")
 
 
+# ------------------------------------------------- Folien fuers Video (v6)
+
+# Der Folien-Prompt ist englisch: Eingabe ist bericht_en.md, und alle
+# Ausgaben (Folientitel, Stichpunkte, Anker-Phrasen) muessen im englischen
+# Wortlaut des Berichts verankert sein. Die Praesentation laeuft vorerst nur
+# fuer das englische Video (Entscheid 16.08.2026).
+FOLIEN_PROMPT = """\
+You get today's /biz/ situation report (Markdown, English). The daily video
+presents it as a slide deck; condense the report into slide content.
+
+Output ONLY one JSON object, no preamble, no code fence:
+{"abschnitte": [{"ueberschrift": "...", "titel": "...",
+                 "punkte": [{"text": "...", "anker": "..."}, ...],
+                 "karte": {"wert": "...", "titel": "...", "sub": "..."}},
+                ...],
+ "zahlen": [{"wert": "...", "titel": "...", "sub": "...", "satz": "..."},
+            ...]}
+
+Rules for "abschnitte" (one entry per "## " section, same order; skip the
+GLOSSARY):
+- "ueberschrift": the section heading COPIED VERBATIM (without "## ").
+- "titel": a short slide title, max 48 characters, sentence case, no period.
+- "punkte": 2 to 4 bullet points, each max 90 characters, telegram style,
+  keep the concrete numbers. Only what the section actually says.
+- Each bullet's "anker": 3 to 5 CONSECUTIVE words copied VERBATIM from the
+  section's body text (not from the heading), taken from the sentence that
+  the bullet summarizes. It times when the bullet appears on screen while
+  the report is read aloud - so it must match the body text exactly,
+  including capitalization-insensitive wording, and the anchors of a section
+  must appear in the body in the same order as their bullets.
+- "karte" (optional, omit if the section has no striking figure): the ONE
+  most striking number of the section. "wert" max 12 characters as shown on
+  screen (e.g. "$2 TRILLION", "70.28 %"), "titel" max 28 characters,
+  "sub" max 32 characters.
+- Sections that only say "unchanged since yesterday" get 1 short bullet and
+  no karte.
+
+Rules for "zahlen" (the closing "Numbers of the day" slide):
+- Exactly 4 entries, the most striking figures across the whole report.
+- "wert" max 12 characters, "titel" max 28, "sub" max 32.
+- "satz": one short spoken sentence for the narrator. TTS-friendly: write
+  units out ("1.26 trillion dollars", not "$1.26T"), no abbreviations.
+"""
+
+TIMEOUT_FOLIEN = 420
+
+
+def folien_generieren(bericht_en_md: str) -> dict:
+    """Folien-Inhalte fuer die Video-Praesentation (ein Sonnet-Aufruf auf
+    der englischen Fassung). Liefert das geprueft geparste JSON-Objekt."""
+    out = claude_ruf(FOLIEN_PROMPT, bericht_en_md, "sonnet", TIMEOUT_FOLIEN)
+    out = _json_schneiden(out.strip())
+    try:
+        daten = json.loads(out)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Folien-Ausgabe kein JSON: {out[:200]!r}") from e
+    abschnitte = daten.get("abschnitte") if isinstance(daten, dict) else None
+    if not isinstance(abschnitte, list) or not abschnitte:
+        raise RuntimeError(f"Folien-Ausgabe ohne Abschnitte: {out[:200]!r}")
+    for a in abschnitte:
+        if not isinstance(a, dict) or not str(a.get("titel") or "").strip():
+            raise RuntimeError("Folien-Abschnitt ohne Titel")
+        a["titel"] = str(a["titel"]).strip()[:60]
+    zahlen = daten.get("zahlen")
+    daten["zahlen"] = [z for z in zahlen if isinstance(z, dict)
+                       and str(z.get("wert") or "").strip()][:4] \
+        if isinstance(zahlen, list) else []
+    return daten
+
+
 # ------------------------------------------------- Motiv fuers Vorschaubild
 
 MOTIV_THREADS = 8        # so viele der substanzstaerksten Threads liefern Bilder
@@ -1263,6 +1333,21 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         # ein Titelfehler darf den Upload nie verhindern.
         log.warning("Titel-Generierung fehlgeschlagen (Video nimmt den "
                     "statischen Serientitel): %s", e)
+    try:
+        en_pfad = tag_dir / "bericht_en.md"
+        if en_pfad.exists():
+            log.info("Erzeuge Video-Folien (Sonnet) ...")
+            daten = folien_generieren(en_pfad.read_text(encoding="utf-8"))
+            (tag_dir / "folien.json").write_text(
+                json.dumps(daten, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+            log.info("Folien: %d Abschnitte, %d Tageszahlen",
+                     len(daten["abschnitte"]), len(daten["zahlen"]))
+    except Exception as e:
+        # Ohne folien.json baut video_report.py das Video im alten
+        # Text-Layout weiter - die Praesentation darf nie blockieren.
+        log.warning("Folien-Generierung fehlgeschlagen (Video nimmt das "
+                    "Text-Layout): %s", e)
     try:
         log.info("Suche Motiv fuers Vorschaubild (Sonnet, Sichtpruefung) ...")
         thema = titel.get("de") or bericht_md[:400]

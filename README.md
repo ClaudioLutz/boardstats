@@ -31,7 +31,11 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    reisserischen YouTube-Titel (`titel.json`, Hook + Serien-Suffix); die
    Titel der letzten 14 Tage gehen als Sperrliste mit, damit sich der
    Aufhänger auch bei Dauerthemen nicht wiederholt. Derselbe Aufruf liefert
-   je Sprache ein kurzes Schlagwort für das Vorschaubild. Danach sucht der
+   je Sprache ein kurzes Schlagwort für das Vorschaubild. Ein weiterer
+   Sonnet-Aufruf verdichtet die englische Fassung zu Folieninhalten für die
+   Video-Präsentation (`folien.json`: je Abschnitt Folientitel, Stichpunkte
+   mit wörtlichen Anker-Phrasen fürs Timing, optionale Kennzahl, dazu vier
+   «Numbers of the day»). Danach sucht der
    Lauf ein Bildmotiv für dieses Vorschaubild: die Kandidaten kommen aus den
    Anhängen der ausgewerteten Threads im Crawl-Snapshot (OP-Bilder zuerst,
    gespoilerte, gelöschte, zu kleine und Bannerformate fallen raus), Sonnet
@@ -52,36 +56,38 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
 
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
-   läuft zweisprachig (deutsch aus `bericht.md` mit `de-DE-Neural2-H`,
-   englisch aus `bericht_en.md` mit `en-US-Neural2-J`, Parameter
-   `--sprache`), liest das bereits veröffentlichte `extrakte/<datum>/bericht.md`,
-   bereinigt es für die Vertonung (`bloecke_erzeugen()`: Quell-/Beleg-Zeilen,
-   nackte Thread-URLs und das GLOSSAR raus; die Blockstruktur — Absätze,
-   ##-Überschriften, Aufzählungspunkte — bleibt erhalten), vertont per
-   Google Cloud TTS (Neural2-Stimmen; Wort-Zeitstempel über SSML-`<mark>`-
+   läuft seit 16.08.2026 nur noch englisch (`bericht_en.md`, Stimme
+   `en-US-Neural2-J`; die deutsche Fassung ist auf der Ersatzbank und per
+   `--sprache de` jederzeit reaktivierbar). Der Lauf
+   bereinigt den Bericht für die Vertonung (`bloecke_erzeugen()`:
+   Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus), ergänzt
+   gesprochene Rahmen-Sätze (Begrüssung, Kapitel-Aufzählung, Tageszahlen,
+   Abspann), vertont per
+   Google Cloud TTS (Neural2-Stimme; Wort-Zeitstempel über SSML-`<mark>`-
    Timepoints, absatzweise gestückelt wegen des 5000-Byte-API-Limits; der
    API-Key liegt ausserhalb des Repos unter
    `~/.config/boardstats/google_tts_key.txt`, ohne Key fällt der Lauf auf
-   `edge-tts` mit `de-DE-ConradNeural`/`en-US-GuyNeural` zurück) und baut
-   mit `ffmpeg`/`libass`
-   ein Video: der Text erscheint synchron zum Gesprochenen in Happen von
-   höchstens drei Zeilen am unteren Bildrand (linksbündig, Fliesstext mit
-   Satzzeichen, Aufzählungen mit hängendem Einzug), ##-Überschriften stehen
-   während ihrer Sprechzeit als grosse Titelkarte weiter oben, und das
-   jeweils gesprochene Wort wird farblich hervorgehoben. Gerendert werden
-   die Quell-Tokens des Berichts (die TTS-Wortereignisse liefern nur die
-   Zeitfenster; bei edge-tts sind sie zudem satzzeichenlos); die Hervorhebung ist
-   derselbe Zeilenstring mit per `\alpha` maskierten Nachbarwörtern und
-   dadurch pixelgenau deckungsgleich. Als Hintergrund laufen in voller
-   Bildqualität die freigegebenen Bild-Anhänge der gerade besprochenen
-   Threads (`arbeit/motive/<datum>/`, Zuordnung über die Quell-URLs unter
-   jedem Berichtsabschnitt); lesbar bleibt der Text durch einen dunklen
-   Verlauf am unteren Bildrand, Titelkarten bekommen eine halbtransparente
-   Bande, solange sie stehen. Abschnitte ohne
-   eigenes freigegebenes Bild ziehen reihum aus dem Pool der übrigen
-   Tagesbilder; erst ein Tag ganz ohne Bilder fällt auf ein textloses
-   Standbild (rohes Tagesmotiv bzw. Serienbild) zurück, und scheitert
-   der Hintergrund-Aufbau ganz, bleibt die einfarbige Fläche.
+   `edge-tts` mit `en-US-GuyNeural` zurück) und baut mit `ffmpeg` eine
+   **Folien-Präsentation** (`folien.py`, Design wie das Vorschaubild):
+   Intro-Folie mit dem Tages-Aufhänger, Agenda, je Berichtsabschnitt eine
+   Themen-Folie mit verdichteten Stichpunkten und optionaler Zahlen-Karte,
+   zum Schluss «Numbers of the day» und ein Abspann. Die Folieninhalte
+   verdichtet ein Sonnet-Aufruf im Report-Lauf (`folien.json`: Folientitel,
+   Stichpunkte mit wörtlichen Anker-Phrasen, Kennzahlen). Beim
+   Kapitelwechsel erscheint das Board-Bild des Abschnitts zuerst
+   vollflächig und unverdunkelt mit der Überschrift (solange sie gesprochen
+   wird) und blendet dann weich zur Folie über; die Stichpunkte leuchten
+   auf, sobald die Vorlesestimme ihre Anker-Phrase erreicht. Alle Zustände
+   sind PIL-Standbilder, zeitgesteuert über eine ffconcat-Liste — Text wird
+   auf diesem Pfad nicht mehr per ASS eingebrannt. Die Bilder kommen aus
+   den freigegebenen Anhängen der besprochenen Threads
+   (`arbeit/motive/<datum>/`, Zuordnung über die Quell-URLs unter jedem
+   Berichtsabschnitt); Abschnitte ohne eigenes Bild ziehen reihum aus dem
+   Pool der übrigen Tagesbilder, ein Tag ganz ohne Bilder läuft auf der
+   dunklen Grundfläche. Fehlt `folien.json` oder scheitert der
+   Folien-Aufbau, entsteht das Video im bisherigen Text-Layout
+   (Text-Happen unten, Titelkarten oben, Wort-Karaoke per `libass`) — die
+   Präsentation darf den Upload nie verhindern.
    Upload als **öffentliches** Video über die YouTube
    Data API v3 (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
    `google-api-python-client`); mitgegeben werden Sprach-Metadaten
@@ -132,6 +138,7 @@ offenen Fragen je Thread.
 | `bericht_html.py` | Klartext-Bericht → HTML-Mail (Inline-Styles) |
 | `send_mail.py` | SMTP-Versand (OAuth-Refresh oder App-Passwort) |
 | `video_report.py` | Bericht → TTS → Video, Upload zu YouTube |
+| `folien.py` | Präsentations-Folien des Videos (PIL, Design wie Vorschaubild) |
 | `thumbnail.py` | Vorschaubild: Serienrahmen + Tages-Schlagwort + Motiv |
 | `youtube_auth.py` | YouTube-OAuth-Refresh + Resumable-Upload |
 | `youtube_auth_setup.py` | Einmaliges interaktives YouTube-OAuth-Setup |

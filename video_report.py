@@ -50,6 +50,24 @@ dem Pool der uebrigen Tagesbilder; erst ein Tag ganz ohne Bilder faellt
 auf ein textloses Standbild (rohes Tagesmotiv bzw. Serienbild) zurueck,
 und scheitert der ganze Hintergrund-Aufbau, bleibt die bisherige
 einfarbige Flaeche - kein Bildproblem darf den Upload verhindern.
+
+v6 (16.08.2026): Praesentationsmodus. Liegt extrakte/<datum>/folien.json
+(vom Report-Lauf per Sonnet aus bericht_en.md verdichtet: je Abschnitt
+Folientitel, Stichpunkte mit Anker-Phrasen, optionale Zahlen-Karte, dazu
+vier "Numbers of the day"), wird das Video als Folien-Praesentation gebaut:
+Intro mit dem Tages-Aufhaenger, Agenda, je Abschnitt beim Kapitelwechsel
+das rohe Board-Bild vollflaechig mit der Ueberschrift (Reveal, solange die
+Ueberschrift gesprochen wird), dann weiche Ueberblendung zur Themen-Folie,
+deren Stichpunkte synchron zur Rede aufleuchten (Zeitpunkt ueber die
+Anker-Phrase in den Wort-Zeitstempeln), am Ende Zahlen-Folie und Outro.
+Alle Zustaende sind PIL-Standbilder (folien.py), umgeschaltet ueber die
+ffconcat-Liste - auf diesem Pfad wird kein ASS-Text mehr eingebrannt, das
+Wort-Karaoke entfaellt. Gesprochen wird weiterhin der ganze Berichtstext,
+ergaenzt um Rahmen-Saetze (Intro, Agenda-Aufzaehlung, Zahlen, Outro).
+Ohne folien.json oder bei jedem Fehler im Folien-Aufbau entsteht das Video
+im bisherigen v5-Text-Layout - die Praesentation darf den Upload nie
+verhindern. Vorerst nur fuer --sprache en (Entscheid 16.08.2026, deutsche
+Fassung auf der Ersatzbank).
 """
 from __future__ import annotations
 
@@ -68,6 +86,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from PIL import ImageFont
 
+import folien
 import thumbnail
 import youtube_auth
 
@@ -213,6 +232,10 @@ class Block:
     art: str  # "absatz", "ueberschrift" oder "punkt" (Aufzaehlung)
     text: str
     abschnitt: int = 0  # Index in der Abschnittsliste (je ##-Ueberschrift einer)
+    # Rolle im Praesentationsmodus ("intro", "agenda_kopf", "agenda", "zahl_kopf",
+    # "zahl", "outro"); leer fuer Berichtsbloecke. Die art bleibt immer eine der
+    # drei Render-Arten, damit der ASS-Ersatzpfad jeden Block darstellen kann.
+    rolle: str = ""
 
 
 @dataclass
@@ -774,18 +797,303 @@ def hintergrund_liste(plan: list[tuple[Path | None, float]], arbeit: Path,
     return liste
 
 
+# ----------------------------------------------------------- Praesentationsmodus (v6)
+
+# Gesprochene Rahmen-Saetze der Praesentation. Nur englisch: die Praesentation
+# laeuft vorerst nur fuer das englische Video.
+PRAES_INTRO = "This is the 4chan business board report for {datum_lang}."
+PRAES_AGENDA = "In today's report:"
+PRAES_ZAHLEN = "Before we wrap up, the numbers of the day."
+PRAES_OUTRO = ("That's the board report for today. All source threads and "
+               "chapter markers are in the description. New report every day.")
+MONATE_EN = ["January", "February", "March", "April", "May", "June", "July",
+             "August", "September", "October", "November", "December"]
+BLEND_SCHRITTE = 6       # Zwischenbilder je Ueberblendung Reveal -> Folie
+BLEND_DAUER = 0.08       # Standzeit je Zwischenbild (Sekunden)
+PUNKT_MIN_ABSTAND = 0.8  # Stichpunkte erscheinen nie dichter als so
+
+
+def _datum_lang(datum: str) -> str:
+    j, m, t = datum.split("-")
+    return f"{MONATE_EN[int(m) - 1]} {int(t)}, {j}"
+
+
+def folien_laden(tag_dir: Path) -> dict | None:
+    """folien.json des Report-Laufs (Folientitel, Stichpunkte, Zahlen je
+    Abschnitt). None bei jedem Problem - dann faellt das Video auf das
+    v5-Text-Layout zurueck."""
+    pfad = tag_dir / "folien.json"
+    try:
+        daten = json.loads(pfad.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"keine brauchbare folien.json ({e}) - Text-Layout")
+        return None
+    if (not isinstance(daten, dict)
+            or not isinstance(daten.get("abschnitte"), list)
+            or not daten["abschnitte"]):
+        print("folien.json ohne Abschnitte - Text-Layout")
+        return None
+    return daten
+
+
+_NORM = re.compile(r"[^0-9a-zäöü$% ]+")
+
+
+def _norm_text(text: str) -> str:
+    return re.sub(r"\s+", " ", _NORM.sub(" ", text.lower())).strip()
+
+
+def folien_zuordnen(fdaten: dict, bloecke: list[Block]) -> dict[int, dict]:
+    """Folien-Abschnitte den Berichtsabschnitten zuordnen: erst ueber die
+    (normalisierte) Ueberschrift, Rest der Reihe nach. Nicht zuordenbare
+    Berichtsabschnitte bekommen spaeter eine Folie ohne Stichpunkte."""
+    koepfe = [(b.abschnitt, _norm_text(b.text)) for b in bloecke
+              if b.art == "ueberschrift"]
+    eintraege = [a for a in fdaten["abschnitte"]
+                 if isinstance(a, dict) and a.get("titel")]
+    nach_kopf = {_norm_text(str(a.get("ueberschrift", ""))): a for a in eintraege}
+    aus: dict[int, dict] = {}
+    for nr, kopf in koepfe:
+        if kopf in nach_kopf:
+            aus[nr] = nach_kopf.pop(kopf)
+    uebrig = [a for a in eintraege if a in nach_kopf.values()]
+    for nr, _ in koepfe:
+        if nr not in aus and uebrig:
+            aus[nr] = uebrig.pop(0)
+    return aus
+
+
+def _folien_titel(zuordnung: dict[int, dict], bloecke: list[Block],
+                  nr: int) -> str:
+    if nr in zuordnung:
+        return str(zuordnung[nr]["titel"]).strip()
+    for b in bloecke:
+        if b.art == "ueberschrift" and b.abschnitt == nr:
+            return b.text.capitalize()
+    return ""
+
+
+def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
+                           fdaten: dict, datum: str) -> list[Block]:
+    """Das gesprochene Skript der Praesentation: Rahmen-Saetze plus der
+    unveraenderte Berichtstext. Jeder Rahmen-Satz ist ein eigener Block, damit
+    seine Zeitfenster die Folienwechsel steuern; die art bleibt "absatz",
+    damit der ASS-Ersatzpfad dieselben Bloecke rendern kann."""
+    aus = [Block("absatz", PRAES_INTRO.format(datum_lang=_datum_lang(datum)),
+                 0, rolle="intro"),
+           Block("absatz", PRAES_AGENDA, 0, rolle="agenda_kopf")]
+    nummern = [b.abschnitt for b in bloecke if b.art == "ueberschrift"]
+    for nr in nummern:
+        titel = _folien_titel(zuordnung, bloecke, nr)
+        aus.append(Block("absatz", titel.rstrip(".") + ".", 0, rolle="agenda"))
+    aus.extend(bloecke)
+    karten = [k for k in fdaten.get("zahlen") or []
+              if isinstance(k, dict) and k.get("wert")]
+    if karten:
+        aus.append(Block("absatz", PRAES_ZAHLEN, 0, rolle="zahl_kopf"))
+        for k in karten[:4]:
+            satz = str(k.get("satz") or f"{k.get('titel', '')}: {k['wert']}.")
+            aus.append(Block("absatz", satz.strip(), 0, rolle="zahl"))
+    aus.append(Block("absatz", PRAES_OUTRO, 0, rolle="outro"))
+    return aus
+
+
+def _anker_zeit(anker: str, worte: list[Wort]) -> float | None:
+    """Startzeit der Anker-Phrase im Wortstrom des Abschnitts (normalisierter
+    Folgenvergleich); None, wenn die Phrase nicht vorkommt."""
+    ziel = [t for t in (_norm_text(w) for w in anker.split()) if t]
+    if not ziel:
+        return None
+    toks = [_norm_text(w.text) for w in worte]
+    for i in range(len(toks) - len(ziel) + 1):
+        if toks[i:i + len(ziel)] == ziel:
+            return worte[i].start
+    return None
+
+
+def _punkt_zeiten(punkte: list[dict], worte: list[Wort], von: float,
+                  bis: float) -> list[float]:
+    """Erscheinungszeit je Stichpunkt: bevorzugt der Fundort seiner
+    Anker-Phrase, Luecken werden gleichmaessig interpoliert, und die Folge
+    bleibt monoton mit Mindestabstand."""
+    roh: list[float | None] = [_anker_zeit(str(p.get("anker", "")), worte)
+                               for p in punkte]
+    if roh and roh[0] is None:
+        roh[0] = von + 0.6  # erster Punkt frueh, mit dem ersten Satz
+    for i, wert in enumerate(roh):
+        if wert is not None:
+            continue
+        vor = von
+        for j in range(i - 1, -1, -1):
+            frueher = roh[j]
+            if frueher is not None:
+                vor = frueher
+                break
+        nach = max(bis - 2.0, vor)
+        schritte = 2
+        for j in range(i + 1, len(roh)):
+            spaeter = roh[j]
+            if spaeter is not None:
+                nach, schritte = spaeter, j - (i - 1)
+                break
+        roh[i] = vor + (nach - vor) / max(1, schritte)
+    aus: list[float] = []
+    for wert in roh:
+        t = wert if wert is not None else von
+        if aus:
+            t = max(t, aus[-1] + PUNKT_MIN_ABSTAND)
+        aus.append(min(max(t, von), max(bis - 0.5, von)))
+    return aus
+
+
+def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
+                  abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
+                  fdaten: dict, hook: str, datum: str, arbeit: Path,
+                  suffix: str, ende: float) -> Path:
+    """Alle Folien-Zustaende rendern und als zeitgesteuerte ffconcat-Liste
+    schreiben. Jeder Zustand (Reveal, Blend-Zwischenbild, Folie mit n
+    sichtbaren Stichpunkten, ...) ist ein eigenes Standbild; die Startzeiten
+    kommen aus den Wort-Zeitstempeln der zugehoerigen Bloecke."""
+    zuteilung = motiv_zuordnung(datum)
+    motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
+    tages_motiv = motive[0] if motive else None
+    pool: list[Path] = [p for pfade in zuteilung.values() for p in pfade]
+    pool_i = 0
+
+    def pool_bild() -> Path | None:
+        nonlocal pool_i
+        if not pool:
+            return tages_motiv
+        pool_i += 1
+        return pool[(pool_i - 1) % len(pool)]
+
+    nr_bild = 0
+    ereignisse: list[tuple[Path, float]] = []
+
+    def zeigen(bild, zeit: float) -> Path:
+        nonlocal nr_bild
+        pfad = folien.speichern(bild, arbeit / f"folie{suffix}_{nr_bild:03d}.jpg")
+        nr_bild += 1
+        ereignisse.append((pfad, zeit))
+        return pfad
+
+    def start_von(index: int) -> float:
+        return block_worte[index][0].start if block_worte[index] else 0.0
+
+    # Rollen-Bloecke einsammeln (Reihenfolge ist die der Erzeugung)
+    agenda_idx = [i for i, b in enumerate(bloecke) if b.rolle == "agenda"]
+    zahl_idx = [i for i, b in enumerate(bloecke) if b.rolle == "zahl"]
+    eintraege = [bloecke[i].text.rstrip(".") for i in agenda_idx]
+
+    # Intro und Agenda
+    intro_motiv = tages_motiv or pool_bild()
+    zeigen(folien.intro(hook, datum, intro_motiv), 0.0)
+    agenda_motiv = pool_bild()
+    kopf_idx = next((i for i, b in enumerate(bloecke)
+                     if b.rolle == "agenda_kopf"), None)
+    if kopf_idx is not None:
+        zeigen(folien.agenda(eintraege, -1, datum, agenda_motiv),
+               start_von(kopf_idx))
+    for k, i in enumerate(agenda_idx):
+        zeigen(folien.agenda(eintraege, k, datum, agenda_motiv), start_von(i))
+
+    # Abschnitte: Reveal (Ueberschrift-Sprechzeit) -> Blend -> Stichpunkte
+    koepfe = [(i, b.abschnitt) for i, b in enumerate(bloecke)
+              if b.art == "ueberschrift" and not b.rolle]
+    schluss = next((start_von(i) for i, b in enumerate(bloecke)
+                    if b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
+                   ende)
+    for k, (kopf, nr) in enumerate(koepfe):
+        kopf_start = start_von(kopf)
+        naechster = start_von(koepfe[k + 1][0]) if k + 1 < len(koepfe) else schluss
+        rumpf_idx = [i for i, b in enumerate(bloecke)
+                     if b.abschnitt == nr and not b.rolle
+                     and b.art != "ueberschrift"]
+        rumpf_worte = [w for i in rumpf_idx for w in block_worte[i]]
+        rumpf_start = rumpf_worte[0].start if rumpf_worte else kopf_start + 2.0
+
+        eintrag = zuordnung.get(nr, {})
+        titel = _folien_titel(zuordnung, bloecke, nr) or bloecke[kopf].text
+        punkte = [p for p in eintrag.get("punkte") or []
+                  if isinstance(p, dict) and p.get("text")]
+        karte = eintrag.get("karte") if isinstance(eintrag.get("karte"), dict) \
+            else None
+        eigene = [p for tid in abschnitte[nr].threads
+                  for p in zuteilung.get(tid, [])]
+        motiv = eigene[0] if eigene else pool_bild()
+        fuss = (f"Source: thread {abschnitte[nr].threads[0]}  ·  "
+                if abschnitte[nr].threads else "") + \
+               f"Chapter {k + 1} of {len(koepfe)}"
+
+        def folie(sichtbar: int, aktiv: int):
+            return folien.thema(titel, [str(p["text"]) for p in punkte],
+                                sichtbar, aktiv, karte, fuss, datum, motiv)
+
+        if motiv is not None:
+            reveal_bild = folien.reveal(titel, datum, motiv)
+            zeigen(reveal_bild, kopf_start)
+            blend_start = max(kopf_start + 0.4,
+                              rumpf_start - BLEND_SCHRITTE * BLEND_DAUER)
+            for s, zw in enumerate(folien.blend(reveal_bild, folie(0, -1),
+                                                BLEND_SCHRITTE)):
+                zeigen(zw, blend_start + s * BLEND_DAUER)
+        zeigen(folie(0, -1), rumpf_start)
+        zeiten = _punkt_zeiten(punkte, rumpf_worte, rumpf_start, naechster)
+        for j, t in enumerate(zeiten):
+            zeigen(folie(j + 1, j), t)
+
+    # Zahlen des Tages und Outro
+    karten = [k for k in fdaten.get("zahlen") or []
+              if isinstance(k, dict) and k.get("wert")][:4]
+    zahlen_motiv = pool_bild()
+    zk_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "zahl_kopf"),
+                  None)
+    if zk_idx is not None and karten:
+        zeigen(folien.zahlen(karten, 0, datum, zahlen_motiv), start_von(zk_idx))
+        for j, i in enumerate(zahl_idx[:len(karten)]):
+            zeigen(folien.zahlen(karten, j + 1, datum, zahlen_motiv),
+                   start_von(i))
+    outro_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "outro"),
+                     None)
+    if outro_idx is not None:
+        zeigen(folien.outro(datum, tages_motiv or zahlen_motiv), start_von(outro_idx))
+
+    # Ereignisse in eine ffconcat-Liste uebersetzen: streng monoton steigend,
+    # jede Folie steht bis zum Start der naechsten.
+    zeiten_liste: list[float] = []
+    for _, t in ereignisse:
+        zeiten_liste.append(max(t, (zeiten_liste[-1] + 1 / FPS)
+                                if zeiten_liste else 0.0))
+    zeilen = ["ffconcat version 1.0"]
+    for k, (pfad, _) in enumerate(ereignisse):
+        bis = zeiten_liste[k + 1] if k + 1 < len(zeiten_liste) \
+            else max(ende, zeiten_liste[k] + 1.0)
+        p = str(pfad).replace("\\", "/")
+        zeilen += [f"file '{p}'", f"duration {bis - zeiten_liste[k]:.3f}"]
+    zeilen.append(zeilen[-2])  # concat-Eigenheit: letzte duration braucht Echo
+    liste = arbeit / f"folien{suffix}.ffconcat"
+    liste.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+    print(f"Praesentation: {nr_bild} Folienbilder, {len(koepfe)} Kapitel")
+    return liste
+
+
 # ----------------------------------------------------------- Video-Zusammenbau
 
-def video_erzeugen(audio_mp3: Path, ass_datei: Path, ziel_mp4: Path,
+def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
                    konkat: Path | None = None) -> None:
-    ass_arg = str(ass_datei).replace("\\", "/").replace(":", r"\:")
+    """ass_datei=None ist der Praesentationsmodus: der Text steckt schon in
+    den Standbildern der ffconcat-Liste, eingebrannt wird nichts mehr."""
+    filter_teile: list[str] = []
     if konkat is not None:
         eingabe = ["-f", "concat", "-safe", "0", "-i", str(konkat)]
-        vf = f"fps={FPS},ass={ass_arg}"  # Standbilder auf feste Framerate ziehen
+        filter_teile.append(f"fps={FPS}")  # Standbilder auf feste Framerate
     else:
         eingabe = ["-f", "lavfi", "-i",
                    f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}"]
-        vf = f"ass={ass_arg}"
+    if ass_datei is not None:
+        filter_teile.append(
+            "ass=" + str(ass_datei).replace("\\", "/").replace(":", r"\:"))
+    vf = ",".join(filter_teile) or "null"
     subprocess.run(
         ["ffmpeg", "-y", *eingabe,
          "-i", str(audio_mp3),
@@ -1040,7 +1348,6 @@ def main() -> None:
 
     markdown = bericht_pfad.read_text(encoding="utf-8")
     bloecke, abschnitte = abschnitte_erzeugen(markdown)
-    text = "\n\n".join(b.text for b in bloecke)
 
     arbeit = VIDEO_DIR / datum
     arbeit.mkdir(parents=True, exist_ok=True)
@@ -1052,28 +1359,55 @@ def main() -> None:
     print(f"Titel: {titel}")
     bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
 
+    # Praesentationsmodus (v6): nur englisch und nur mit folien.json; sonst
+    # bleibt alles beim v5-Text-Layout. Die Rahmen-Saetze kommen mit in die
+    # Vertonung, damit ihre Zeitfenster die Folienwechsel steuern.
+    fdaten = folien_laden(tag_dir) if args.sprache == "en" else None
+    zuordnung: dict[int, dict] = {}
+    if fdaten:
+        zuordnung = folien_zuordnen(fdaten, bloecke)
+        bloecke_ton = praesentations_bloecke(bloecke, zuordnung, fdaten, datum)
+    else:
+        bloecke_ton = bloecke
+    text = "\n\n".join(b.text for b in bloecke_ton)
+
     print("erzeuge Vertonung mit Wort-Zeitstempeln ...")
     worte = tts_mit_worten(text, audio_mp3, cfg)
     print(f"{len(worte)} Woerter erkannt")
-
-    block_worte = worte_zu_bloecken(worte, bloecke)
-    anzeigen = anzeigen_bauen(bloecke, block_worte, fonts_laden())
-    print(f"{len(anzeigen)} Anzeigen in {len(bloecke)} Bloecken, "
-          f"{len(abschnitte)} Abschnitte")
-    ass_erzeugen(anzeigen, ass_datei)
+    block_worte = worte_zu_bloecken(worte, bloecke_ton)
+    ende = (worte[-1].end if worte else 0.0) + 3.0  # Puffer, -shortest kappt
 
     konkat: Path | None = None
-    try:
-        ende = (worte[-1].end if worte else 0.0) + 5.0  # Puffer, -shortest kappt
-        plan = hintergrund_plan(bloecke, block_worte, abschnitte, datum, ende)
-        konkat = hintergrund_liste(plan, arbeit, cfg["suffix"])
-        print(f"Hintergrund: {len(plan)} Standbilder")
-    except Exception as e:
-        # Ohne Hintergrund entsteht das Video wie bisher auf der Grundflaeche.
-        print(f"Hintergrund nicht aufgebaut ({e}) - nehme die Grundflaeche")
+    ass_arg: Path | None = None
+    if fdaten:
+        try:
+            hook = titel.split(" | ")[0].strip()
+            konkat = folien_konkat(bloecke_ton, block_worte, abschnitte,
+                                   zuordnung, fdaten, hook, datum, arbeit,
+                                   cfg["suffix"], ende)
+        except Exception as e:
+            # Die Praesentation darf den Upload nie verhindern: dieselbe
+            # Vertonung laeuft dann im v5-Text-Layout weiter (die
+            # Rahmen-Saetze erscheinen dort als gewoehnliche Absaetze).
+            print(f"Folien-Aufbau fehlgeschlagen ({e}) - Text-Layout als Ersatz")
+            konkat = None
+    if konkat is None:
+        anzeigen = anzeigen_bauen(bloecke_ton, block_worte, fonts_laden())
+        print(f"{len(anzeigen)} Anzeigen in {len(bloecke_ton)} Bloecken, "
+              f"{len(abschnitte)} Abschnitte")
+        ass_erzeugen(anzeigen, ass_datei)
+        ass_arg = ass_datei
+        try:
+            plan = hintergrund_plan(bloecke_ton, block_worte, abschnitte,
+                                    datum, ende)
+            konkat = hintergrund_liste(plan, arbeit, cfg["suffix"])
+            print(f"Hintergrund: {len(plan)} Standbilder")
+        except Exception as e:
+            # Ohne Hintergrund entsteht das Video wie bisher auf der Grundflaeche.
+            print(f"Hintergrund nicht aufgebaut ({e}) - nehme die Grundflaeche")
 
     print("baue Video ...")
-    video_erzeugen(audio_mp3, ass_datei, video_mp4, konkat)
+    video_erzeugen(audio_mp3, ass_arg, video_mp4, konkat)
 
     if args.nur_video:
         print(f"nur Video gebaut, kein Upload: {video_mp4}")
@@ -1081,14 +1415,14 @@ def main() -> None:
 
     kurz = cfg["beschreibung"].format(datum=datum)
     try:
-        kapitel = kapitel_bauen(bloecke, block_worte, cfg["kapitel_intro"])
+        kapitel = kapitel_bauen(bloecke_ton, block_worte, cfg["kapitel_intro"])
         beschreibung = beschreibung_bauen(tag_dir, markdown, cfg, datum, kapitel)
     except Exception as e:
         # Ein Fehler beim Zusammenbau darf den Upload nie verhindern.
         print(f"Beschreibung nicht aufgebaut ({e}) - nehme nur die Kopfzeile")
         beschreibung = kurz
     print("lade auf YouTube hoch ...")
-    tags = tags_bauen(args.sprache, titel, bloecke)
+    tags = tags_bauen(args.sprache, titel, bloecke_ton)
     try:
         video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
                                                privacy_status="public",
