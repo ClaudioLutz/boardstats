@@ -3,10 +3,10 @@
 #  boardstats /biz/ - Lagebericht: YouTube-Video (hp-ubuntu)
 #
 #  Vertont den bereits veroeffentlichten Tagesbericht (extrakte/<datum>/
-#  bericht.md) und laedt ihn als unlisted YouTube-Video hoch. Bewusst
-#  entkoppelt von report.sh (eigener Cron-Eintrag, eigenes Log): ein
-#  Fehler hier (TTS/ffmpeg/Upload) darf den funktionierenden E-Mail-Versand
-#  nicht gefaehrden.
+#  bericht.md, seit 16.08.2026 englisch) und laedt ihn als YouTube-Video
+#  hoch. Bewusst entkoppelt von report.sh (eigener Cron-Eintrag, eigenes
+#  Log): ein Fehler hier (TTS/ffmpeg/Upload) darf die Berichts-
+#  Veroeffentlichung nicht gefaehrden.
 #
 #  Voraussetzungen (einmalig einzurichten):
 #    1. venv ~/.venvs/boardstats-video mit edge-tts + pillow
@@ -38,9 +38,9 @@ fi
 
 {
     echo "===== Video gestartet: $(date '+%Y-%m-%d %H:%M:%S') ====="
-    # Seit 16.08.2026 nur noch englisch (Praesentationsmodus v6); die
-    # deutsche Fassung ist auf der Ersatzbank - Reaktivierung waere eine
-    # zusaetzliche Zeile: "$VENV_PY" video_report.py --sprache de
-    "$VENV_PY" video_report.py --sprache en || echo "englisches Video fehlgeschlagen (Status $?)"
+    # Seit 16.08.2026 ist die ganze Pipeline englisch; --sprache en ist die
+    # einzige Konfiguration (eine deutsche Berichtsfassung existiert nicht
+    # mehr, seit die Synthese direkt auf Englisch laeuft).
+    "$VENV_PY" video_report.py --sprache en || echo "Video fehlgeschlagen (Status $?)"
     echo "===== Video beendet:  $(date '+%Y-%m-%d %H:%M:%S') ====="
 } >> "$LOG" 2>&1

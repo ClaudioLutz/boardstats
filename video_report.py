@@ -29,10 +29,11 @@ Berichts (mit Satzzeichen), nicht die WordBoundary-Texte von edge-tts (die
 sind satzzeichenlos); die gesprochenen Woerter liefern nur noch die
 Zeitfenster fuer die Hervorhebung.
 
-Seit 14.08.2026 zweisprachig: --sprache en vertont die englische Fassung
-(bericht_en.md, von run_report.py per Sonnet rueckuebersetzt) mit englischer
-Stimme; Layout und Zuordnung sind sprachunabhaengig. Beide Sprachen laufen
-nacheinander im selben Cron (video.sh), Uploads sind oeffentlich.
+Seit 16.08.2026 nur noch englisch: die ganze Pipeline (Extrakte, Bericht,
+Titel, Folien) entsteht in run_report.py direkt auf Englisch, bericht.md IST
+die englische Fassung - eine deutsche existiert nicht mehr. Die SPRACHEN-
+Struktur bleibt als ein Eintrag bestehen (Marker video_en.json und Suffix _en
+unveraendert, damit Alt-Tage und Doppel-Upload-Schutz weiter stimmen).
 
 v5: kein Endlos-Scroll mehr. Der Text erscheint in Happen von hoechstens
 drei Zeilen am unteren Bildrand (Formatierung wie bisher: linksbuendig,
@@ -52,7 +53,7 @@ und scheitert der ganze Hintergrund-Aufbau, bleibt die bisherige
 einfarbige Flaeche - kein Bildproblem darf den Upload verhindern.
 
 v6 (16.08.2026): Praesentationsmodus. Liegt extrakte/<datum>/folien.json
-(vom Report-Lauf per Sonnet aus bericht_en.md verdichtet: je Abschnitt
+(vom Report-Lauf per Sonnet aus dem Bericht verdichtet: je Abschnitt
 Folientitel, Stichpunkte mit Anker-Phrasen, optionale Zahlen-Karte, dazu
 vier "Numbers of the day"), wird das Video als Folien-Praesentation gebaut:
 Intro mit dem Tages-Aufhaenger, Agenda, je Abschnitt beim Kapitelwechsel
@@ -66,8 +67,7 @@ Wort-Karaoke entfaellt. Gesprochen wird weiterhin der ganze Berichtstext,
 ergaenzt um Rahmen-Saetze (Intro, Agenda-Aufzaehlung, Zahlen, Outro).
 Ohne folien.json oder bei jedem Fehler im Folien-Aufbau entsteht das Video
 im bisherigen v5-Text-Layout - die Praesentation darf den Upload nie
-verhindern. Vorerst nur fuer --sprache en (Entscheid 16.08.2026, deutsche
-Fassung auf der Ersatzbank).
+verhindern.
 """
 from __future__ import annotations
 
@@ -99,25 +99,8 @@ HINTERGRUND_DIR = BASE / "arbeit" / "motive"    # Hintergrundbilder je Thread
 THUMB_MAX_ZEICHEN = 20
 
 SPRACHEN: dict[str, dict[str, str]] = {
-    "de": {
-        "bericht": "bericht.md",
-        "marker": "video.json",
-        "suffix": "",
-        "stimme": "de-DE-ConradNeural",
-        "google_stimme": "de-DE-Neural2-H",
-        "titel": "/biz/-Lagebericht {datum}",
-        "beschreibung": (
-            "Automatisierter Lagebericht aus dem 4chan-Board /biz/ (Business & "
-            "Finance) vom {datum}. Diskurs-Dokumentation, keine Anlageberatung."
-        ),
-        "thumb_fuss": "Lagebericht {datum}",
-        "quellen": "Quell-Threads (4chan loescht sie nach wenigen Tagen):",
-        "kappung": ("[Text hier gekuerzt - YouTube laesst in der Beschreibung "
-                    "nur 5000 Zeichen zu.]"),
-        "kapitel_intro": "Einleitung",
-    },
     "en": {
-        "bericht": "bericht_en.md",
+        "bericht": "bericht.md",
         "marker": "video_en.json",
         "suffix": "_en",
         "stimme": "en-US-GuyNeural",
@@ -138,8 +121,6 @@ SPRACHEN: dict[str, dict[str, str]] = {
 # (##-Ueberschriften und Titel-Schlagwort). Tags wirken bei YouTube nur noch
 # schwach, kosten aber nichts.
 FESTE_TAGS: dict[str, list[str]] = {
-    "de": ["4chan", "biz", "krypto", "crypto", "bitcoin", "aktien",
-           "boerse", "finanzen", "lagebericht"],
     "en": ["4chan", "biz", "crypto", "bitcoin", "stocks", "stock market",
            "finance", "investing", "market report"],
 }
@@ -1502,7 +1483,7 @@ def beschreibung_bauen(tag_dir: Path, markdown: str, cfg: dict[str, str],
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="de")
+    ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="en")
     ap.add_argument("--nur-video", action="store_true",
                     help="Video nur bauen, ohne Upload und ohne Marker (Test)")
     args = ap.parse_args()

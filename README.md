@@ -1,9 +1,13 @@
-# boardstats — /biz/ Lagebericht
+# boardstats — /biz/ Situation Report
 
-Täglicher Lagebericht aus dem 4chan-Board /biz/ (Business & Finance) als
-E-Mail: was diskutiert wird, welche Titel und Coins genannt werden, welche
-konkreten Zahlen fallen, welche Thesen mit welcher Begründung vertreten
-werden. Diskurs-Dokumentation, keine Anlageberatung.
+Täglicher Lagebericht aus dem 4chan-Board /biz/ (Business & Finance),
+veröffentlicht als Markdown-Archiv und YouTube-Video: was diskutiert wird,
+welche Titel und Coins genannt werden, welche konkreten Zahlen fallen,
+welche Thesen mit welcher Begründung vertreten werden — samt der Stimme des
+Boards (Memes und Einzeiler als wörtliche Zitate). Diskurs-Dokumentation,
+keine Anlageberatung. Seit 16.08.2026 läuft die gesamte Pipeline auf
+Englisch, der Sprache des Boards: jede Übersetzung ins Deutsche verlor
+Jargon und Boardhumor. Der frühere E-Mail-Versand ist abgebaut.
 
 ## Architektur
 
@@ -13,26 +17,27 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    aus dem jüngsten Crawl-Snapshot (`crawl_biz.py`, 3x täglich) und schneidet
    Volltext-Bündel. Threads mit bekanntem Extrakt bekommen nur das Delta.
 2. **Extrahieren** — Sonnet liest je Thread parallel und schreibt einen
-   strukturierten Extrakt (Thema, Zahlen, Thesen, Quellen, ...). Liegt ein
+   strukturierten Extrakt auf Englisch (Topic, Hard Numbers, Claims,
+   Sources, ... und «Mood and Memes»: die wörtlichen Einzeiler und Memes,
+   die den Ton des Threads tragen). Liegt ein
    Extrakt vom Vortag vor, wird er fortgeschrieben statt neu erstellt
    (inkrementeller Extrakt-Cache); nach 5 Fortschreibungen oder >50 % neuen
    Posts seit der letzten Voll-Extraktion wird neu verankert.
-3. **Synthetisieren** — Opus schreibt aus den Extrakten den Bericht
-   (700–1000 Wörter). Die Extrakte gehen in Sandwich-Reihenfolge hinein
+3. **Synthetisieren** — Opus schreibt aus den Extrakten den englischen
+   Bericht (700–1000 Wörter): faktenorientiert, aber mit der Stimme des
+   Boards als Würze (die stärksten Mood-and-Memes-Zitate wandern in die
+   passenden Themen; Slurs und Streit bleiben draussen). Die Extrakte gehen
+   in Sandwich-Reihenfolge hinein
    (stärkster zuerst, zweitstärkster zuletzt, gegen den "lost in the
    middle"-Positionsbias), und die Synthese legt je Thread Rechenschaft ab
    (verwendet oder ausgelassen mit Grund). Das Glossar entsteht
-   deterministisch in Python aus den Extrakt-Glossaren. Der fertige Bericht
-   wird anschliessend in einem einzigen Sonnet-Aufruf ins Englische
-   rückübersetzt (`bericht_en.md`) — Rückübersetzung deshalb, weil die
-   Quelle englischsprachig ist und der /biz/-Jargon in seiner originalen
-   Form rekonstruiert werden muss, nicht wörtlich übersetzt. Ein weiterer
-   kleiner Sonnet-Aufruf erzeugt aus dem Bericht je Sprache einen
+   deterministisch in Python aus den Extrakt-Glossaren. Ein
+   kleiner Sonnet-Aufruf erzeugt aus dem Bericht einen
    reisserischen YouTube-Titel (`titel.json`, Hook + Serien-Suffix); die
    Titel der letzten 14 Tage gehen als Sperrliste mit, damit sich der
    Aufhänger auch bei Dauerthemen nicht wiederholt. Derselbe Aufruf liefert
-   je Sprache ein kurzes Schlagwort für das Vorschaubild. Ein weiterer
-   Sonnet-Aufruf verdichtet die englische Fassung zu Folieninhalten für die
+   ein kurzes Schlagwort für das Vorschaubild. Ein weiterer
+   Sonnet-Aufruf verdichtet den Bericht zu Folieninhalten für die
    Video-Präsentation (`folien.json`: je Abschnitt Folientitel, Stichpunkte
    mit wörtlichen Anker-Phrasen fürs Timing, optionale Kennzahl, dazu vier
    «Numbers of the day»). Danach sucht der
@@ -54,14 +59,9 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Bildauswahl sortiert. Die freigegebenen Bilder liegen mit
    Thread-Zuordnung und Bewertungen unter `arbeit/motive/<datum>/`.
 
-Versand als multipart/alternative (Klartext + HTML, `bericht_html.py`) über
-SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
-
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
-   läuft seit 16.08.2026 nur noch englisch (`bericht_en.md`, Stimme
-   `en-US-Neural2-J`; die deutsche Fassung ist auf der Ersatzbank und per
-   `--sprache de` jederzeit reaktivierbar). Der Lauf
+   vertont `bericht.md` mit der Stimme `en-US-Neural2-J`. Der Lauf
    bereinigt den Bericht für die Vertonung (`bloecke_erzeugen()`:
    Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus), ergänzt
    gesprochene Rahmen-Sätze (Begrüssung, Kapitel-Aufzählung, Tageszahlen,
@@ -116,14 +116,14 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    rechts das geprüfte Board-Bild aus `arbeit/thumbs/` und ersatzweise das
    statische `assets/thumbnail.jpg`; gesetzt wird es über `thumbnails/set`,
    das einen verifizierten Kanal braucht.
-   OAuth-Zugangsdaten liegen wie beim Mailversand ausserhalb des Repos
+   OAuth-Zugangsdaten liegen ausserhalb des Repos
    (`~/.config/boardstats/youtube_client.json`/`youtube_token.json`,
    einmalig per `youtube_auth_setup.py` interaktiv eingerichtet). Ein
-   Marker je Sprache (`extrakte/<datum>/video.json` bzw. `video_en.json`)
+   Marker (`extrakte/<datum>/video_en.json`)
    verhindert Doppel-Uploads. Der Video-Titel kommt aus der vom Report-Lauf
    erzeugten `titel.json` (dynamischer Tages-Hook); fehlt sie oder ist sie
    unbrauchbar, fällt der Upload auf den statischen Serientitel
-   «/biz/-Lagebericht {datum}» zurück. Die Videobeschreibung enthält den
+   «/biz/ Situation Report {datum}» zurück. Die Videobeschreibung enthält den
    Berichtstext selbst (Markdown-Auszeichnung entfernt) und darunter die
    Quell-Threads; da YouTube nur 5000 Zeichen zulässt, wird an einer
    Abschnittsgrenze gekappt, wobei die Thread-Links ihr Budget vorab
@@ -131,29 +131,30 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
 
 ## Öffentliches Archiv
 
-Unter [`extrakte/<datum>/`](extrakte/) liegt pro Tag sowohl der versandte
-**Bericht** (`bericht.md`, `bericht_zu_markdown()`; dazu die englische
-Fassung `bericht_en.md`) als auch je Thread eine
-**Extrakt**-Seite (Thema, Zahlen, Thesen, Quellen, Fachbegriffe, ...) plus
-eine Tages-Übersicht. Das passiert automatisch bei jedem Lauf — Extrakte
+Unter [`extrakte/<datum>/`](extrakte/) liegt pro Tag sowohl der
+**Bericht** (`bericht.md`, `bericht_zu_markdown()`) als auch je Thread eine
+**Extrakt**-Seite (Topic, Hard Numbers, Claims, Sources, Slang, ...) plus
+eine Tages-Übersicht. Tage bis zum 16.08.2026 sind deutsch (damals mit
+englischer Zweitfassung `bericht_en.md`), spätere englisch. Das passiert
+automatisch bei jedem Lauf — Extrakte
 gleich nach Stufe 2 (`markdown_tag_schreiben()`), der Bericht nach Stufe 3
 (`bericht_veroeffentlichen()`) —, jeweils mit eigenem Commit + Push
 (`git_veroeffentlichen()`; mit `--kein-github` abschaltbar). Anders als der
-versandte Bericht behalten die Extrakt-Seiten auch das Glossar und die
+Bericht behalten die Extrakt-Seiten auch das Glossar und die
 offenen Fragen je Thread.
 
 ## Dateien
 
 | Datei | Zweck |
 |---|---|
-| `run_report.py` | Orchestrierung der drei Stufen, Cache-Pflege, Versand |
+| `run_report.py` | Orchestrierung der drei Stufen, Cache-Pflege, Veröffentlichung |
 | `bundle_biz.py` | Thread-Auswahl, Substanz-Scoring, Bündel-Schnitt |
 | `crawl_biz.py` | Board-Crawl über die JSON-API (1 req/s) |
 | `aggregate_biz.py` | Tages-Aggregation der Snapshots |
 | `extract_prompt.txt` | Prompt Stufe 2, Voll-Extraktion |
 | `update_prompt.txt` | Prompt Stufe 2, Delta-Fortschreibung |
-| `bericht_html.py` | Klartext-Bericht → HTML-Mail (Inline-Styles) |
-| `send_mail.py` | SMTP-Versand (OAuth-Refresh oder App-Passwort) |
+| `bericht_html.py` | Überschrift-Erkennung fürs Markdown (Rest aus der Mail-Zeit) |
+| `send_mail.py` | SMTP-Versand — seit 16.08.2026 ungenutzt (Mail abgebaut) |
 | `video_report.py` | Bericht → TTS → Video, Upload zu YouTube |
 | `folien.py` | Präsentations-Folien des Videos (PIL, Design wie Vorschaubild) |
 | `thumbnail.py` | Vorschaubild: Serienrahmen + Tages-Schlagwort + Motiv |

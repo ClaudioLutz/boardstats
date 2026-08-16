@@ -9,7 +9,13 @@ Extrakte gehen an das teure Modell, das den Bericht schreibt.
 
   Stufe 1  bundle_biz.py schneidet Volltext-Buendel
   Stufe 2  Sonnet extrahiert je Buendel (parallel, Ergebnis je Datei)
-  Stufe 3  Opus synthetisiert den Bericht und versendet ihn
+  Stufe 3  Opus synthetisiert den Bericht und veroeffentlicht ihn
+
+Seit 16.08.2026 laeuft die gesamte Pipeline auf Englisch: das Board ist
+englisch, und jede Uebersetzung ins Deutsche (frueher: deutsche Extrakte,
+deutscher Bericht, Rueckuebersetzung fuer das Video) verlor den Jargon und
+den Boardhumor. Extrakte, Bericht, Titel und Folien entstehen jetzt direkt
+in der Originalsprache; der fruehere Mailversand ist abgebaut.
 
 Warum ein Extrakt-Cache: Gemessen an drei aufeinanderfolgenden Abenden waren
 rund 50 % des gebuendelten Textes schon am Vortag gebuendelt - ein Thread mit
@@ -53,7 +59,6 @@ EXTRAKTE = BASE / "extrakte"
 THROTTLE = 5            # gleichzeitige Sonnet-Aufrufe
 TIMEOUT_EXTRAKT = 600   # je Buendel, Sekunden
 TIMEOUT_SYNTH = 1800    # Synthese, Sekunden
-TIMEOUT_UEBERSETZUNG = 600  # englische Uebersetzung des fertigen Berichts
 TIMEOUT_TITEL = 300     # reisserischer Video-Titel (kleiner Sonnet-Aufruf)
 MIN_EXTRAKTE = 0.6      # Anteil, ab dem die Synthese als vollstaendig gilt
 # Re-Anchoring: fortgeschriebene Extrakte driften (gemessen in der Literatur:
@@ -245,11 +250,11 @@ def ein_extrakt(eintrag: dict, bDir: Path, eDir: Path,
 
     if eintrag["modus"] == "delta" and alt.exists():
         eingabe = (
-            "TEIL 1 - BISHERIGER EXTRAKT ZU DIESEM THREAD\n"
+            "PART 1 - EXISTING EXTRACT FOR THIS THREAD\n"
             + "=" * 70 + "\n"
             + alt.read_text(encoding="utf-8", errors="replace")
             + "\n\n" + "=" * 70 + "\n"
-            + "TEIL 2 - POSTS, DIE SEITHER DAZUGEKOMMEN SIND\n"
+            + "PART 2 - POSTS THAT ARRIVED SINCE THEN\n"
             + "=" * 70 + "\n" + text
         )
         prompt = prompt_update
@@ -279,9 +284,9 @@ def ein_extrakt(eintrag: dict, bDir: Path, eDir: Path,
     r = ""
     for versuch in (1, 2):
         p = prompt if versuch == 1 else (
-            prompt + "\n\nWICHTIG: Antworte AUSSCHLIESSLICH mit den Abschnitten, "
-            "beginnend mit der Zeile THEMA. Keine Rueckfrage, keine Einleitung, "
-            "keine Nachfrage nach dem Zweck.")
+            prompt + "\n\nIMPORTANT: Respond ONLY with the sections, starting "
+            "with the line TOPIC. No follow-up question, no introduction, no "
+            "asking about the purpose.")
         try:
             r = claude_ruf(p, eingabe, "sonnet", TIMEOUT_EXTRAKT)
         except subprocess.TimeoutExpired:
@@ -291,7 +296,7 @@ def ein_extrakt(eintrag: dict, bDir: Path, eDir: Path,
         # Nur brauchbar, wenn es wie ein Extrakt aussieht - sonst ist es eine
         # Rueckfrage oder eine CLI-Fehlermeldung und wuerde die Synthese mit
         # Muell fuellen.
-        if "THEMA" in r:
+        if "TOPIC" in r:
             ziel.write_text(r, encoding="utf-8")
             return t, art
 
@@ -348,19 +353,21 @@ def cache_pflegen(manifest: dict, eDir: Path, ergebnisse: dict) -> None:
 
 
 # Die Abschnittsueberschriften der Extrakte (Vertrag mit extract_prompt.txt
-# und update_prompt.txt). Dient zum Erkennen von Abschnittsgrenzen.
+# und update_prompt.txt; seit 16.08.2026 englisch). MOOD AND MEMES traegt
+# den Boardhumor woertlich in die Synthese - der Grund fuer die Umstellung
+# der ganzen Pipeline auf Englisch.
 ABSCHNITTE = (
-    "THEMA", "WERTPAPIERE UND COINS", "KONKRETE ZAHLEN",
-    "THESEN UND ARGUMENTE", "PRAKTISCHES", "QUELLEN",
-    "FACHBEGRIFFE UND SLANG", "OFFENE FRAGEN", "VERLAESSLICHKEIT",
-    "NEU SEIT DEM LETZTEN LAUF",
+    "TOPIC", "TICKERS AND COINS", "HARD NUMBERS",
+    "CLAIMS AND ARGUMENTS", "MOOD AND MEMES", "PRACTICAL", "SOURCES",
+    "TERMS AND SLANG", "OPEN QUESTIONS", "RELIABILITY",
+    "NEW SINCE LAST RUN",
 )
 # Diese Abschnitte bleiben im Extrakt-Cache (er ist das Gedaechtnis des
 # Threads), gehen aber nicht mehr in die Synthese: gemessen am 06.08. blieben
 # 94 % der Glossar-Eintraege ungenutzt (19 von 293 kamen im Bericht vor), und
 # irrelevanter Kontext verschlechtert nachweislich die Nutzung des Rests
 # ("context rot"). Das Glossar entsteht stattdessen in glossar_bauen().
-NUR_CACHE = ("FACHBEGRIFFE UND SLANG", "OFFENE FRAGEN")
+NUR_CACHE = ("TERMS AND SLANG", "OPEN QUESTIONS")
 
 
 def ohne_cache_abschnitte(text: str) -> str:
@@ -392,7 +399,7 @@ def sandwich(extrakte: list[Path], meta_nach_thread: dict) -> list[Path]:
 
 
 def glossar_bauen(bericht: str, eDir: Path, maximal: int = 18) -> str:
-    """Das Glossar deterministisch statt vom Modell: aus den FACHBEGRIFFE-
+    """Das Glossar deterministisch statt vom Modell: aus den TERMS-AND-SLANG-
     Abschnitten der Extrakte genau die Begriffe ziehen, die im fertigen
     Bericht tatsaechlich vorkommen. Vorher schrieb Opus das Glossar aus 293
     angebotenen Eintraegen - Python matcht billiger und vollstaendiger.
@@ -404,12 +411,12 @@ def glossar_bauen(bericht: str, eDir: Path, maximal: int = 18) -> str:
         for z in e.read_text(encoding="utf-8", errors="replace").splitlines():
             s = z.strip()
             if s in ABSCHNITTE:
-                drin = s == "FACHBEGRIFFE UND SLANG"
+                drin = s == "TERMS AND SLANG"
                 continue
             if not drin or not s:
                 continue
             s = s.lstrip("-•*").strip()
-            if not s or s.lower() == "keine":
+            if not s or s.lower() in ("none", "keine"):
                 continue
             m = re.match(r"^(.{1,45}?)\s+[-–—:]\s+(.+)$", s)
             if not m:
@@ -434,19 +441,17 @@ def glossar_bauen(bericht: str, eDir: Path, maximal: int = 18) -> str:
         return ""
     # "- " davor: macht aus der Zeilenfolge eine echte Aufzaehlung statt eines
     # von GitHub zu einem Absatz verschmolzenen Fliesstexts, sobald der
-    # Bericht als Markdown veroeffentlicht wird. bericht_html._glossar()
-    # entfernt einen fuehrenden Bindestrich ohnehin schon, bleibt also
-    # kompatibel mit dem HTML-Mailversand.
-    return "GLOSSAR\n\n" + "\n".join(f"- {b} - {e}" for b, e in treffer[:maximal])
+    # Bericht als Markdown veroeffentlicht wird.
+    return "GLOSSARY\n\n" + "\n".join(f"- {b} - {e}" for b, e in treffer[:maximal])
 
 
 def abdeckung_trennen(text: str) -> tuple[str, str]:
-    """Der ABDECKUNG-Block (je Thread: verwendet oder ausgelassen mit Grund)
-    ist Rechenschaft fuer das Log, nicht fuer den Leser - er wird vor dem
-    Versand abgetrennt."""
+    """Der COVERAGE-Block (je Thread: verwendet oder ausgelassen mit Grund)
+    ist Rechenschaft fuer das Log, nicht fuer den Leser - er wird vor der
+    Veroeffentlichung abgetrennt."""
     zeilen = text.splitlines()
     for i, z in enumerate(zeilen):
-        if z.strip().rstrip(":").upper() == "ABDECKUNG":
+        if z.strip().rstrip(":").upper() in ("COVERAGE", "ABDECKUNG"):
             return ("\n".join(zeilen[:i]).rstrip(),
                     "\n".join(zeilen[i + 1:]).strip())
     return text, ""
@@ -456,6 +461,19 @@ def abdeckung_trennen(text: str) -> tuple[str, str]:
 # Abschnittsnamen (Vertrag mit den Extraktions-Prompts) bleiben in Grossschrift,
 # damit ABSCHNITTE weiterhin fuer beide Zwecke passt.
 ABSCHNITT_TITEL = {
+    "TOPIC": "Topic",
+    "TICKERS AND COINS": "Tickers and coins",
+    "HARD NUMBERS": "Hard numbers",
+    "CLAIMS AND ARGUMENTS": "Claims and arguments",
+    "MOOD AND MEMES": "Mood and memes",
+    "PRACTICAL": "Practical",
+    "SOURCES": "Sources",
+    "TERMS AND SLANG": "Terms and slang",
+    "OPEN QUESTIONS": "Open questions",
+    "RELIABILITY": "Reliability",
+    "NEW SINCE LAST RUN": "New since last run",
+    # Alt-deutsche Ueberschriften (Archiv-Seiten bis 16.08.2026), damit
+    # extrakt_zu_markdown gemischte Cache-Uebergaenge sauber rendert.
     "THEMA": "Thema",
     "WERTPAPIERE UND COINS": "Wertpapiere und Coins",
     "KONKRETE ZAHLEN": "Konkrete Zahlen",
@@ -469,9 +487,9 @@ ABSCHNITT_TITEL = {
 }
 
 MODUS_TEXT = {
-    "voll": "vollstaendig gelesen",
-    "delta": "fortgeschrieben",
-    "unveraendert": "unveraendert seit dem letzten Lauf",
+    "voll": "read in full",
+    "delta": "incrementally updated",
+    "unveraendert": "unchanged since the last run",
 }
 
 
@@ -491,14 +509,14 @@ def extrakt_zu_markdown(text: str, meta: dict, datum: str) -> str:
     kopf = [
         f"# {titel}",
         "",
-        f"Quelle: [4chan /biz/ Thread {meta.get('thread', '')}]"
-        f"({meta.get('url', '')}) &middot; Stand {datum} &middot; {modus}"
-        + (f" &middot; {meta['posts_gesamt']} Posts insgesamt"
+        f"Source: [4chan /biz/ thread {meta.get('thread', '')}]"
+        f"({meta.get('url', '')}) &middot; as of {datum} &middot; {modus}"
+        + (f" &middot; {meta['posts_gesamt']} posts in total"
            if meta.get("posts_gesamt") is not None else ""),
         "",
-        "Automatisch erstellt aus oeffentlichen Beitraegen des Boards /biz/ "
-        "durch ein Sprachmodell. Aussagen von Postern sind Behauptungen, "
-        "keine Tatsachen und keine Anlageberatung.",
+        "Generated automatically from public posts on the board /biz/ by a "
+        "language model. Poster statements are claims, not facts, and not "
+        "financial advice.",
         "",
         "---",
         "",
@@ -513,11 +531,11 @@ def _tag_readme_bauen(manifest: dict, datum: str, tag_dir: Path) -> str:
     eine zweite Codepfad fuers Nachtragen zu brauchen."""
     eintraege = sorted(manifest["buendel"],
                         key=lambda m: -(m.get("substanz_summe") or 0.0))
-    zeilen = [f"# /biz/-Lagebericht: {datum}", ""]
+    zeilen = [f"# /biz/ Situation Report: {datum}", ""]
     if (tag_dir / "bericht.md").exists():
-        zeilen += ["[Bericht dieses Tages](bericht.md)", ""]
-    zeilen += [f"{len(eintraege)} Threads, absteigend nach Substanzdichte.", "",
-               "| Thread | Modus | Posts | Substanz |", "|---|---|---|---|"]
+        zeilen += ["[Report of the day](bericht.md)", ""]
+    zeilen += [f"{len(eintraege)} threads, by substance density.", "",
+               "| Thread | Mode | Posts | Substance |", "|---|---|---|---|"]
     for m in eintraege:
         t = str(m.get("thread", ""))
         if not (tag_dir / f"{t}.md").exists():
@@ -566,19 +584,19 @@ def markdown_index_aktualisieren() -> None:
     als fortzuschreiben, und die Anzahl Tage bleibt uebersichtlich klein."""
     tage = sorted((p for p in EXTRAKTE.glob("*") if p.is_dir()), reverse=True)
     zeilen = [
-        "# /biz/-Lagebericht: Extrakt-Archiv", "",
-        "Taegliche, strukturiert extrahierte Zusammenfassungen von Threads aus "
-        "dem 4chan-Board /biz/ (Business & Finance). Ein Sprachmodell liest je "
-        "Thread und zieht Thema, genannte Titel/Coins, konkrete Zahlen, Thesen "
-        "samt Begruendung, Quellen und Fachbegriffe heraus - Diskurs-"
-        "Dokumentation, keine Anlageberatung. Teil des Projekts "
-        "[boardstats](..).", "",
-        "| Datum | Threads |", "|---|---|",
+        "# /biz/ Situation Report: extract archive", "",
+        "Daily, structurally extracted summaries of threads from the 4chan "
+        "board /biz/ (Business & Finance). A language model reads each thread "
+        "and pulls out topic, mentioned tickers/coins, hard numbers, claims "
+        "with their reasoning, sources and jargon - discourse documentation, "
+        "not financial advice. Part of the [boardstats](..) project. "
+        "Days up to 2026-08-16 are in German, later days in English.", "",
+        "| Date | Threads |", "|---|---|",
     ]
     for t in tage:
         anzahl = len([p for p in t.glob("*.md")
                       if p.name not in ("README.md", "bericht.md")])
-        bericht_stern = " (mit Bericht)" if (t / "bericht.md").exists() else ""
+        bericht_stern = " (with report)" if (t / "bericht.md").exists() else ""
         zeilen.append(f"| [{t.name}]({t.name}/README.md) | {anzahl}{bericht_stern} |")
     (EXTRAKTE / "README.md").write_text("\n".join(zeilen) + "\n", encoding="utf-8")
 
@@ -626,105 +644,57 @@ def voriger_bericht(datum: str) -> tuple[str, str] | None:
 
 
 def bericht_zu_markdown(bericht: str, datum: str) -> str:
-    """Der versandte Bericht als eigenstaendige, oeffentliche Markdown-Seite.
-    Nutzt dieselbe Ueberschriften-Erkennung wie der HTML-Mailversand
-    (bericht_html._ist_ueberschrift), damit beide Darstellungen aus derselben
-    Quelle konsistent bleiben - Aufzaehlungen sind schon "- "-Zeilen, also
-    gueltiges Markdown, und muessen nicht extra umgeformt werden."""
+    """Der fertige Bericht als eigenstaendige, oeffentliche Markdown-Seite.
+    Die Ueberschriften-Erkennung (bericht_html._ist_ueberschrift) stammt noch
+    aus der Mail-Zeit und funktioniert sprachunabhaengig fuer Grossbuchstaben-
+    Zeilen - Aufzaehlungen sind schon "- "-Zeilen, also gueltiges Markdown,
+    und muessen nicht extra umgeformt werden."""
     zeilen = bericht.replace("\r\n", "\n").split("\n")
     kopf = ""
-    if zeilen and zeilen[0].lower().startswith("datenstand"):
+    if zeilen and zeilen[0].lower().startswith("data as of"):
         kopf = zeilen[0].strip()
         zeilen = zeilen[1:]
 
     koerper = [f"## {z.strip()}" if z.strip() and ist_ueberschrift(z.strip()) else z
                for z in zeilen]
     return (
-        f"# /biz/-Lagebericht {datum}\n\n"
+        f"# /biz/ Situation Report {datum}\n\n"
         + (f"*{kopf}*\n\n" if kopf else "")
-        + "[Extrakte und Quell-Threads dieses Tages](README.md)\n\n---\n\n"
+        + "[Extracts and source threads of the day](README.md)\n\n---\n\n"
         + "\n".join(koerper).strip() + "\n"
     )
 
 
-# Rueckuebersetzung, keine gewoehnliche Uebersetzung: die Quelle des Berichts
-# ist das englischsprachige Board /biz/, der Bericht selbst ist deutsch. Der
-# Jargon muss also in seiner originalen englischen Form REKONSTRUIERT werden
-# ("chain split", nicht "chain splitting"), sonst klingt das Ergebnis nach
-# woertlicher Uebersetzung. Ein einziger Sonnet-Aufruf auf den fertigen
-# Bericht (~3'000 Tokens) statt einer zweiten Opus-Synthese aus allen
-# Extrakten - das ist der token-schonende Teil (Entscheid 14.08.2026).
-UEBERSETZUNG_PROMPT = """\
-Du bekommst den heutigen /biz/-Lagebericht als Markdown auf Deutsch.
-Uebersetze ihn vollstaendig ins Englische.
-
-Wichtig: Das ist eine Rueckuebersetzung. Die Quelle des Berichts ist das
-englischsprachige 4chan-Board /biz/ (Business & Finance) - Fachbegriffe,
-Meme-Sprache und Jargon muessen in der originalen englischen Form der
-Community stehen, nicht woertlich uebersetzt (z. B. "chain split",
-"difficulty adjustment", "rug pull", "bagholder").
-
-Regeln:
-- Ticker, Coin-Namen, Zahlen, Prozentwerte, Datumsangaben und URLs
-  unveraendert uebernehmen.
-- Markdown-Struktur exakt beibehalten: gleiche Ueberschriften-Ebenen,
-  gleiche Aufzaehlungen, gleiche Absatzgrenzen, Trennlinien und Links
-  (relative Link-Ziele wie README.md unveraendert lassen).
-- Die Titelzeile lautet "# /biz/ Situation Report <datum>".
-- Die kursive Datenstand-Zeile beginnt mit "*Data as of:".
-- Die Glossar-Ueberschrift lautet "## GLOSSARY".
-- Gib NUR das uebersetzte Markdown aus, ohne Vor- oder Nachbemerkungen.
-"""
-
-
-def bericht_uebersetzen(bericht_md: str) -> str:
-    """Uebersetzt den veroeffentlichten bericht.md ins Englische (Sonnet)."""
-    out = claude_ruf(UEBERSETZUNG_PROMPT, bericht_md, "sonnet",
-                     TIMEOUT_UEBERSETZUNG).strip()
-    # Plausibilitaet statt blindem Vertrauen: eine CLI-Fehlermeldung beginnt
-    # nie mit der Markdown-Titelzeile und darf nie als Bericht abgelegt werden.
-    if not out.startswith("# "):
-        raise RuntimeError(f"Uebersetzung unbrauchbar: {out[:200]!r}")
-    return out + "\n"
-
-
-# Der Titel-Prompt ist wie der Synthese-Prompt in korrektem Deutsch mit
-# Umlauten geschrieben (das Modell ahmt den Stil der Anweisung nach, und der
-# deutsche Hook muss echte Umlaute tragen). Die Hooks sind bewusst reisserisch
-# (Entscheid 14.08.2026: voll Clickbait, Hook + Serien-Suffix, keine Emoji,
-# keine Wiederholung ueber die Tage).
+# Die Hooks sind bewusst reisserisch (Entscheid 14.08.2026: voll Clickbait,
+# Hook + Serien-Suffix, keine Emoji, keine Wiederholung ueber die Tage).
+# Seit 16.08.2026 nur noch englisch, im nativen Jargon des Boards.
 TITEL_PROMPT = """\
-Du bekommst den heutigen /biz/-Lagebericht (Markdown, deutsch), eventuell
-gefolgt von einem Block BEREITS VERWENDETE TITEL.
+You get today's /biz/ situation report (Markdown, English), possibly
+followed by a block TITLES ALREADY USED.
 
-Schreibe für das YouTube-Video des Tages einen reisserischen Titel-Aufhänger
-(Hook) auf Deutsch und einen auf Englisch.
+Write one sensational title hook for today's YouTube video.
 
-Regeln:
-- Wähle die EINE zugkräftigste Geschichte des Berichts: die wichtigste
-  Entwicklung, die grösste Zahl oder den stärksten Konflikt.
-- Voll Clickbait: zugespitzt, dringlich, ein bis zwei Wörter in
-  GROSSBUCHSTABEN. Keine Emoji. Nichts erfinden: jede Aussage des Hooks
-  muss durch den Bericht gedeckt sein.
-- Der englische Hook ist KEINE Übersetzung des deutschen: formuliere ihn
-  eigenständig im nativen Jargon des Boards /biz/ (die Quelle ist englisch).
-- Höchstens 75 Zeichen je Hook, kein Punkt am Ende. Deutsch mit echten
-  Umlauten (ä, ö, ü), Schweizer Schreibweise mit "ss" statt "ß".
-- Kein langer Gedankenstrich (—) im Hook: Doppelpunkt oder Komma verwenden.
-- Steht ein Block BEREITS VERWENDETE TITEL in der Eingabe, darf keiner
-  dieser Hooks und keine nahe Umformulierung davon wiederkommen. Bleibt das
-  Tagesthema dasselbe, wähle einen anderen Aspekt, eine neue Zahl oder eine
-  neue Wendung.
+Rules:
+- Pick the ONE most compelling story of the report: the biggest
+  development, the largest number or the sharpest conflict.
+- Full clickbait: pointed, urgent, one or two words in CAPITAL LETTERS.
+  No emoji. Invent nothing: every statement of the hook must be backed by
+  the report.
+- Write in the native voice of the board /biz/ - its jargon and meme
+  language are welcome where the report supports them.
+- At most 75 characters, no period at the end.
+- No em dash in the hook: use a colon or comma instead.
+- If a block TITLES ALREADY USED is present, none of those hooks and no
+  close paraphrase of them may return. If the topic of the day is the
+  same, pick a different angle, a new number or a new twist.
 
-Schreibe ausserdem je Sprache das Schlagwort für das Vorschaubild des
-Videos: höchstens drei Wörter und 20 Zeichen, der Kern des Hooks (etwa
-"CHAIN SPLIT" oder "MONERO GEDOXXT"). Es steht auf dem Bild in grossen
-Lettern und muss auf einem Handy lesbar bleiben, also keine ganzen Sätze
-und keine Satzzeichen.
+Also write the keyword for the video's thumbnail: at most three words and
+20 characters, the core of the hook (like "CHAIN SPLIT" or "$2 TRILLION").
+It is printed on the image in large letters and must stay readable on a
+phone, so no full sentences and no punctuation.
 
-Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
-Code-Zaun: {"hook_de": "...", "hook_en": "...", "thumb_de": "...",
-"thumb_en": "..."}
+Output ONLY one JSON object, no preamble, no postscript, no code fence:
+{"hook": "...", "thumb": "..."}
 """
 
 TITEL_SUFFIX = " | /biz/ "
@@ -803,56 +773,51 @@ def _json_schneiden(out: str) -> str:
 
 
 def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
-    """Reisserischer Tagestitel je Sprache (Hook + Serien-Suffix) in einem
+    """Reisserischer Tagestitel (Hook + Serien-Suffix, englisch) in einem
     Sonnet-Aufruf. Die bisherigen Titel gehen mit, und ein wiederholter Hook
     bekommt genau einen zweiten Versuch - danach ist der statische
-    Serientitel (Fallback in video_report.py) die bessere Antwort."""
+    Serientitel (Fallback in video_report.py) die bessere Antwort.
+    Die JSON-Schluessel "en"/"thumb_en" bleiben, wie video_report.py sie
+    liest - auch nach dem Wegfall der deutschen Fassung (16.08.2026)."""
     gebraucht = bisherige_titel(datum)
     gesehen = {_hook_normalisiert(t.split(TITEL_SUFFIX)[0]) for t in gebraucht}
     eingabe = bericht_md
     if gebraucht:
-        eingabe += ("\n\nBEREITS VERWENDETE TITEL:\n"
+        eingabe += ("\n\nTITLES ALREADY USED:\n"
                     + "\n".join(f"- {t}" for t in gebraucht))
 
     hinweis = ""
-    doppelt: list[str] = []
+    hook = ""
     for _ in range(2):
         out = claude_ruf(TITEL_PROMPT + hinweis, eingabe, "sonnet",
                          TIMEOUT_TITEL).strip()
         out = _json_schneiden(out)
-        # Plausibilitaet wie bei bericht_uebersetzen(): eine CLI-Fehlermeldung
-        # parst nie als genau dieses JSON.
+        # Plausibilitaet: eine CLI-Fehlermeldung parst nie als genau dieses
+        # JSON.
         try:
             daten = json.loads(out)
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Titel-Ausgabe kein JSON: {out[:200]!r}") from e
-        hooks = {s: _hook_bereinigen(str(daten.get(f"hook_{s}") or ""))
-                 for s in ("de", "en")}
-        if not all(hooks.values()):
+        hook = _hook_bereinigen(str(daten.get("hook") or ""))
+        if not hook:
             raise RuntimeError(f"Titel-Ausgabe unvollstaendig: {out[:200]!r}")
-        doppelt = [h for h in hooks.values() if _hook_normalisiert(h) in gesehen]
-        if not doppelt:
-            j, m, t = datum.split("-")
+        if _hook_normalisiert(hook) not in gesehen:
             # Das Bild-Schlagwort ist Beiwerk: fehlt es, wird es aus dem Hook
             # abgeleitet statt den ganzen Titel scheitern zu lassen.
-            return {"de": f"{hooks['de']}{TITEL_SUFFIX}{t}.{m}.{j}",
-                    "en": f"{hooks['en']}{TITEL_SUFFIX}{datum}",
-                    "thumb_de": _thumb_bereinigen(
-                        str(daten.get("thumb_de") or ""), hooks["de"]),
+            return {"en": f"{hook}{TITEL_SUFFIX}{datum}",
                     "thumb_en": _thumb_bereinigen(
-                        str(daten.get("thumb_en") or ""), hooks["en"])}
-        hinweis = ("\nZUSATZ: Dein letzter Vorschlag wiederholte einen schon "
-                   "verwendeten Hook (" + "; ".join(doppelt)
-                   + ") - waehle zwingend einen anderen Aufhaenger.")
-    raise RuntimeError(f"Hook wiederholt sich trotz zweitem Versuch: {doppelt}")
+                        str(daten.get("thumb") or ""), hook)}
+        hinweis = ("\nADDITION: Your last suggestion repeated a hook that was "
+                   f"already used ({hook}) - you must pick a different angle.")
+    raise RuntimeError(f"Hook wiederholt sich trotz zweitem Versuch: {hook!r}")
 
 
 # ------------------------------------------------- Folien fuers Video (v6)
 
-# Der Folien-Prompt ist englisch: Eingabe ist bericht_en.md, und alle
-# Ausgaben (Folientitel, Stichpunkte, Anker-Phrasen) muessen im englischen
-# Wortlaut des Berichts verankert sein. Die Praesentation laeuft vorerst nur
-# fuer das englische Video (Entscheid 16.08.2026).
+# Der Folien-Prompt ist englisch wie der Bericht selbst: alle Ausgaben
+# (Folientitel, Stichpunkte, Anker-Phrasen) muessen im Wortlaut des
+# Berichts verankert sein, denn die Anker steuern die Einblendung waehrend
+# der Vorlesung.
 FOLIEN_PROMPT = """\
 You get today's /biz/ situation report (Markdown, English). The daily video
 presents it as a slide deck; condense the report into slide content.
@@ -894,10 +859,10 @@ Rules for "zahlen" (the closing "Numbers of the day" slide):
 TIMEOUT_FOLIEN = 420
 
 
-def folien_generieren(bericht_en_md: str) -> dict:
+def folien_generieren(bericht_md: str) -> dict:
     """Folien-Inhalte fuer die Video-Praesentation (ein Sonnet-Aufruf auf
-    der englischen Fassung). Liefert das geprueft geparste JSON-Objekt."""
-    out = claude_ruf(FOLIEN_PROMPT, bericht_en_md, "sonnet", TIMEOUT_FOLIEN)
+    den fertigen Bericht). Liefert das geprueft geparste JSON-Objekt."""
+    out = claude_ruf(FOLIEN_PROMPT, bericht_md, "sonnet", TIMEOUT_FOLIEN)
     out = _json_schneiden(out.strip())
     try:
         daten = json.loads(out)
@@ -1337,15 +1302,6 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         return
     bericht_md = bericht_zu_markdown(bericht, datum)
     (tag_dir / "bericht.md").write_text(bericht_md, encoding="utf-8")
-    try:
-        log.info("Uebersetze Bericht ins Englische (Sonnet) ...")
-        (tag_dir / "bericht_en.md").write_text(
-            bericht_uebersetzen(bericht_md), encoding="utf-8")
-    except Exception as e:
-        # Die englische Fassung ist ein Zusatzprodukt - ihr Scheitern darf
-        # weder Versand noch Veroeffentlichung des deutschen Berichts stoppen.
-        log.warning("Englische Uebersetzung fehlgeschlagen (deutscher "
-                    "Bericht unberuehrt): %s", e)
     titel: dict[str, str] = {}
     try:
         log.info("Erzeuge Video-Titel (Sonnet) ...")
@@ -1353,22 +1309,20 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         (tag_dir / "titel.json").write_text(
             json.dumps(titel, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")
-        log.info("Video-Titel: %s", titel["de"])
+        log.info("Video-Titel: %s", titel["en"])
     except Exception as e:
         # Ohne titel.json nimmt video_report.py den statischen Serientitel -
         # ein Titelfehler darf den Upload nie verhindern.
         log.warning("Titel-Generierung fehlgeschlagen (Video nimmt den "
                     "statischen Serientitel): %s", e)
     try:
-        en_pfad = tag_dir / "bericht_en.md"
-        if en_pfad.exists():
-            log.info("Erzeuge Video-Folien (Sonnet) ...")
-            daten = folien_generieren(en_pfad.read_text(encoding="utf-8"))
-            (tag_dir / "folien.json").write_text(
-                json.dumps(daten, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8")
-            log.info("Folien: %d Abschnitte, %d Tageszahlen",
-                     len(daten["abschnitte"]), len(daten["zahlen"]))
+        log.info("Erzeuge Video-Folien (Sonnet) ...")
+        daten = folien_generieren(bericht_md)
+        (tag_dir / "folien.json").write_text(
+            json.dumps(daten, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        log.info("Folien: %d Abschnitte, %d Tageszahlen",
+                 len(daten["abschnitte"]), len(daten["zahlen"]))
     except Exception as e:
         # Ohne folien.json baut video_report.py das Video im alten
         # Text-Layout weiter - die Praesentation darf nie blockieren.
@@ -1376,7 +1330,7 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
                     "Text-Layout): %s", e)
     try:
         log.info("Suche Motiv fuers Vorschaubild (Sonnet, Sichtpruefung) ...")
-        thema = titel.get("de") or bericht_md[:400]
+        thema = titel.get("en") or bericht_md[:400]
         log.info("Vorschaubild-Motiv: %s",
                  motiv_waehlen(manifest, datum, thema) or "keins, Serienbild")
     except Exception as e:
@@ -1399,32 +1353,32 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
     git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"], f"Bericht vom {datum}")
 
 
-def stufe3(manifest: dict, eDir: Path, arbeit: Path, empfaenger: str,
-           versand: str, datum: str) -> str:
+def stufe3(manifest: dict, eDir: Path, arbeit: Path, datum: str) -> str:
     meta_nach_thread = {str(b["thread"]): b for b in manifest["buendel"]}
     extrakte = sandwich(sorted(eDir.glob("*.txt")), meta_nach_thread)
     anteil = len(extrakte) / max(1, len(manifest["buendel"]))
     luecke = ""
     if anteil < MIN_EXTRAKTE:
-        luecke = (f"ACHTUNG: nur {len(extrakte)} von {len(manifest['buendel'])} "
-                  "Threads konnten ausgewertet werden. Weise im Bericht in der "
-                  "ersten Zeile darauf hin, dass die Lage unvollstaendig erfasst ist.")
+        luecke = (f"ATTENTION: only {len(extrakte)} of {len(manifest['buendel'])} "
+                  "threads could be analyzed. State in the first line of the "
+                  "report that today's picture is incomplete.")
 
     vorbericht = voriger_bericht(datum)
     delta_block = ""
     if vorbericht:
         vor_text, vor_url = vorbericht
         delta_block = f"""
-GESTRIGER BERICHT (nur zum Abgleich, NICHT Teil der heutigen Extrakte):
-Quelle: {vor_url}
+YESTERDAY'S REPORT (for comparison only, NOT part of today's extracts;
+older reports may be written in German - compare by content):
+Source: {vor_url}
 {"=" * 74}
 {vor_text}
 {"=" * 74}
 """
     teile = [
-        f"DATENSTAND: {manifest.get('snapshot_zeit_lokal')} Ortszeit (Europe/Zurich)",
-        f"BOARD: {manifest.get('threads_im_board')} Threads im Katalog",
-        f"AUSGEWERTETE THREADS: {len(extrakte)} von {len(manifest['buendel'])}",
+        f"DATA AS OF: {manifest.get('snapshot_zeit_lokal')} local time (Europe/Zurich)",
+        f"BOARD: {manifest.get('threads_im_board')} threads in the catalog",
+        f"THREADS ANALYZED: {len(extrakte)} of {len(manifest['buendel'])}",
         "",
     ]
     for e in extrakte:
@@ -1432,18 +1386,18 @@ Quelle: {vor_url}
         m = meta_nach_thread.get(t, {})
         modus = m.get("modus", "voll")
         hinweis = {
-            "voll": "vollstaendig gelesen",
-            "delta": f"fortgeschrieben, {m.get('neue_posts', 0)} neue Posts seit dem letzten Lauf",
-            "unveraendert": "unveraendert seit dem letzten Lauf, keine neuen Posts",
+            "voll": "read in full",
+            "delta": f"incrementally updated, {m.get('neue_posts', 0)} new posts since the last run",
+            "unveraendert": "unchanged since the last run, no new posts",
         }.get(modus, modus)
         teile += [
             "=" * 74,
             f"THREAD {t} - {m.get('betreff', '')}",
             f"URL: {m.get('url', '')}",
-            (f"Posts: {m.get('posts_gesamt')} | Alter: {m.get('alter_h')} h | "
-             f"letzte Stunde: {m.get('posts_letzte_stunde')} | "
-             f"ausgewaehlt weil: {'; '.join(m.get('rollen', []))}"),
-            f"Stand des Extrakts: {hinweis}",
+            (f"Posts: {m.get('posts_gesamt')} | age: {m.get('alter_h')} h | "
+             f"last hour: {m.get('posts_letzte_stunde')} | "
+             f"selected because: {'; '.join(m.get('rollen', []))}"),
+            f"Extract status: {hinweis}",
             "=" * 74,
             ohne_cache_abschnitte(e.read_text(encoding="utf-8", errors="replace")),
             "",
@@ -1453,131 +1407,111 @@ Quelle: {vor_url}
     eingabe = "\n".join(teile)
     (arbeit / "synthese_eingabe.txt").write_text(eingabe, encoding="utf-8")
 
-    versand_block = (
-        f"""Versende den fertigen Bericht anschliessend mit mcp__gmail__send_email:
-  Empfänger: {empfaenger}
-  Betreff: "/biz/ Lagebericht {datetime.now().strftime('%d.%m.%Y')}"
-  Body: der Bericht als reiner Text, OHNE den Block ABDECKUNG
-Lege dabei KEINE Dateien an und ändere nichts auf der Platte."""
-        if versand == "mcp" else
-        "Der Versand erfolgt ausserhalb dieses Aufrufs. Gib den Bericht nur aus, "
-        "verschicke nichts und lege keine Dateien an."
-    )
-
-    # Dieser Prompt ist bewusst in korrektem Deutsch mit Umlauten geschrieben,
-    # anders als die Extraktions-Prompts: das Modell ahmt den Stil der Anweisung
-    # nach, und ein Prompt in ae/oe/ue-Ersatzschreibung erzeugt einen Bericht
-    # in ae/oe/ue-Ersatzschreibung.
-    prompt = f"""Du erhältst per Eingabe strukturierte Extrakte aus mehreren Threads des
-4chan-Boards /biz/ (Business & Finance). Ein günstigeres Modell hat sie zuvor
-aus den Volltexten gezogen. Schreibe daraus den täglichen Lagebericht.
+    prompt = f"""You receive structured extracts from several threads of the 4chan board
+/biz/ (Business & Finance). A cheaper model pulled them from the full texts
+beforehand. Write today's situation report from them.
 
 {luecke}
 
-Der Leser ist ein interessierter Anleger, der das Board nicht kennt und die
-Fachsprache nicht beherrscht. Er will das WISSEN aus den Posts: welche Titel
-und Coins genannt werden, welche konkreten Zahlen fallen, welche Thesen mit
-welcher Begründung vertreten werden, welche Quellen geteilt werden, was
-praktisch verwertbar ist.
+The reader is an interested investor who does not know the board and does
+not speak its jargon. He wants the KNOWLEDGE in the posts: which tickers
+and coins are mentioned, which hard numbers come up, which claims are made
+with what reasoning, which sources are shared, what is practically usable.
+On top of that he wants a feel for the board itself - its humor, its memes,
+its mood - which is why this report is written in the board's language.
 
-Regeln:
-1. Deutscher Klartext, KEINE Markdown-Formatierung, keine Sternchen, keine
-   Raute-Überschriften. Überschriften in Grossbuchstaben auf eigener Zeile.
-2. RECHTSCHREIBUNG: durchgehend korrektes Deutsch mit echten Umlauten - ä, ö,
-   ü, Ä, Ö, Ü. Ersatzschreibungen wie ae, oe, ue sind FALSCH und dürfen im
-   Bericht nicht vorkommen, auch nicht in Überschriften. Also "für", "über",
-   "Verhältnis", "GESCHÄFTSZAHLEN" - nicht "fuer", "ueber", "Verhaeltnis".
-   In den Extrakten stehen stellenweise Ersatzschreibungen; korrigiere sie.
-   Schweizer Schreibweise: "ss" statt "ß" ist richtig so.
-3. Beginne mit einer Zeile "Datenstand: TT.MM.JJJJ HH:MM Ortszeit" aus der
-   Angabe DATENSTAND der Eingabe, dazu die Zahl der ausgewerteten Threads.
-4. Länge: rund 700 bis 1000 Wörter für den Berichtsteil.
-   Lieber konkret und dicht als vollständig - aber jede genannte Sache muss
-   nachvollziehbar sein.
-4b. LESBARKEIT, wichtig: Die Mail wird überflogen, nicht studiert.
-   - Absätze von höchstens vier Sätzen. Danach eine Leerzeile.
-   - Folgen mehrere Zahlen, Fakten oder Argumente aufeinander, schreibe sie
-     als Aufzählung: jede Zeile beginnt mit "- ". Nicht in einen langen Satz
-     packen. Faustregel: ab drei zusammengehörigen Angaben eine Aufzählung.
-   - Der erste Satz eines Abschnitts sagt das Ergebnis, nicht die Vorgeschichte.
-   - Keine Schachtelsätze mit mehr als einem Nebensatz.
-5. Gliederung des Berichtsteils nach Themen, wichtigstes zuerst. Sinnvolle
-   Überschriften wählen, zum Beispiel AKTIEN, KRYPTO, MAKRO UND GEOPOLITIK,
-   GERADE SCHNELL FÜLLEND. Ein Thema, zu dem es nichts gibt, weglassen.
-6. Nenne konkrete Zahlen mit ihrer Bedeutung, und nenne pro Punkt die URL.
-   Zahlen ab tausend mit Apostroph als Tausendertrennzeichen: 1'234'567.
-7. Trenne Behauptung von Belegtem. Poster-Behauptungen als solche
-   kennzeichnen ("ein Poster rechnet vor", "unbelegt"). Wo eine externe Quelle
-   geteilt wurde, nenne sie.
-8. Ton, Beschimpfungen, Provokationen und Gruppendynamik gehören NICHT in den
-   Bericht. Wer mit wem streitet, ist kein Befund. Steckt in einem
-   Streit-Thread eine anlagerelevante Aussage, gib nur diese wieder.
-9. Zu jedem Thread ist angegeben, ob sein Extrakt vollständig gelesen oder
-   seit dem letzten Lauf nur fortgeschrieben wurde. Nutze das, um NEUES von
-   Dauerzuständen zu trennen: was seit gestern dazukam, gehört nach vorn.
-   Der Abschnitt NEU SEIT DEM LETZTEN LAUF in den Extrakten sagt dir das.
-   Ein Thread, der als unverändert gekennzeichnet ist, liefert Hintergrund,
-   aber keine Neuigkeit - stelle ihn nicht als aktuelle Entwicklung dar.
-9b. NICHT WIEDERHOLEN, WAS SCHON IM GESTRIGEN BERICHT STAND (falls einer als
-    GESTRIGER BERICHT mitgegeben ist - sonst schreibst du wie gewohnt
-    vollständig). Vergleiche Thema für Thema mit dem gestrigen Bericht:
-    - Ist ein Thema seit gestern inhaltlich unverändert (keine neuen Zahlen,
-      Thesen, Quellen, Kursziele), schreibe es NICHT erneut aus. Schreibe
-      stattdessen GENAU EINEN Satz, der das Thema so konkret benennt, dass
-      der Leser OHNE Klick weiss, worum es geht - nenne die Kernaussage oder
-      die wichtigste Zahl, nicht nur ein Schlagwort ("Halbleiter-Debatte:
-      unverändert" ist zu wenig, "Halbleiter-Debatte (ASML-Monopol bei
-      Lithographie, Logic- gegen Memory-Chips): unverändert seit dem
-      Vortag" ist richtig). Danach die URL des gestrigen Berichts aus der
-      Zeile "Quelle:" oben, unverändert übernommen, auf eigener Zeile.
-    - Hat sich etwas geändert oder ist neu dazugekommen, schreibe NUR das
-      Neue ausführlich; den unveränderten Hintergrund dazu fasse in einem
-      Halbsatz zusammen (wie oben, mit Verweis-URL), nicht neu erklären.
-    - Ein Thema, das im gestrigen Bericht gar nicht vorkam, ist komplett neu
-      und wird wie gewohnt vollständig geschrieben, ganz ohne Verweiszeile.
-    - Verwechsle "Thread unverändert" (Extrakt-Metadatum) nicht mit "Thema
-      unverändert": Ein Thread kann neue Posts haben, ohne dass sich am
-      berichtsrelevanten Thema etwas ändert - dann gilt trotzdem diese Regel.
-10. Der Abschnitt GERADE SCHNELL FÜLLENDE THREADS beschreibt, was in diesen
-    Threads INHALTLICH steht, nicht nur dass sie schnell wachsen. Nenne den
-    Beschleunigungsfaktor gegenüber dem eigenen Schnitt des Threads, wo er in
-    den Metadaten steht. Ein Thread, in dem ausser dem Betreff nichts steht,
-    wird als solcher benannt.
-11. Beurteile am Ende jedes Themas knapp die Verlässlichkeit, wenn die
-    Extrakte Anzeichen für Eigeninteresse oder Werbung nennen.
-12. Poster-IDs gelten pro Thread und sind manipulierbar: als Obergrenze
-    behandeln, keine Aussagen über echte Personenzahlen.
-13. Schreibe KEIN Glossar: es wird nach dir automatisch aus den Extrakten
-    erzeugt und angehängt. Fachbegriffe und Jargon darfst du im Bericht
-    verwenden, ohne sie zu erklären.
-14. VOLLSTÄNDIGKEIT: Jeder Thread der Eingabe ist entweder im Bericht
-    verwendet oder bewusst ausgelassen - nichts fällt stillschweigend weg.
-    Rechenschaft darüber legst du im Block ABDECKUNG ab (siehe Ausgabe).
+Rules:
+1. English plain text, NO Markdown formatting, no asterisks, no hash
+   headings. Headings in capital letters on their own line.
+2. Start with a line "Data as of: <value> local time" taken from the
+   DATA AS OF line of the input, plus the number of threads analyzed.
+3. Length: around 700 to 1000 words for the report body.
+   Concrete and dense beats complete - but everything mentioned must be
+   traceable.
+3b. READABILITY, important: The report is skimmed, not studied.
+   - Paragraphs of at most four sentences, then a blank line.
+   - When several numbers, facts or arguments follow each other, write them
+     as a list: each line starts with "- ". Do not pack them into one long
+     sentence. Rule of thumb: three related items or more become a list.
+   - The first sentence of a section states the result, not the backstory.
+   - No nested sentences with more than one subordinate clause.
+4. Structure the report body by topic, most important first. Pick sensible
+   headings, for example STOCKS, CRYPTO, MACRO AND GEOPOLITICS, FILLING
+   FAST. Drop any topic that has nothing to report.
+5. State concrete numbers with their meaning, and give the URL per item.
+   Use standard English number formatting with commas: 1,234,567.
+6. Separate claim from evidence. Mark poster claims as such ("one poster
+   calculates", "unsourced"). Where an external source was shared, name it.
+7. VOICE OF THE BOARD: the report stays facts-first, but it may carry the
+   board's voice as seasoning. Use the MOOD AND MEMES sections of the
+   extracts: work the strongest verbatim one-liners, memes and running
+   jokes into the matching topics (in quotation marks), and let the board's
+   sarcasm color a transition where it fits. What stays OUT: slurs, insults
+   aimed at people or groups, and who-fought-whom drama - a fight is not a
+   finding. If a fight thread contains an investment-relevant statement,
+   report only that. Everything must stay publishable on YouTube.
+8. Each thread states whether its extract was read in full or only
+   incrementally updated since the last run. Use that to separate NEWS from
+   standing situations: what arrived since yesterday goes to the front.
+   The section NEW SINCE LAST RUN in the extracts tells you. A thread
+   marked unchanged provides background, not news - do not present it as a
+   current development.
+8b. DO NOT REPEAT WHAT YESTERDAY'S REPORT ALREADY SAID (if one is provided
+    as YESTERDAY'S REPORT - otherwise write in full as usual; it may be
+    written in German, compare by content). Compare topic by topic:
+    - If a topic is substantively unchanged since yesterday (no new
+      numbers, claims, sources, price targets), do NOT write it out again.
+      Write EXACTLY ONE sentence that names the topic concretely enough
+      that the reader knows what it is WITHOUT clicking - give the core
+      claim or the key number, not just a label ("semiconductor debate:
+      unchanged" is too little, "semiconductor debate (ASML lithography
+      monopoly, logic vs. memory chips): unchanged since yesterday" is
+      right). Then the URL of yesterday's report from the "Source:" line
+      above, copied unchanged, on its own line.
+    - If something changed or is new, write ONLY the new part in full;
+      summarize the unchanged background in half a sentence (as above,
+      with the reference URL), do not re-explain it.
+    - A topic that did not appear in yesterday's report is entirely new
+      and is written in full, with no reference line.
+    - Do not confuse "thread unchanged" (extract metadata) with "topic
+      unchanged": a thread can have new posts without the reportable topic
+      changing - the rule still applies then.
+9. The section FILLING FAST describes what these threads actually SAY, not
+   just that they grow quickly. Give the acceleration factor against the
+   thread's own average where the metadata provides it. A thread with
+   nothing beyond its subject line is called out as such.
+10. At the end of each topic, briefly judge reliability whenever the
+    extracts mention signs of self-interest or promotion.
+11. Poster IDs are per-thread and can be manipulated: treat them as an
+    upper bound, make no statements about real head counts.
+12. Write NO glossary: it is generated automatically from the extracts and
+    appended after you. You may use jargon in the report without
+    explaining it.
+13. COMPLETENESS: every thread of the input is either used in the report
+    or deliberately omitted - nothing disappears silently. You account for
+    this in the COVERAGE block (see output).
 
-{versand_block}
+Publication happens outside this call. Only output the report, send
+nothing and create no files.
 
-WICHTIG zur Ausgabe, in genau dieser Reihenfolge:
-1. Der vollständige Bericht, so wie er in die Mail gehört.
-2. Eine Zeile "ABDECKUNG:", danach je Thread der Eingabe genau eine Zeile:
-      <Thread-Nummer>: verwendet
-   oder
-      <Thread-Nummer>: ausgelassen - <Grund in wenigen Worten>
-   Jede Thread-Nummer der Eingabe kommt genau einmal vor. Dieser Block
-   gehört NICHT in die Mail und zählt nicht zur Wortzahl des Berichts.
-3. Als allerletzte Zeile genau eine Statuszeile:
-   STATUS: GESENDET
-oder, wenn der Versand fehlschlug:
-   STATUS: FEHLER - kurze Ursache in wenigen Worten
-Gib den Bericht auch dann vollständig aus, wenn der Mailversand scheitert.
-Der Bericht selbst enthält keine Meta-Bemerkungen über diese Anweisung.
+IMPORTANT about the output, in exactly this order:
+1. The complete report.
+2. One line "COVERAGE:", then exactly one line per thread of the input:
+      <thread number>: used
+   or
+      <thread number>: omitted - <reason in a few words>
+   Every thread number of the input appears exactly once. This block is
+   NOT part of the report and does not count toward its word count.
+3. As the very last line exactly one status line:
+   STATUS: DONE
+or, if something prevented a complete report:
+   STATUS: ERROR - short cause in a few words
+The report itself contains no meta remarks about these instructions.
 """
-    if versand != "mcp":
-        prompt = prompt.replace("   STATUS: GESENDET", "   STATUS: FERTIG")
 
-    tools = "mcp__gmail__send_email" if versand == "mcp" else None
     log.info("Stufe 3: Synthese mit Opus (%d Extrakte, %d KB)",
              len(extrakte), len(eingabe) // 1024)
-    return claude_ruf(prompt, eingabe, "opus", TIMEOUT_SYNTH, tools=tools)
+    return claude_ruf(prompt, eingabe, "opus", TIMEOUT_SYNTH)
 
 
 def main() -> int:
@@ -1587,10 +1521,8 @@ def main() -> int:
     # Bewusst bei 15 belassen (Entscheid 08.08.2026): weniger Quellen loesen
     # das Abdeckungsproblem nicht (DiverseSumm, arXiv 2309.09369: <40 %
     # Coverage schon bei 10 Quellen), sie kosten nur Substanz. Gegen den
-    # Positions-Bias wirken sandwich() und der ABDECKUNG-Block.
+    # Positions-Bias wirken sandwich() und der COVERAGE-Block.
     ap.add_argument("--top", type=int, default=15)
-    ap.add_argument("--empfaenger", default="claudio.lutz.cv@gmail.com")
-    ap.add_argument("--versand", choices=["mcp", "smtp", "keiner"], default="mcp")
     ap.add_argument("--kein-cache", action="store_true",
                     help="alle Threads voll lesen (Neuaufbau des Caches)")
     ap.add_argument("--kein-github", action="store_true",
@@ -1598,7 +1530,7 @@ def main() -> int:
     args = ap.parse_args()
 
     setup_logging()
-    log.info("=== Start (host=%s, versand=%s) ===", args.host or "lokal", args.versand)
+    log.info("=== Start (host=%s) ===", args.host or "lokal")
 
     if args.kein_cache:
         (CACHE / "status.json").unlink(missing_ok=True)
@@ -1654,7 +1586,7 @@ def main() -> int:
 
     t2 = time.time()
     try:
-        out = stufe3(manifest, eDir, arbeit, args.empfaenger, args.versand, datum)
+        out = stufe3(manifest, eDir, arbeit, datum)
     except subprocess.TimeoutExpired:
         log.error("Synthese ueberschritt %ds - kein Bericht", TIMEOUT_SYNTH)
         return 1
@@ -1682,12 +1614,12 @@ def main() -> int:
     if abdeckung:
         (arbeit / "abdeckung.txt").write_text(abdeckung + "\n", encoding="utf-8")
         ausgelassen = [z.strip() for z in abdeckung.splitlines()
-                       if "ausgelassen" in z.lower()]
+                       if "omitted" in z.lower() or "ausgelassen" in z.lower()]
         log.info("Abdeckung: %d Threads ausgelassen", len(ausgelassen))
         for z in ausgelassen:
             log.info("  %s", z)
     else:
-        log.warning("kein ABDECKUNG-Block in der Synthese-Ausgabe")
+        log.warning("kein COVERAGE-Block in der Synthese-Ausgabe")
 
     glossar = glossar_bauen(bericht, eDir)
     if glossar:
@@ -1699,24 +1631,13 @@ def main() -> int:
     if not args.kein_github:
         bericht_veroeffentlichen(bericht, datum, tag_dir, manifest)
 
-    if args.versand == "smtp":
-        from send_mail import versende
-        try:
-            versende(args.empfaenger,
-                     f"/biz/ Lagebericht {datetime.now().strftime('%d.%m.%Y')}",
-                     bericht)
-            log.info("=== OK: per SMTP versandt ===")
-        except Exception as e:                      # noqa: BLE001
-            log.error("=== NICHT ZUGESTELLT: %s === Bericht liegt unter %s", e, ziel)
-            return 1
-    else:
-        log.info("=== %s ===", status[-1].strip())
-        # Am 07.08. meldete die Aufgabenplanung Erfolg (LastTaskResult 0),
-        # obwohl gar keine Mail rausging. Ein misslungener Versand muss als
-        # Fehler sichtbar sein, sonst faellt der Ausfall tagelang nicht auf.
-        if args.versand == "mcp" and "GESENDET" not in status[-1]:
-            log.error("Bericht liegt unter %s bereit, wurde aber nicht zugestellt", ziel)
-            return 1
+    log.info("=== %s ===", status[-1].strip())
+    # Eine ERROR-Statuszeile muss den Lauf als Fehler beenden, sonst faellt
+    # ein unvollstaendiger Bericht tagelang nicht auf (Lehre vom 07.08., als
+    # die Aufgabenplanung Erfolg meldete, obwohl nichts rausging).
+    if "DONE" not in status[-1] and "FERTIG" not in status[-1]:
+        log.error("Synthese meldet keinen Erfolg - Bericht liegt unter %s", ziel)
+        return 1
 
     for alt in sorted(ARBEIT.iterdir(), reverse=True)[LAEUFE_BEHALTEN:]:
         if alt.is_dir():

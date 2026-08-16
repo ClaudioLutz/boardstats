@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================
-#  boardstats /biz/ - Lagebericht (hp-ubuntu)
+#  boardstats /biz/ - Situation Report (hp-ubuntu)
 #
-#  Versendet den Bericht per SMTP. Bewusst auf dem Server und nicht auf
-#  dem Windows-Laptop: so kommt der Bericht auch dann, wenn der Laptop
-#  aus ist.
+#  Erzeugt den englischen Tagesbericht samt Titel, Folien und Bildern und
+#  veroeffentlicht ihn im GitHub-Archiv. Der fruehere Mailversand ist seit
+#  16.08.2026 abgebaut; das Video macht video.sh (eigener Cron-Eintrag).
 #
 #  Voraussetzungen (einmalig einzurichten):
 #    1. claude ist angemeldet   -> claude  (interaktiv, einmalig)
-#    2. ~/.config/boardstats/mail.env mit den SMTP-Zugangsdaten, chmod 600
 # ============================================================
 set -euo pipefail
 
@@ -33,6 +32,6 @@ fi
 
 {
     echo "===== Bericht gestartet: $(date '+%Y-%m-%d %H:%M:%S') ====="
-    python3 run_report.py --top 15 --versand smtp
+    python3 run_report.py --top 15
     echo "===== Bericht beendet:  $(date '+%Y-%m-%d %H:%M:%S') ====="
 } >> "$LOG" 2>&1
