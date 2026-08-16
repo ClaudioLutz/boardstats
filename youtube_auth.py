@@ -91,7 +91,11 @@ def hochladen(video_pfad: Path, titel: str, beschreibung: str,
         # Publikum YouTube das Video zuordnet, und hilft den Auto-Untertiteln.
         snippet["defaultLanguage"] = sprache
         snippet["defaultAudioLanguage"] = sprache
-    metadaten = {"snippet": snippet, "status": {"privacyStatus": privacy_status}}
+    # selfDeclaredMadeForKids=False deklariert "nicht speziell fuer Kinder" -
+    # sonst verlangt YouTube Studio die Angabe bei jedem Video von Hand.
+    metadaten = {"snippet": snippet,
+                 "status": {"privacyStatus": privacy_status,
+                            "selfDeclaredMadeForKids": False}}
     metadaten_bytes = json.dumps(metadaten).encode("utf-8")
     groesse = video_pfad.stat().st_size
 
