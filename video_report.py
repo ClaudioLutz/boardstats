@@ -460,6 +460,62 @@ def tts_mit_worten(text: str, ziel_mp3: Path, cfg: dict[str, str]) -> list[Wort]
     return edge_tts_mit_worten(text, ziel_mp3, cfg["stimme"])
 
 
+# ----------------------------------------------------------- SRT-Untertitel
+
+def _srt_zeit(sekunden: float) -> str:
+    ms = max(0, round(sekunden * 1000))
+    h, rest = divmod(ms, 3_600_000)
+    m, rest = divmod(rest, 60_000)
+    s, ms = divmod(rest, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def srt_erzeugen(worte: list[Wort], ziel: Path) -> int:
+    """Baut aus den Wort-Zeitstempeln der Vertonung eine SRT-Untertiteldatei.
+
+    Eigene Untertitel statt der YouTube-Automatik: die Zeitstempel stammen
+    direkt aus der TTS und die Cues brechen an Satzenden, an hoerbaren Pausen
+    und spaetestens bei zwei Untertitelzeilen - satzweise, ruhige
+    Einblendungen statt wortweisem Gestotter. Gibt die Cue-Anzahl zurueck."""
+    max_zeichen = 84  # zwei Zeilen a 42 Zeichen (uebliche Untertitel-Breite)
+    cues: list[tuple[float, float, str]] = []
+    gruppe: list[Wort] = []
+
+    def abschliessen() -> None:
+        if not gruppe:
+            return
+        text = " ".join(w.text for w in gruppe)
+        if len(text) > 42:
+            # an dem Leerzeichen brechen, das der Mitte am naechsten liegt
+            luecken = [i for i, z in enumerate(text) if z == " "]
+            if luecken:
+                mitte = min(luecken, key=lambda i: abs(i - len(text) // 2))
+                text = text[:mitte] + "\n" + text[mitte + 1:]
+        cues.append((gruppe[0].start, gruppe[-1].end, text))
+        gruppe.clear()
+
+    for i, w in enumerate(worte):
+        gruppe.append(w)
+        laenge = sum(len(x.text) + 1 for x in gruppe) - 1
+        naechstes = worte[i + 1] if i + 1 < len(worte) else None
+        satzende = w.text.rstrip("\"'»«)]").endswith((".", "!", "?", ":", "…"))
+        pause = naechstes is not None and naechstes.start - w.end > 0.45
+        voll = naechstes is not None and \
+            laenge + 1 + len(naechstes.text) > max_zeichen
+        if (satzende and laenge >= 24) or pause or voll:
+            abschliessen()
+    abschliessen()
+
+    zeilen: list[str] = []
+    for nr, (start, ende, text) in enumerate(cues, 1):
+        ende = max(ende, start + 1.2)      # sehr kurze Cues etwas stehen lassen
+        if nr < len(cues):
+            ende = min(ende, cues[nr][0])  # nie in den naechsten Cue ragen
+        zeilen.append(f"{nr}\n{_srt_zeit(start)} --> {_srt_zeit(ende)}\n{text}\n")
+    ziel.write_text("\n".join(zeilen), encoding="utf-8")
+    return len(cues)
+
+
 # ----------------------------------------------------------- Wort-zu-Block-Zuordnung
 
 def worte_zu_bloecken(worte: list[Wort], bloecke: list[Block]) -> list[list[Wort]]:
@@ -1495,6 +1551,16 @@ def main() -> None:
     block_worte = worte_zu_bloecken(worte, bloecke_ton)
     ende = (worte[-1].end if worte else 0.0) + 3.0  # Puffer, -shortest kappt
 
+    srt_pfad = arbeit / f"untertitel{cfg['suffix']}.srt"
+    srt_datei: Path | None = srt_pfad
+    try:
+        print(f"Untertitel: {srt_erzeugen(worte, srt_pfad)} Cues "
+              f"({srt_pfad.name})")
+    except OSError as e:
+        # Untertitel sind Beigabe - ohne sie greift die YouTube-Automatik.
+        print(f"Untertitel nicht erzeugt: {e}")
+        srt_datei = None
+
     konkat: Path | None = None
     ass_arg: Path | None = None
     if fdaten:
@@ -1571,6 +1637,17 @@ def main() -> None:
             print(f"Vorschaubild nicht gesetzt: {e}")
     else:
         print(f"kein Vorschaubild gebaut und keins unter {THUMBNAIL}")
+
+    # Eigene Untertitel-Spur: praezisere Zeiten und saubere Satz-Cues statt
+    # der YouTube-Automatik. captions.insert braucht den force-ssl-Scope -
+    # traegt der Token nur youtube.upload, kommt 403 und es bleibt bei den
+    # Auto-Untertiteln; der gelungene Upload ist davon unberuehrt.
+    if srt_datei is not None and srt_datei.exists():
+        try:
+            youtube_auth.untertitel_setzen(video_id, srt_datei, args.sprache)
+            print(f"Untertitel hochgeladen ({srt_datei.name})")
+        except (RuntimeError, OSError) as e:
+            print(f"Untertitel nicht hochgeladen: {e}")
 
 
 if __name__ == "__main__":

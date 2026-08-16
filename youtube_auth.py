@@ -27,9 +27,15 @@ from pathlib import Path
 KONFIG_DIR = Path.home() / ".config" / "boardstats"
 CLIENT_DATEI = KONFIG_DIR / "youtube_client.json"
 TOKEN_DATEI = KONFIG_DIR / "youtube_token.json"
-SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+# youtube.upload deckt Video-Upload und Thumbnail; captions.insert (eigene
+# Untertitel) verlangt zusaetzlich youtube.force-ssl. Nach einer Erweiterung
+# hier muss youtube_auth_setup.py einmalig neu durchlaufen werden (Re-Consent),
+# sonst traegt der gespeicherte refresh_token nur die alten Scopes.
+SCOPE = ("https://www.googleapis.com/auth/youtube.upload "
+         "https://www.googleapis.com/auth/youtube.force-ssl")
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 THUMBNAIL_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
+CAPTIONS_URL = "https://www.googleapis.com/upload/youtube/v3/captions"
 
 
 def _client() -> dict:
@@ -130,6 +136,51 @@ def hochladen(video_pfad: Path, titel: str, beschreibung: str,
 
     video_id = antwort["id"]
     return video_id, f"https://youtu.be/{video_id}"
+
+
+def untertitel_setzen(video_id: str, srt_pfad: Path, sprache: str,
+                      name: str = "") -> None:
+    """Laedt eine eigene Untertitel-Spur (SRT) zu einem Video hoch.
+
+    Braucht den Scope youtube.force-ssl - traegt der gespeicherte Token nur
+    youtube.upload, antwortet YouTube mit 403 (insufficientPermissions); der
+    Aufrufer soll das abfangen, fehlende Untertitel sind kein Upload-Fehler.
+    name="" macht die Spur zur unbenannten Standard-Spur der Sprache."""
+    token = access_token()
+    metadaten = {"snippet": {"videoId": video_id, "language": sprache,
+                             "name": name, "isDraft": False}}
+    metadaten_bytes = json.dumps(metadaten).encode("utf-8")
+    daten = srt_pfad.read_bytes()
+
+    start_req = urllib.request.Request(
+        f"{CAPTIONS_URL}?uploadType=resumable&part=snippet",
+        data=metadaten_bytes,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=UTF-8",
+            "X-Upload-Content-Type": "application/octet-stream",
+            "X-Upload-Content-Length": str(len(daten)),
+        },
+    )
+    try:
+        with urllib.request.urlopen(start_req, timeout=30) as r:
+            session_uri = r.headers.get("Location")
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(f"Untertitel-Session fehlgeschlagen ({e.code}): {detail}") from e
+    if not session_uri:
+        raise RuntimeError("YouTube hat keine Untertitel-Session-URL zurueckgegeben")
+
+    upload_req = urllib.request.Request(
+        session_uri, data=daten, method="PUT",
+        headers={"Content-Type": "application/octet-stream",
+                 "Content-Length": str(len(daten))})
+    try:
+        with urllib.request.urlopen(upload_req, timeout=120):
+            pass
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(f"Untertitel-Upload fehlgeschlagen ({e.code}): {detail}") from e
 
 
 def thumbnail_setzen(video_id: str, bild_pfad: Path) -> None:

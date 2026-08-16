@@ -104,7 +104,13 @@ SMTP mit XOAUTH2 (`send_mail.py`); Zugangsdaten liegen ausserhalb des Repos.
    `google-api-python-client`); mitgegeben werden Sprach-Metadaten
    (`defaultLanguage`/`defaultAudioLanguage`), Tags (feste Serien-Tags plus
    Tagesthemen aus den Überschriften), Hashtags am Beschreibungsanfang und
-   automatische Kapitelmarken aus den Abschnitts-Startzeiten der Vertonung. Das Vorschaubild baut `thumbnail.py` je
+   automatische Kapitelmarken aus den Abschnitts-Startzeiten der Vertonung.
+   Nach dem Upload wird eine **eigene Untertitel-Spur** (SRT) angehängt,
+   gebaut aus den Wort-Zeitstempeln der TTS: satzweise Cues mit maximal zwei
+   Zeilen, gebrochen an Satzenden und hörbaren Pausen — präziser als die
+   YouTube-Automatik. `captions.insert` braucht den Scope
+   `youtube.force-ssl`; fehlt er im Token, bleibt es bei den
+   Auto-Untertiteln, der Upload ist davon unberührt. Das Vorschaubild baut `thumbnail.py` je
    Sprache neu: fester Serienrahmen (dunkler Grund, Amber-Akzent, Kopf- und
    Fusszeile) mit dem Schlagwort des Tages in grosser Schrift, als Motiv
    rechts das geprüfte Board-Bild aus `arbeit/thumbs/` und ersatzweise das
