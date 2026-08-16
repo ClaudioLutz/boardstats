@@ -211,24 +211,27 @@ def agenda(eintraege: list[str], aktiv: int, datum: str,
 
 def reveal(titel: str, datum: str, motiv: Path) -> Image.Image:
     """Kapitelwechsel: das Board-Bild vollflaechig und unverdunkelt, darueber
-    nur die Kapitel-Ueberschrift auf halbtransparenter Bande."""
+    nur die Kapitel-Ueberschrift auf halbtransparenter Bande. Der Titel nutzt
+    exakt die Umbruch-Geometrie von thema() (Breite 620, gleiche
+    Schriftgroessen), damit er in der Ueberblendung deckungsgleich in den
+    Folientitel uebergeht statt doppelt zu stehen."""
     bild = _vollbild(motiv, deckung=0.0, entsaettigen=1.0).convert("RGBA")
     d = ImageDraw.Draw(bild)
-    for gr in (56, 48, 42):
+    for gr in (48, 42, 36):
         font = _font(True, gr)
-        zeilen = _umbrechen(d, titel.upper(), font, B - 2 * MARGIN - 40)
+        zeilen = _umbrechen(d, titel.upper(), font, 620)
         if len(zeilen) <= 2:
             break
-    schritt = int(gr * 1.18)
+    schritt = int(gr * 1.15)
     oben, unten = 124, 124 + schritt * len(zeilen)
     bande = Image.new("RGBA", (B, H), (0, 0, 0, 0))
     ImageDraw.Draw(bande).rectangle([0, oben - 26, B, unten + 20],
                                     fill=(0, 0, 0, 176))
     bild = Image.alpha_composite(bild, bande)
     d = ImageDraw.Draw(bild)
-    d.rectangle([MARGIN, 124 + 6, MARGIN + 12, unten - 4], fill=AKZENT)
+    d.rectangle([MARGIN, oben + 6, MARGIN + 12, unten - 4], fill=AKZENT)
     for i, z in enumerate(zeilen):
-        d.text((MARGIN + 36, 124 + i * schritt), z, font=font, fill=HELL,
+        d.text((MARGIN + 36, oben + i * schritt), z, font=font, fill=HELL,
                stroke_width=3, stroke_fill=(0, 0, 0))
     return bild.convert("RGB")
 
