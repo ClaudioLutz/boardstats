@@ -1,0 +1,269 @@
+{
+  "abschnitte": [
+    {
+      "ueberschrift": "STOCKS: AI VALUATIONS GET TWO NEW DATA POINTS",
+      "titel": "AI valuations get two new data points",
+      "punkte": [
+        {
+          "text": "Nvidia cuts OpenAI datacenter commitment from 250B to under 120B",
+          "anker": "datacenter commitment to OpenAI"
+        },
+        {
+          "text": "Anthropic to IPO in October, valuation $2T vs $12B revenue",
+          "anker": "going public in October"
+        },
+        {
+          "text": "Implied profit needed: ~$150B/year over 30 years",
+          "anker": "implies around 150 billion"
+        },
+        {
+          "text": "Bull case: $200B revenue by 2028, called unproven",
+          "anker": "projecting 200 billion dollars"
+        }
+      ],
+      "karte": {
+        "wert": "$2 TRILLION",
+        "titel": "Anthropic IPO valuation",
+        "sub": "vs $12B annual revenue"
+      }
+    },
+    {
+      "ueberschrift": "NEOCLOUD STOCKS AND SINGLE NAMES",
+      "titel": "Neocloud stocks and single names",
+      "punkte": [
+        {
+          "text": "IREN: buy under $40, sell over $45, more highs seen first",
+          "anker": "buys under 40 dollars"
+        },
+        {
+          "text": "CIFR, GRRR, DGXX tipped for 500%+ gains in 18 months",
+          "anker": "over 500 percent gains"
+        },
+        {
+          "text": "GRRR shill posts detailed but reads as bag-holding",
+          "anker": "shilling it with unusual"
+        },
+        {
+          "text": "Power not the bottleneck yet, real limit is fab capacity",
+          "anker": "power isn't the bottleneck yet"
+        }
+      ],
+      "karte": {
+        "wert": "500%+",
+        "titel": "Predicted 18-month gain",
+        "sub": "CIFR, GRRR, DGXX (opinion)"
+      }
+    },
+    {
+      "ueberschrift": "SPAC RIGHTS AS A STRATEGY",
+      "titel": "SPAC rights explained as a strategy",
+      "punkte": [
+        {
+          "text": "OCACr $0.30 at 1:1; FWACr $0.15 at 4:1 (~$0.60 implied)",
+          "anker": "OCACr at 0.30 dollars"
+        },
+        {
+          "text": "2024-2026 SPACs: ~70% complete, 30% fail",
+          "anker": "70 percent completion rate"
+        },
+        {
+          "text": "Spread 5-10%, brokers take up to 3 days to convert",
+          "anker": "Trading spread 5 to"
+        },
+        {
+          "text": "Warrants only ITM above $11.50, 30-day lockup, mostly worthless",
+          "anker": "ITM above 11.50 dollars"
+        }
+      ],
+      "karte": {
+        "wert": "70%",
+        "titel": "SPAC completion rate",
+        "sub": "2024-2026, per poster's DD"
+      }
+    },
+    {
+      "ueberschrift": "MACRO: OIL MAJORS CUTTING CAPEX, INFLATION FROM BELOW",
+      "titel": "Oil majors cut capex, inflation from below",
+      "punkte": [
+        {
+          "text": "US oil majors cutting shale capex, prioritizing shareholder returns",
+          "anker": "cutting shale capex despite"
+        },
+        {
+          "text": "Wheat +33%, corn +20%, soybeans +14% YTD; coffee, cocoa down",
+          "anker": "Wheat up 33, canola"
+        },
+        {
+          "text": "Estimated ~16.5% real inflation, ~10% real wage loss",
+          "anker": "roughly 16.5 percent real"
+        },
+        {
+          "text": "US credit card debt near record at $1.26 trillion",
+          "anker": "1.26 trillion dollars in"
+        }
+      ],
+      "karte": {
+        "wert": "$1.26T",
+        "titel": "US credit card debt",
+        "sub": "near all-time high"
+      }
+    },
+    {
+      "ueberschrift": "PRECIOUS METALS",
+      "titel": "Precious metals: ratios and coin math",
+      "punkte": [
+        {
+          "text": "Gold-silver ratio >100:1 now vs 16:1-8:1 historically",
+          "anker": "currently regularly above 100:1"
+        },
+        {
+          "text": "China silver export limits allegedly block Western arbitrage",
+          "anker": "Chinese export restrictions on"
+        },
+        {
+          "text": "Morgan/Peace dollars: 0.77oz silver vs 0.72oz in dimes/quarters",
+          "anker": "roughly 0.77 troy ounces"
+        },
+        {
+          "text": "2 Silver Eagles bought for $63; silver at $2.10/gram",
+          "anker": "Two 2026 Silver Eagles"
+        }
+      ],
+      "karte": {
+        "wert": "100:1",
+        "titel": "Gold-silver ratio",
+        "sub": "vs 16:1-8:1 historical norm"
+      }
+    },
+    {
+      "ueberschrift": "MEME STOCKS: NEW NUMBERS ON GME AND BBBYQ",
+      "titel": "New numbers on GME and BBBYQ",
+      "punkte": [
+        {
+          "text": "BBBY warrants reportedly getting new CUSIP next week",
+          "anker": "getting a new CUSIP"
+        },
+        {
+          "text": "Debunked: GME/BBBY warrants share same dates (Oct 30 vs Oct 7)",
+          "anker": "expiration is October 30"
+        },
+        {
+          "text": "GME short interest jumped to 70.28% from 59.89%",
+          "anker": "rose to 70.28 percent"
+        },
+        {
+          "text": "eBay bid criticized; $1.28B deal like Bending Spoons/Airtable preferred",
+          "anker": "instead of a billion-dollar"
+        }
+      ],
+      "karte": {
+        "wert": "70.28%",
+        "titel": "GME short interest",
+        "sub": "up from 59.89% prior"
+      }
+    },
+    {
+      "ueberschrift": "CRYPTO",
+      "titel": "Crypto: Monero dispute, LINK, DeFi tips",
+      "punkte": [
+        {
+          "text": "Monero view-key dispute (CARROT/FCMP++) unchanged since yesterday",
+          "anker": "unchanged in substance since"
+        },
+        {
+          "text": "New preprint claimed to refute view-key critics (unverified)",
+          "anker": "refutes the view key"
+        },
+        {
+          "text": "Poster shills HYPE and LIT; LIT tied to founder's CFTC seat",
+          "anker": "positions in HYPE and"
+        },
+        {
+          "text": "Tip: screen defillama.com for revenue and token buybacks",
+          "anker": "filtering protocols on defillama.com"
+        }
+      ]
+    },
+    {
+      "ueberschrift": "SPACEX",
+      "titel": "SpaceX: unchanged since yesterday",
+      "punkte": [
+        {
+          "text": "$200 return disputed; Optimus failure seen as main valuation risk",
+          "anker": "return to 200 dollars"
+        }
+      ]
+    },
+    {
+      "ueberschrift": "WEALTH BUILDING AND COST OF LIVING",
+      "titel": "Wealth building and cost of living",
+      "punkte": [
+        {
+          "text": "Rule of thumb: pay off house/car, then invest 30% of income",
+          "anker": "put 30 percent of"
+        },
+        {
+          "text": "USA: ~$4,000/child cash plus ~$4,000 in tax deductions",
+          "anker": "roughly 4,000 dollars in"
+        },
+        {
+          "text": "Australia teachers: 30-hr week, 12 weeks vacation, subsidized care",
+          "anker": "a 30-hour week with"
+        },
+        {
+          "text": "Alaska child-support dodge tip flagged as legally dubious",
+          "anker": "dodging child support enforcement"
+        }
+      ],
+      "karte": {
+        "wert": "30%",
+        "titel": "Suggested savings rate",
+        "sub": "of net income into index funds"
+      }
+    },
+    {
+      "ueberschrift": "THREADS FILLING UP FAST RIGHT NOW",
+      "titel": "Threads filling up fast right now",
+      "punkte": [
+        {
+          "text": "Stock general: 7 posts/hr, just 0.3x its 20.4/hr average",
+          "anker": "7 posts in the"
+        },
+        {
+          "text": "Precious metals thread steady at 6 posts/hr (its average)",
+          "anker": "6 posts per hour"
+        },
+        {
+          "text": "New housing thread: 6 posts/hr on cheap multifamily builds",
+          "anker": "gathering 6 posts in"
+        }
+      ]
+    }
+  ],
+  "zahlen": [
+    {
+      "wert": "$2 TRILLION",
+      "titel": "Anthropic IPO valuation",
+      "sub": "vs just $12B revenue",
+      "satz": "Anthropic is reportedly going public in October at a valuation of 2 trillion dollars or more, against just 12 billion dollars in revenue."
+    },
+    {
+      "wert": "70.28%",
+      "titel": "GME short interest",
+      "sub": "up from 59.89% prior",
+      "satz": "GME's short interest rose to 70.28 percent, up from 59.89 percent in the prior reading."
+    },
+    {
+      "wert": "$1.26T",
+      "titel": "US credit card debt",
+      "sub": "near an all-time high",
+      "satz": "US credit card debt stands at 1.26 trillion dollars, near an all-time high."
+    },
+    {
+      "wert": "<$120B",
+      "titel": "Nvidia OpenAI cutback",
+      "sub": "from $250B commitment",
+      "satz": "Nvidia reportedly cut its data center commitment to OpenAI from 250 billion dollars to under 120 billion dollars."
+    }
+  ]
+}
