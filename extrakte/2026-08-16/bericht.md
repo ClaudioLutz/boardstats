@@ -1,141 +1,114 @@
-# /biz/-Lagebericht 2026-08-16
+# /biz/ Situation Report 2026-08-16
 
-*Datenstand: 16.08.2026 07:19 Ortszeit, 15 ausgewertete Threads.*
+*Data as of: 16.08.2026 13:19 local time (Europe/Zurich), 15 threads analyzed.*
 
-[Extrakte und Quell-Threads dieses Tages](README.md)
+[Extracts and source threads of the day](README.md)
 
 ---
 
-## AKTIEN: DIE KI-BEWERTUNGEN BEKOMMEN ZWEI NEUE ZAHLEN
+## NVIDIA CUTS ITS OPENAI COMMITMENT
 
-Die bärische Seite der KI-Debatte hat seit gestern zwei belastbare Meldungen auf ihrer Seite, beide aus etablierten Medien und im Thread zitiert.
+The one hard news item of the day: Nvidia scaled back its data-center funding guarantee to OpenAI from $250,000,000,000 to under $120,000,000,000. Source is a WSJ report carried by Reuters, article dated 2026-08-14, linked in the "It's popping" thread. Four separate threads picked it up.
 
-- Nvidia soll sein Datacenter-Commitment für OpenAI von 250 Milliarden auf unter 120 Milliarden Dollar gekürzt haben (Quelle: WSJ, im Thread zitiert).
-- Anthropic soll im Oktober an die Börse gehen, erwartete Bewertung 2 Billionen Dollar oder mehr (Quelle: FT). Dem stehen 12 Milliarden Dollar Umsatz gegenüber.
-- Ein Poster rechnet vor, dass 2 Billionen Dollar Marktwert bei üblichen Zinsannahmen rund 150 Milliarden Dollar Jahresgewinn über 30 Jahre voraussetzen.
-- Bullische Gegenposition, unbelegt: Anthropic projiziere 200 Milliarden Dollar Umsatz für 2028 und werde als "sovereign level"-KI faktisch über Steuergelder querfinanziert.
-- Weiterhin verhandelt wird ein 10-Gigawatt-Rechenzentrum in Ohio mit der SoftBank-Tochter SB Energy.
+From the same WSJ reporting: OpenAI is negotiating a 10-gigawatt data center in Ohio with SB Energy, a SoftBank subsidiary.
 
-https://boards.4chan.org/biz/thread/62595546
+What the board makes of it:
+- One poster notes the story was missing from r/nvda_stock and r/wallstreetbets: "cant find this news... something is off."
+- Unsourced: Oracle absorbed the roughly $130,000,000,000 gap. Nobody answered.
+- OpenAI's valuation is quoted at $852,000,000,000 from an article excerpt, still unprofitable.
+- Unsourced: Alphabet, Amazon and Microsoft lose "between 50-70% of their fanatsy valuation" if OpenAI dies.
+- Anthropic's October IPO is put at about $2,000,000,000,000, sourced secondhand to the FT. A skeptic runs the math: "you are expecting a future of something like $150B profit per year for 30 years."
 
-## NEOCLOUD-AKTIEN UND EINZELWERTE
+The "I'm with Burry" thread adds a credit angle, all from one poster ID with no citation: the buildout supposedly needs credit to expand to 1.7T by 2027, and "the expected growth flipped negative in June." He predicts the plug gets pulled after the midterms. The counterargument: Washington treats AI capex as strategic, so "funding AI is equivalent to wartime production of ships, shells and aircraft."
 
-Neu ist eine Runde zu den sogenannten Neoclouds, also Rechenkapazitäts-Vermietern aus dem Mining-Umfeld. Die Angaben sind Poster-Einschätzungen ohne Quelle.
+Tone throughout: "Buy the ponzi... Sell it to a greater fool. Gl" and the deadpan "Bears never win, even when bulls lose."
 
-- IREN: ein Poster kauft unter 40 Dollar und verkauft über 45; er erwartet neue Allzeithochs, danach aber eine Kapitalerhöhung über 6 Milliarden Dollar, die den Kurs wieder einstellig drücke.
-- NBIS gilt einem Poster als "best in class", CRWV als bärisch wegen wachsender Schulden.
-- CIFR, GRRR und DGXX: über 500 Prozent in 18 Monaten erwartet, analog zum IREN-Verlauf 2025.
-- Achtung bei GRRR: Ein einzelner Poster wirbt mit ungewöhnlicher Detailtiefe dafür (Swing-Trades von 6 auf 25 Dollar und 14 auf 25 Dollar, 85'000 Pfund realisierter Gewinn, aktuell 300'000 Pfund gehalten bis 2027). Das liest sich nach starkem Eigeninteresse.
-- Meta: umstritten. Bärisch, weil das Werbegeschäft an alternden Nutzern hänge und Geld in Metaverse und Brillen fliesse; bullisch wegen Instagram-Dominanz. Ein Dritter schlägt vor, Meta als reifen Dividendenwert zu behandeln.
-- Platin: Kursziel 2'800, unwidersprochen, ohne Begründung.
-- Zum Stromengpass: Ein Poster hält Strom noch nicht für den Flaschenhals, da Batterien und Generatoren Reserven freisetzen; der eigentliche Engpass sei die Fab-Kapazität.
+Reliability: one real link, everything else opinion. Both bubble threads are dominated by single poster IDs repeating the same doom thesis across many replies. Not a board consensus.
 
-Unbelegt und als Handlungsaufruf zu lesen ist die Prognose eines Posters, der Markt eröffne am Montag mit einer "scam candle" und breche nach 9:45 EST ein. Begründung: keine.
+## STOCKS: NEOCLOUDS, META, ENERGY
 
-https://boards.4chan.org/biz/thread/62597347
+The newest /smg/ has moved on from index funds to "neoclouds" - bitcoin miners turned AI landlords.
 
-## SPAC-RIGHTS ALS STRATEGIE
+- IREN: buy below $40, trim above $45 per one poster; another warns a claimed $6,000,000,000 ATM offering dilutes it back "to single digits."
+- NBIS: called "best in class for neoclouds."
+- CRWV/CoreWeave: bearish, "Too much debt and increasing."
+- CIFR, GRRR, DGXX: claimed potential for "an IREN 2025 like run of 500%+ over the next 18 months."
+- GRRR: one poster says he holds £300,000 through 2027 at a £15 average, after realizing £85,000 on two earlier swings. He talks his own book relentlessly - treat accordingly.
+- META: bear case is dependence on aging Facebook users, bull case cites Instagram reach and an 18% ROIC.
+- CVV bought "for the SiC play," Rheinmetall as a European rearmament bet, Exxon on the strength of a YouTube video.
 
-Der sachlichste neue Beitrag des Tages: Ein Poster erklärt SPAC-Rights als Alternative zu den weitgehend toten Warrants. Rights wandeln sich bei Abschluss der Fusion automatisch in Aktien um.
+Also new: Bloomberg (2026-08-14) reports US shale majors cutting capex to fund buybacks - Chevron and ConocoPhillips down 10% in the Lower 48 in H1, Occidental down 20% in the Permian. The board's read: good for shareholders, bad for anyone hoping US shale replaces Middle East barrels.
 
-- Preise: OCACr bei 0,30 Dollar bei Verhältnis 1:1, FWACr bei 0,15 Dollar je Right bei 4:1, also 0,60 Dollar implizit.
-- Eigene Auswertung der SPACs von 2024 bis 2026: rund 70 Prozent Abschluss-, 30 Prozent Ausfallquote.
-- Handelsspread 5 bis 10 Prozent, Broker brauchen für die Umwandlung bis zu drei Tage, das Verhältnis steht in den SEC-Filings.
-- Warrants dagegen sind erst über 11,50 Dollar nach der Fusion im Geld, haben 30 Tage Sperrfrist und verfallen meist wertlos.
+## SPAC RIGHTS: THE MOST USABLE THING ON THE BOARD TODAY
 
-Verlässlichkeit: Es wird kein Ticker zum Kauf gepusht, die Zahlen sind nachprüfbar - wirkt nach eigener Recherche, nicht nach Verkaufsagenda.
+One poster wrote a full strategy for buying SPAC rights before merger completion.
 
-https://boards.4chan.org/biz/thread/62595546
+- OCACr at .30 with a 1:1 conversion; FWACr at .15 each at 4:1, implying .60 per share post-conversion.
+- Claimed edge threshold: implied cost under $1.50.
+- Claimed completion rate from his own review of 2024-2026 SPACs: 70% complete, 30% fail.
+- Practical friction: bid/ask spreads of 5-10%, conversion delays up to 3 days, and broker-specific tickers (OCACr, OCAC.rt, OCAC/r). Ratios are in the SEC filings.
 
-## MAKRO: ÖLKONZERNE KÜRZEN, INFLATION VON UNTEN
+All numbers are his own; nothing was independently verified in-thread.
 
-Neu ist ein Bloomberg-Bericht vom 14.08.2026: US-Ölkonzerne (Chevron, ConocoPhillips, Occidental, APA, Matador, HighPeak) kürzen trotz hoher Preise die Kapitalausgaben im Schiefer und schütten den Cashflow lieber aus. Für Aktionäre gut, für das Produktionswachstum schlecht.
+## MACRO: THE REAL-INFLATION ARGUMENT
 
-Ein zweiter Poster leitet aus Rohstoffpreisen eine reale Inflation weit über der amtlichen ab:
+A poster argues official CPI understates staple-goods inflation, using an Adam Smith subsistence-wage frame and self-described Claude-assisted analysis. His YTD commodity figures: wheat +33%, canola +40%, corn +20%, soybean oil +14%, barley +14%, against coffee -10% and cocoa -5%. He lands on 15-30%, refined to about 16.5%, and wants yields to rise. The rebuttal is short: "The Fed will do anything but that."
 
-- Weizen plus 33, Raps plus 40, Mais plus 20, Soja plus 14, Gerste plus 14 Prozent seit Jahresbeginn.
-- Kaffee minus 10, Kakao minus 5 Prozent - also Grundnahrung teurer, Luxus billiger.
-- Daraus geschätzt: rund 16,5 Prozent reale Inflation, rund 10 Prozent Reallohnverlust. Methodisch ist das Adam Smiths Subsistenztheorie, kein Standardmass.
-- Ebenfalls genannt: 1,26 Billionen Dollar US-Kreditkartenschulden, nahe Allzeithoch.
+Separately, a headline of $1,260,000,000,000 in total US credit card debt was posted without a link. Another poster claims Bitcoin's downside is structurally asymmetric to SPY (+1% SPY equals +2% BTC, -2% SPY equals -8% BTC), concluding "bitcoin and crypto in general is pretty much done." Unsourced, uncontested.
 
-https://boards.4chan.org/biz/thread/62595546
+## MEME STOCKS: A CUSIP CHANGE HITS THE THESIS
 
-## EDELMETALLE
+New today in the BBBYQ complex: the BBBY warrants are getting a new CUSIP-6, 902116, per a nasdaqtrader notice (DTN2026-17), which skeptics say kills the "Cusip Conundrum" outright. Believers counter that a shared CUSIP-6 with the old Bed Bath issuer number, 075896, proved a hidden merger. Overstock trades at $4.44 under the BBBY ticker and is being renamed Neighborhood Intelligence, ticker NXH. Warrant expiries: BBBY October 7, GME October 30 - theta risk flagged in-thread.
 
-Der Edelmetall-Sammelthread liefert zwei unbelegte Thesen und einen brauchbaren Praxishinweis.
-
-- Gold-Silber-Verhältnis: aktuell regelmässig über 100:1, historisch 16:1 bis 8:1. Wohin es bei Ende der vermuteten Manipulation fällt, bleibt reine Spekulation (genannt wurden 10:1 und 1'000:1).
-- China-These: Chinesische Exportbeschränkungen auf Silberbarren hätten im Januar 2026 die Arbitrage zwischen westlichem und chinesischem Markt blockiert; China könne langfristig mehr zahlen als westliche Bullionbanken. Keine Quelle, keine Gegenrede.
-- Praktisch nachprüfbar: Morgan- und Peace-Dollar enthalten rund 0,77 Feinunzen Silber je Dollar Nennwert, Quarters, Dimes und Franklin-Halves nur rund 0,72 - obwohl beide als 90-Prozent-Junk-Silber gelten. Relevant beim Ankauf nach Nennwert.
-- Zwei 2026er Silver Eagles wurden für 63 Dollar gekauft, Silber wird mit 2,10 Dollar je Gramm angegeben.
-- Ein LINK-gegen-Silber-Angebot im Thread wurde von den Postern selbst als Spam eingeordnet.
-
-https://boards.4chan.org/biz/thread/62596945
-
-## MEME-AKTIEN: NEUE ZAHLEN ZU GME UND BBBYQ
-
-Der CUSIP-Komplex um BBBYQ und den Overstock-Nachfolger (Hintergrund im gestrigen Bericht) hat einen konkreten Termin bekommen.
-
+The background thesis (canceled BBBYQ, Ryan Cohen as creditor, GME at $9,700,000,000 cash and 14% DRS, the unsourced $56,000,000,000 eBay bid rumor) is unchanged.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-15/bericht.md
 
-- Die BBBY-Warrants sollen "nächste Woche" eine neue CUSIP erhalten. Skeptiker lesen das als endgültige Entkopplung von BBBYQ, womit auch die Verlustvorträge verloren wären; Befürworter als Bestätigung ihrer These. Der Termin ist prüfbar, sobald er eintritt.
-- Widerlegt wurde die Behauptung, GME- und BBBY-Warrants seien mit identischem Datum ausgegeben worden: Verfall am 30. Oktober beziehungsweise 7. Oktober.
-- Neu bei GME: Der Leerverkaufsanteil laut chartexchange.com stieg auf 70,28 Prozent gegenüber 59,89 Prozent in der Vormessung, Off-Exchange 68,73 Prozent.
-- Kritik an der Kapitalallokation: Statt eines Milliardengebots für eBay wäre ein gezielter Zukauf wie Bending Spoons/Airtable für 1,28 Milliarden Dollar sinnvoller (Quelle: TechCrunch, 04.08.2026).
-- Ein r/GME-Thread, in dem auch dort Zweifel an der Ryan-Cohen-Erzählung aufkommen, wird im Thread selbst verlinkt - ein Zeichen nachlassender Zustimmung.
+Reliability: the same handful of IDs argue with each other, and the OP promotes an external site and YouTube channel pushing the same narrative.
 
-https://boards.4chan.org/biz/thread/62578386
-https://boards.4chan.org/biz/thread/62588826
+## UNCHANGED SINCE YESTERDAY
 
-## KRYPTO
-
-Monero-Streit um die View Keys des CARROT/FCMP++-Upgrades und die Frage der Wiederlistung auf Binance und Coinbase: inhaltlich unverändert seit gestern.
-
+Monero (the CARROT/FCMP++ view-key fight, price calls of $2,000 to $100,000 by 2030, the RandomX v2 fork cutting Bitmain X9 hashpower by about 40%, and the $150 lost at coincards/cakepay): unchanged, same poster, same arguments.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-15/bericht.md
 
-Neu ist allein ein verlinktes kryptografisches Preprint (eprint.iacr.org/2026/872.pdf), das laut dem verlinkenden Poster die Kritiker der View Keys widerlegt - der Thread gibt nur die Schlussfolgerung wieder, nicht die Begründung. Ausserdem bewirbt ein Poster erstmals eigene Positionen in HYPE und LIT; bei LIT lautet die Begründung, der Gründer sitze im CFTC-Vorstand und profitiere von einer US-Lizenz für Perp-DEX. Unbelegt, kein Monero-Bezug.
-
-Als generische Methode genannt: auf defillama.com Protokolle nach Einnahmen filtern und gezielt nach solchen mit Token-Rückkäufen suchen.
-
-https://boards.4chan.org/biz/thread/62521292
-
-Chainlink-Thread (Behauptung, das Scheitern des Clarity Act vorhergesagt zu haben, plus die unbelegte Aussage, SEC und CFTC hätten LINK als Rohstoff eingestuft): unverändert seit gestern, ausser persönlichem Streit kein Sachgehalt.
-
+Chainlink (Clarity Act declared DOA, the unsourced claim that SEC and CFTC jointly called LINK a commodity): unchanged, and today's thread is a personal flame war with no new evidence.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-15/bericht.md
 
-## SPACEX
-
-SpaceX-Thread (Rückkehr auf 200 Dollar strittig, S-1 schliesst Dividenden und Rückkäufe aus, Optimus-Scheitern als eigentliches Bewertungsrisiko): unverändert seit gestern, keine neuen Zahlen oder Quellen.
-
+SpaceX (Optimus as the real valuation lever, the alleged dilution unlock, the $200 recovery question, S-1 ruling out dividends and buybacks): unchanged.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-15/bericht.md
 
-## VERMÖGENSAUFBAU UND LEBENSHALTUNG
+Leveraged ETFs (reset frequency as the true drag driver): unchanged, though one poster now discloses the blend - 40% NTSD, 30% MQQQ, 30% WX for 1.8x total. The pushback is fair: "Why do you people not just test this basic idea?"
+https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-15/bericht.md
 
-Aus zwei Lebensstil-Threads lassen sich drei konkrete Angaben ziehen, alles Selbstauskünfte.
+## FILLING FAST
 
-- Faustregel eines Posters: erst Haus und Auto abbezahlen, dann 30 Prozent des Nettoeinkommens monatlich in Indexfonds.
-- USA: pro Kind rund 4'000 Dollar Barzahlung plus rund 4'000 Dollar Steuerabzug jährlich.
-- Australien: im Bildungssektor 30-Stunden-Woche mit 12 Wochen Urlaub bei stark subventionierter Kinderbetreuung.
-- Der im Thread genannte Tipp, Unterhaltsvollstreckung durch Umzug nach Alaska zu umgehen, ist unbelegt und rechtlich fragwürdig.
+- "It's popping" runs at 2.0x its own average of 1.8 posts per hour. Content is the Nvidia cut, covered above.
+- "I'm with Burry" runs at 2.5x its own average of 0.6 posts per hour, but has only 14 posts total and no sources whatsoever - pure doom-posting with three invented-looking credit figures.
+- The newest /smg/ has the most absolute traffic, 13 posts last hour, but that is only 0.8x its own 16.2 per hour average.
+- A "commie blocks" housing thread runs at 1.3x its 3.1 per hour. No tickers, no numbers worth trading on - a structural engineer explaining he builds 4-5 story wood apartment boxes, and "Shit buildings for shit people."
 
-https://boards.4chan.org/biz/thread/62588431
-https://boards.4chan.org/biz/thread/62591130
+## BOARD LIFE
 
-## GERADE SCHNELL FÜLLENDE THREADS
+Several threads carry no market content but set the mood. The burnout thread's most useful takeaway is medical, not financial: multiple posters push B12, vitamin D/K2, magnesium and annual bloodwork before assuming fatigue is depression. One divorced father reports 4,500 a month in child support against 132 claimed work hours a week. Running line: "It was over before it began."
 
-- Der jüngste Aktien-Sammelthread füllt sich mit 7 Posts in der letzten Stunde, das ist nur das 0,3-Fache seines eigenen Schnitts von 20,4 Posts pro Stunde. Inhalt: Neoclouds, Meta, Stromengpass, Montags-Crash-Prognose - siehe oben.
-- Der Edelmetall-Thread läuft mit 6 Posts pro Stunde genau auf seinem eigenen Schnitt. Inhalt: Gold-Silber-Verhältnis, China-These, Münzkäufe.
-- Ein zwei Stunden alter Thread über billige Holzrahmen-Mehrfamilienhäuser in den USA sammelt 6 Posts in der letzten Stunde. Diskutiert wird die Vermarktung als "Luxury Apartments" und die angebotsseitige These, mehr Bauvolumen senke die Preise. Kein Wertpapier, keine Zahl ausser Stockwerkszahlen.
-- Ein eine Stunde alter Thread mit 4 Posts enthält ausser einem frauenfeindlichen Rant nichts - kein Finanzbezug.
+The wealth threads offer one concrete item - a claim that the UAE sells residency efficiently - and a lot of cope: "Top cope posters award." The /biz/ anime "FX Senshi Kurumi-chan" arrives in two months; its plot is a student recovering 20,000,000 yen her mother lost trading FX, which the board finds funnier than any price target.
 
-## GLOSSAR
+## GLOSSARY
 
-- CARROT - geplantes neues Adress- und Transaktionsformat fuer Monero; Streitpunkt sind die darin erweiterten Lese-Schluessel.
-- Clarity Act - ein im Thread erwähntes US-Gesetzesvorhaben zur Marktstruktur-Regulierung von Kryptowerten.
-- CUSIP - eindeutige Kennnummer eines Wertpapiers in Nordamerika.
-- CUSIP / CUSIP-6 - nordamerikanische Wertpapierkennnummer; erste sechs Stellen identifizieren den Emittenten.
-- FCMP++ - "Full-Chain Membership Proofs", ein neues Nachweisverfahren, bei dem ein Transaktionseingang nicht mehr nur mit einer kleinen Gruppe Scheinbeteiligter, sondern gegen alle bisherigen Ausgaben der Kette verschleiert wird.
-- Neoclouds - Bezeichnung für spezialisierte Cloud-/Rechenzentrumsanbieter, die vor allem KI-Rechenleistung vermieten
-- Optimus - humanoider Roboter, den Tesla entwickelt.
-- SPAC/SPV - Zweckgesellschaft zur Uebernahme/Fusion eines anderen Unternehmens.
-- XMR / Monero - Kryptowaehrung, deren Transaktionen standardmaessig Sender, Empfaenger und Betrag verbergen.
+- /smg/ - the board's recurring "stock market general" thread.
+- CARROT - a proposed Monero protocol change involving new view-key mechanics, central to the thread's relisting/privacy debate.
+- Clarity Act - referenced only by name in the thread as US crypto market-structure legislation; no further detail on its contents is given.
+- cope - denial or rationalization used to avoid admitting a loss.
+- cope / coping - using a belief or behavior to psychologically tolerate a bad situation
+- Cope/seethe - dismissive terms mocking someone's frustration or denial.
+- CUSIP - the unique identifier code for a security; a warrant's CUSIP change was cited as significant.
+- CUSIP-6 - the first six characters of a securities identifier (CUSIP), used here to argue two securities are legally linked.
+- dilution unlock - expiration of a lock-up period after which previously restricted shares can be sold, increasing share supply and potentially reducing price.
+- DOA - "dead on arrival," meaning legislation or a proposal that has already failed before going anywhere.
+- drag - the performance cost leveraged funds incur over time from volatility/rebalancing, separate from fees.
+- FCMP++ - "Full-Chain Membership Proofs," an upcoming Monero cryptographic upgrade to ring signatures/transaction privacy.
+- FX - foreign exchange (currency) trading.
+- ID - a per-thread poster identifier assigned by the board, not a persistent user account.
+- midterms - the US midterm congressional elections, referenced here as a political timing marker.
+- ponzi - a fraudulent scheme paying earlier investors with new investors' money; used loosely here as shorthand for an unsustainable AI investment bubble.
+- Poster ID - a per-thread identifier 4chan assigns to posters, not a persistent account (see RELIABILITY).
+- ROIC - return on invested capital, a profitability/efficiency measure.

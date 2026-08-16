@@ -1,269 +1,224 @@
 {
   "abschnitte": [
     {
-      "ueberschrift": "STOCKS: AI VALUATIONS GET TWO NEW DATA POINTS",
-      "titel": "AI valuations get two new data points",
+      "ueberschrift": "NVIDIA CUTS ITS OPENAI COMMITMENT",
+      "titel": "Nvidia cuts OpenAI funding guarantee",
       "punkte": [
         {
-          "text": "Nvidia cuts OpenAI datacenter commitment from 250B to under 120B",
-          "anker": "datacenter commitment to OpenAI"
+          "text": "Nvidia cut OpenAI funding guarantee from $250B to under $120B",
+          "anker": "scaled back its data-center"
         },
         {
-          "text": "Anthropic to IPO in October, valuation $2T vs $12B revenue",
-          "anker": "going public in October"
+          "text": "Unsourced claim: Oracle absorbed the ~$130B funding gap",
+          "anker": "absorbed the roughly $130,000,000,000"
         },
         {
-          "text": "Implied profit needed: ~$150B/year over 30 years",
-          "anker": "implies around 150 billion"
+          "text": "OpenAI valued at $852B in one excerpt, still unprofitable",
+          "anker": "quoted at $852,000,000,000 from"
         },
         {
-          "text": "Bull case: $200B revenue by 2028, called unproven",
-          "anker": "projecting 200 billion dollars"
+          "text": "Anthropic's October IPO pegged at ~$2 trillion (secondhand, FT)",
+          "anker": "October IPO is put"
         }
       ],
       "karte": {
-        "wert": "$2 TRILLION",
-        "titel": "Anthropic IPO valuation",
-        "sub": "vs $12B annual revenue"
+        "wert": "$120B",
+        "titel": "Nvidia's new OpenAI cap",
+        "sub": "cut from $250B"
       }
     },
     {
-      "ueberschrift": "NEOCLOUD STOCKS AND SINGLE NAMES",
-      "titel": "Neocloud stocks and single names",
+      "ueberschrift": "STOCKS: NEOCLOUDS, META, ENERGY",
+      "titel": "Neoclouds, Meta bets, shale capex cuts",
       "punkte": [
         {
-          "text": "IREN: buy under $40, sell over $45, more highs seen first",
-          "anker": "buys under 40 dollars"
+          "text": "IREN: buy below $40, trim above $45 amid dilution fears",
+          "anker": "buy below $40, trim"
         },
         {
-          "text": "CIFR, GRRR, DGXX tipped for 500%+ gains in 18 months",
-          "anker": "over 500 percent gains"
+          "text": "CIFR, GRRR, DGXX pitched for a 500%+ IREN-like run",
+          "anker": "IREN 2025 like run"
         },
         {
-          "text": "GRRR shill posts detailed but reads as bag-holding",
-          "anker": "shilling it with unusual"
+          "text": "META: bear=aging Facebook users, bull=Instagram, 18% ROIC",
+          "anker": "dependence on aging Facebook"
         },
         {
-          "text": "Power not the bottleneck yet, real limit is fab capacity",
-          "anker": "power isn't the bottleneck yet"
+          "text": "Shale majors cut capex for buybacks: Chevron/COP -10%, OXY -20%",
+          "anker": "cutting capex to fund"
         }
       ],
       "karte": {
-        "wert": "500%+",
-        "titel": "Predicted 18-month gain",
-        "sub": "CIFR, GRRR, DGXX (opinion)"
+        "wert": "-20%",
+        "titel": "Oxy Permian capex cut",
+        "sub": "Shale favors buybacks not oil"
       }
     },
     {
-      "ueberschrift": "SPAC RIGHTS AS A STRATEGY",
-      "titel": "SPAC rights explained as a strategy",
+      "ueberschrift": "SPAC RIGHTS: THE MOST USABLE THING ON THE BOARD TODAY",
+      "titel": "SPAC rights strategy takes shape",
       "punkte": [
         {
-          "text": "OCACr $0.30 at 1:1; FWACr $0.15 at 4:1 (~$0.60 implied)",
-          "anker": "OCACr at 0.30 dollars"
+          "text": "OCACr at .30 (1:1), FWACr at .15 (4:1) post-conversion .60",
+          "anker": "OCACr at .30 with"
         },
         {
-          "text": "2024-2026 SPACs: ~70% complete, 30% fail",
-          "anker": "70 percent completion rate"
+          "text": "Edge threshold: implied cost under $1.50 per share",
+          "anker": "implied cost under $1.50"
         },
         {
-          "text": "Spread 5-10%, brokers take up to 3 days to convert",
-          "anker": "Trading spread 5 to"
+          "text": "Claimed SPAC completion rate: 70% complete, 30% fail",
+          "anker": "70% complete, 30% fail"
         },
         {
-          "text": "Warrants only ITM above $11.50, 30-day lockup, mostly worthless",
-          "anker": "ITM above 11.50 dollars"
+          "text": "Friction: 5-10% spreads, delays up to 3 days",
+          "anker": "spreads of 5-10%, conversion"
         }
       ],
       "karte": {
         "wert": "70%",
         "titel": "SPAC completion rate",
-        "sub": "2024-2026, per poster's DD"
+        "sub": "claimed, self-reported"
       }
     },
     {
-      "ueberschrift": "MACRO: OIL MAJORS CUTTING CAPEX, INFLATION FROM BELOW",
-      "titel": "Oil majors cut capex, inflation from below",
+      "ueberschrift": "MACRO: THE REAL-INFLATION ARGUMENT",
+      "titel": "Real inflation, debt and BTC downside",
       "punkte": [
         {
-          "text": "US oil majors cutting shale capex, prioritizing shareholder returns",
-          "anker": "cutting shale capex despite"
+          "text": "YTD staples: wheat +33%, canola +40%, corn +20%",
+          "anker": "wheat +33%, canola +40%"
         },
         {
-          "text": "Wheat +33%, corn +20%, soybeans +14% YTD; coffee, cocoa down",
-          "anker": "Wheat up 33, canola"
+          "text": "Real inflation estimate refined to about 16.5%",
+          "anker": "refined to about 16.5%"
         },
         {
-          "text": "Estimated ~16.5% real inflation, ~10% real wage loss",
-          "anker": "roughly 16.5 percent real"
+          "text": "US credit card debt headline: $1.26 trillion",
+          "anker": "$1,260,000,000,000 in total US"
         },
         {
-          "text": "US credit card debt near record at $1.26 trillion",
-          "anker": "1.26 trillion dollars in"
+          "text": "BTC seen as asymmetric to SPY: +1%→+2%, -2%→-8%",
+          "anker": "equals +2% BTC, -2%"
         }
       ],
       "karte": {
         "wert": "$1.26T",
         "titel": "US credit card debt",
-        "sub": "near all-time high"
+        "sub": "posted without a link"
       }
     },
     {
-      "ueberschrift": "PRECIOUS METALS",
-      "titel": "Precious metals: ratios and coin math",
+      "ueberschrift": "MEME STOCKS: A CUSIP CHANGE HITS THE THESIS",
+      "titel": "CUSIP change rattles BBBYQ thesis",
       "punkte": [
         {
-          "text": "Gold-silver ratio >100:1 now vs 16:1-8:1 historically",
-          "anker": "currently regularly above 100:1"
+          "text": "BBBY warrants get new CUSIP-6, 902116 - thesis in doubt",
+          "anker": "BBBY warrants are getting"
         },
         {
-          "text": "China silver export limits allegedly block Western arbitrage",
-          "anker": "Chinese export restrictions on"
+          "text": "Overstock trades at $4.44 as BBBY, renaming to NXH",
+          "anker": "Overstock trades at $4.44"
         },
         {
-          "text": "Morgan/Peace dollars: 0.77oz silver vs 0.72oz in dimes/quarters",
-          "anker": "roughly 0.77 troy ounces"
+          "text": "Warrant expiries: BBBY Oct 7, GME Oct 30 - theta risk",
+          "anker": "BBBY October 7, GME"
         },
         {
-          "text": "2 Silver Eagles bought for $63; silver at $2.10/gram",
-          "anker": "Two 2026 Silver Eagles"
+          "text": "Background unchanged: GME $9.7B cash, 14% DRS",
+          "anker": "GME at $9,700,000,000"
         }
       ],
       "karte": {
-        "wert": "100:1",
-        "titel": "Gold-silver ratio",
-        "sub": "vs 16:1-8:1 historical norm"
+        "wert": "$4.44",
+        "titel": "Overstock/BBBY price",
+        "sub": "renaming to NXH"
       }
     },
     {
-      "ueberschrift": "MEME STOCKS: NEW NUMBERS ON GME AND BBBYQ",
-      "titel": "New numbers on GME and BBBYQ",
+      "ueberschrift": "UNCHANGED SINCE YESTERDAY",
+      "titel": "Yesterday's threads still unchanged",
       "punkte": [
         {
-          "text": "BBBY warrants reportedly getting new CUSIP next week",
-          "anker": "getting a new CUSIP"
-        },
-        {
-          "text": "Debunked: GME/BBBY warrants share same dates (Oct 30 vs Oct 7)",
-          "anker": "expiration is October 30"
-        },
-        {
-          "text": "GME short interest jumped to 70.28% from 59.89%",
-          "anker": "rose to 70.28 percent"
-        },
-        {
-          "text": "eBay bid criticized; $1.28B deal like Bending Spoons/Airtable preferred",
-          "anker": "instead of a billion-dollar"
-        }
-      ],
-      "karte": {
-        "wert": "70.28%",
-        "titel": "GME short interest",
-        "sub": "up from 59.89% prior"
-      }
-    },
-    {
-      "ueberschrift": "CRYPTO",
-      "titel": "Crypto: Monero dispute, LINK, DeFi tips",
-      "punkte": [
-        {
-          "text": "Monero view-key dispute (CARROT/FCMP++) unchanged since yesterday",
-          "anker": "unchanged in substance since"
-        },
-        {
-          "text": "New preprint claimed to refute view-key critics (unverified)",
-          "anker": "refutes the view key"
-        },
-        {
-          "text": "Poster shills HYPE and LIT; LIT tied to founder's CFTC seat",
-          "anker": "positions in HYPE and"
-        },
-        {
-          "text": "Tip: screen defillama.com for revenue and token buybacks",
-          "anker": "filtering protocols on defillama.com"
+          "text": "Monero, Chainlink, SpaceX, leveraged ETFs: no new developments",
+          "anker": "unchanged, same poster, same"
         }
       ]
     },
     {
-      "ueberschrift": "SPACEX",
-      "titel": "SpaceX: unchanged since yesterday",
+      "ueberschrift": "FILLING FAST",
+      "titel": "Which threads are heating up",
       "punkte": [
         {
-          "text": "$200 return disputed; Optimus failure seen as main valuation risk",
-          "anker": "return to 200 dollars"
-        }
-      ]
-    },
-    {
-      "ueberschrift": "WEALTH BUILDING AND COST OF LIVING",
-      "titel": "Wealth building and cost of living",
-      "punkte": [
-        {
-          "text": "Rule of thumb: pay off house/car, then invest 30% of income",
-          "anker": "put 30 percent of"
+          "text": "It's popping thread running at 2.0x its normal pace",
+          "anker": "runs at 2.0x its"
         },
         {
-          "text": "USA: ~$4,000/child cash plus ~$4,000 in tax deductions",
-          "anker": "roughly 4,000 dollars in"
+          "text": "I'm with Burry surges 2.5x, but zero sources",
+          "anker": "runs at 2.5x its"
         },
         {
-          "text": "Australia teachers: 30-hr week, 12 weeks vacation, subsidized care",
-          "anker": "a 30-hour week with"
+          "text": "/smg/ leads in raw volume: 13 posts in the last hour",
+          "anker": "13 posts last hour"
         },
         {
-          "text": "Alaska child-support dodge tip flagged as legally dubious",
-          "anker": "dodging child support enforcement"
+          "text": "Commie blocks housing thread up 1.3x, no tickers",
+          "anker": "runs at 1.3x its"
         }
       ],
       "karte": {
-        "wert": "30%",
-        "titel": "Suggested savings rate",
-        "sub": "of net income into index funds"
+        "wert": "13/hr",
+        "titel": "/smg/ posts last hour",
+        "sub": "still below its average"
       }
     },
     {
-      "ueberschrift": "THREADS FILLING UP FAST RIGHT NOW",
-      "titel": "Threads filling up fast right now",
+      "ueberschrift": "BOARD LIFE",
+      "titel": "Off-topic: burnout, wealth, anime",
       "punkte": [
         {
-          "text": "Stock general: 7 posts/hr, just 0.3x its 20.4/hr average",
-          "anker": "7 posts in the"
+          "text": "Burnout thread pushes B12, vitamin D/K2, magnesium, bloodwork",
+          "anker": "B12, vitamin D/K2, magnesium"
         },
         {
-          "text": "Precious metals thread steady at 6 posts/hr (its average)",
-          "anker": "6 posts per hour"
+          "text": "Divorced dad: 4,500/month child support, 132 work hours",
+          "anker": "4,500 a month in"
         },
         {
-          "text": "New housing thread: 6 posts/hr on cheap multifamily builds",
-          "anker": "gathering 6 posts in"
+          "text": "Wealth thread claims UAE sells residency efficiently",
+          "anker": "UAE sells residency efficiently"
+        },
+        {
+          "text": "New /biz/ anime: heroine recoups 20M yen lost trading FX",
+          "anker": "20,000,000 yen her mother"
         }
       ]
     }
   ],
   "zahlen": [
     {
-      "wert": "$2 TRILLION",
-      "titel": "Anthropic IPO valuation",
-      "sub": "vs just $12B revenue",
-      "satz": "Anthropic is reportedly going public in October at a valuation of 2 trillion dollars or more, against just 12 billion dollars in revenue."
+      "wert": "$120B",
+      "titel": "Nvidia's OpenAI cap",
+      "sub": "down from $250B",
+      "satz": "Nvidia cut its funding guarantee to OpenAI from two hundred fifty billion dollars to under one hundred twenty billion dollars."
     },
     {
-      "wert": "70.28%",
-      "titel": "GME short interest",
-      "sub": "up from 59.89% prior",
-      "satz": "GME's short interest rose to 70.28 percent, up from 59.89 percent in the prior reading."
+      "wert": "$2T",
+      "titel": "Anthropic IPO estimate",
+      "sub": "expected this October",
+      "satz": "Anthropic's October IPO is estimated at about two trillion dollars, according to a secondhand report from the Financial Times."
     },
     {
       "wert": "$1.26T",
       "titel": "US credit card debt",
-      "sub": "near an all-time high",
-      "satz": "US credit card debt stands at 1.26 trillion dollars, near an all-time high."
+      "sub": "posted without a source",
+      "satz": "A headline claims total US credit card debt has reached one point two six trillion dollars."
     },
     {
-      "wert": "<$120B",
-      "titel": "Nvidia OpenAI cutback",
-      "sub": "from $250B commitment",
-      "satz": "Nvidia reportedly cut its data center commitment to OpenAI from 250 billion dollars to under 120 billion dollars."
+      "wert": "$852B",
+      "titel": "OpenAI's valuation",
+      "sub": "still unprofitable",
+      "satz": "OpenAI's valuation is quoted at eight hundred fifty two billion dollars, even though the company remains unprofitable."
     }
   ]
 }
