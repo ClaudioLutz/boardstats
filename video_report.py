@@ -1046,7 +1046,10 @@ PRAES_INTRO = "This is the 4chan business board report for {datum_lang}."
 # einloesen: gesprochen steht er vor dem Serien-Satz, passend zur Titel-Karte
 # der Szene (Label "TODAY'S TOP STORY").
 PRAES_HOOK = "Today's top story: {hook}"
-PRAES_AGENDA = "In today's report:"
+PRAES_AGENDA = "Coming up:"
+AGENDA_TEASER = 3        # so viele Kapitel nennt die Agenda (von sieben)
+TOKENS_PRO_S = 2.30      # gemessene Sprechrate: Neural2-J, speakingRate 1.15
+INTRO_BODEN = 11.5       # Sekunden; darunter wird der Vorspann gestreckt
 PRAES_ZAHLEN = "Before we wrap up, the numbers of the day."
 PRAES_OUTRO = ("That's the board report for today. All source threads and "
                "chapter markers are in the description. New report every day.")
@@ -1144,17 +1147,46 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
     hook ist der Aufhaenger des Tagestitels; er eroeffnet den Intro-Block,
     damit die ersten Sekunden den Klick einloesen statt mit Datum und
     Inhaltsverzeichnis zu beginnen. Leer bleibt er beim statischen
-    Serientitel, der keinen Aufhaenger hat."""
-    intro = PRAES_INTRO.format(datum_lang=_datum_lang(datum))
+    Serientitel, der keinen Aufhaenger hat.
+
+    Der Vorspann ist bewusst kurz: gemessen am 17.08.2026 fiel der erste
+    Inhaltssatz erst bei 34.7 s, davon 22.5 s Rahmen - und die ersten 30 s
+    sind genau das Fenster, das YouTube als "Intro" bewertet. Deshalb nennt
+    die Agenda nur die ersten AGENDA_TEASER Kapitel statt aller sieben (eine
+    vollstaendige Inhaltsangabe ist der klassische Retention-Killer), und der
+    Serien-Satz mit Datum entfaellt - Kanalname und Datum stehen im Bug, im
+    Titel und in der Beschreibung.
+
+    Gesprochen wird er nur noch als Boden: Kapitel 1 muss mindestens 10 s
+    nach Videobeginn liegen, sonst laesst kapitel_bauen seine Marke fallen.
+    An einem Tag mit knappem Hook ("GOLD BREAKS $5,000", rund 2 s) reicht der
+    Rest dafuer nicht, und dann ist der Serien-Satz keine Floskel mehr,
+    sondern Fuellmasse mit Zweck. Geschaetzt wird vor der Vertonung, weil die
+    Blockliste vor ihr feststehen muss - mit der gemessenen Sprechrate, den
+    Absatzpausen und der langen Kapitelpause."""
+    aus: list[Block] = []
     satz = _hook_gesprochen(hook)
-    if satz:
-        intro = f"{PRAES_HOOK.format(hook=satz)} {intro}"
-    aus = [Block("absatz", intro, 0, rolle="intro"),
-           Block("absatz", PRAES_AGENDA, 0, rolle="agenda_kopf")]
     nummern = [b.abschnitt for b in bloecke if b.art == "ueberschrift"]
-    for nr in nummern:
-        titel = _folien_titel(zuordnung, bloecke, nr)
-        aus.append(Block("absatz", titel.rstrip(".") + ".", 0, rolle="agenda"))
+    titel_saetze = [_folien_titel(zuordnung, bloecke, nr).rstrip(".") + "."
+                    for nr in nummern[:AGENDA_TEASER]]
+    rahmen = [PRAES_HOOK.format(hook=satz) if satz else "",
+              PRAES_AGENDA, *titel_saetze]
+    # Blockgrenzen kosten je GOOGLE_ABSATZ_PAUSE, die Grenze zur ersten
+    # Kapitel-Ueberschrift GOOGLE_KAPITEL_PAUSE.
+    geschaetzt = (sum(len(t.split()) for t in rahmen) / TOKENS_PRO_S
+                  + 0.6 * len(rahmen) + 2.5)
+    if not satz or geschaetzt < INTRO_BODEN:
+        # format() bewusst nur auf der eigenen Konstante: der Hook ist
+        # Modelltext und darf geschweifte Klammern enthalten.
+        rahmen[0] = (f"{rahmen[0]} "
+                     f"{PRAES_INTRO.format(datum_lang=_datum_lang(datum))}"
+                     ).strip()
+        print(f"Vorspann geschaetzt {geschaetzt:.1f}s - Serien-Satz bleibt "
+              f"drin, damit Kapitel 1 nicht unter 10s rutscht")
+    aus.append(Block("absatz", rahmen[0], 0, rolle="intro"))
+    aus.append(Block("absatz", PRAES_AGENDA, 0, rolle="agenda_kopf"))
+    for t in titel_saetze:
+        aus.append(Block("absatz", t, 0, rolle="agenda"))
     aus.extend(bloecke)
     karten = [k for k in fdaten.get("zahlen") or []
               if isinstance(k, dict) and k.get("wert")]
@@ -1427,8 +1459,8 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
 
 # ------------------------------------------------- Szenen-Praesentation (v7)
 
-MOTIV_BLUR = 2.4         # Gauss-Radius, bezogen auf 1280 px Bildbreite
-MOTIV_HELL = 0.90        # Helligkeit der Kulisse (1.0 = unveraendert)
+MOTIV_BLUR = 3.6         # Gauss-Radius, bezogen auf 1280 px Bildbreite
+MOTIV_HELL = 0.86        # Helligkeit der Kulisse (1.0 = unveraendert)
 
 
 def motiv_weich(pfad: Path | None, arbeit: Path) -> Path | None:
@@ -1451,8 +1483,11 @@ def motiv_weich(pfad: Path | None, arbeit: Path) -> Path | None:
     kein Grund, den Cron-Lauf abzubrechen."""
     if pfad is None:
         return None
+    # Die Stufe steckt im Cache-Namen: sonst liefert der Cache nach einer
+    # Aenderung von Radius oder Helligkeit weiter die alten Bilder.
+    stufe = f"{pfad}|{MOTIV_BLUR}|{MOTIV_HELL}"
     ziel = (arbeit / "weich"
-            / f"{hashlib.sha1(str(pfad).encode()).hexdigest()[:12]}.png")
+            / f"{hashlib.sha1(stufe.encode()).hexdigest()[:12]}.png")
     if ziel.exists():
         return ziel
     try:
@@ -1553,7 +1588,7 @@ def _post_datum(datum: str) -> str:
 def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
-                 ende: float) -> list[Szene]:
+                 ende: float, thumb: str = "") -> list[Szene]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges, mild weichgezeichnetes Motiv
     (motiv_weich); Kapitel-Opener, der Themen-Titel oben, die persistente
@@ -1642,14 +1677,24 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                               or (eigene[0] if eigene else pool_bild()))
     titel_map = thread_titel(datum)
 
-    # Intro
+    # Intro. Kaltstart: in Sekunde 0 steht gross das Schlagwort des Tages im
+    # Bild - dasselbe, das das Vorschaubild traegt. Damit loest das Video den
+    # Klick auch im Bild ein und nicht nur im gesprochenen Hook; YouTube
+    # bewertet die ersten 30 s als eigene Kennzahl. Bewusst ohne Aufblende
+    # (fade=0): ein Cold Open, der einblendet, ist keiner.
     kopf_idx = next((i for i, b in enumerate(bloecke)
                      if b.rolle == "agenda_kopf"), None)
     erster_kopf = start_von(koepfe[0][0]) if koepfe else ende
     intro_bis = start_von(kopf_idx) if kopf_idx is not None else erster_kopf
     s = neu(tages_motiv or pool_bild(), 0.0)
+    hook_ab = 0.4
+    if thumb and intro_bis > KALTSTART + 1.0:
+        s.overlays.append(ov(szenen.zahl_tafel(thumb, "", ""), 0.0,
+                             KALTSTART, fade=0.0))
+        hook_ab = KALTSTART
     s.overlays.append(ov(szenen.titel_karte(hook, label="TODAY'S TOP STORY"),
-                         0.4, max(intro_bis, 1.0), einflug="unten"))
+                         hook_ab, max(intro_bis, hook_ab + 0.6),
+                         einflug="unten"))
 
     # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
     # Motiv seines Kapitels als Vorschau.
@@ -2041,6 +2086,8 @@ FLUG_VORLAUF = 0.25      # so viel vor dem Wechsel setzt er sich in Bewegung:
                          # Wechsel gelandet, waehrend der neue noch einfliegt
                          # (EINFLUG_DAUER). Vorher starteten beide gleichzeitig
                          # und begegneten sich 0.55 s lang in der Bildmitte.
+KALTSTART = 2.0          # so lange steht das Schlagwort des Tages allein im
+                         # Bild, bevor die Hook-Karte uebernimmt
 FOKUS_MIN = 1.1          # kuerzer steht kein Fokus-Punkt in der Bildmitte
 LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
                          # gedeckt durch GOOGLE_KAPITEL_PAUSE, sonst muesste
@@ -2378,7 +2425,16 @@ def kapitel_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             continue
         s = int(worte[0].start)
         if s < letzte + 10:
-            continue
+            # Nur das erste Kapitel kann knapp an der Intro-Marke liegen (der
+            # Vorspann ist kurz und der Hook schwankt in der Laenge). Es dann
+            # fallen zu lassen, waere der lautlose Fehler; die Marke ein paar
+            # Sekunden nach hinten zu schieben kostet nichts, weil YouTube nur
+            # den Abstand prueft und der Zuschauer die Sekunde nicht merkt.
+            if letzte:
+                continue
+            print(f"Kapitel 1 liegt bei {s}s - Marke auf 10s geschoben, "
+                  f"sonst faellt sie unter die 10-Sekunden-Regel")
+            s = 10
         letzte = s
         zeit = (f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
                 if s >= 3600 else f"{s // 60:02d}:{s % 60:02d}")
@@ -2562,7 +2618,9 @@ def main() -> None:
         # Zwischenthemen, Zitaten und Kennzahlen.
         try:
             folge = szenen_bauen(bloecke_ton, block_worte, abschnitte,
-                                 zuordnung, fdaten, hook, datum, arbeit, ende)
+                                 zuordnung, fdaten, hook, datum, arbeit, ende,
+                                 thumb_text_laden(tag_dir, args.sprache,
+                                                  titel))
             print("baue Szenen-Video ...")
             szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
                          datum, ende)
