@@ -133,6 +133,10 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "kappung": ("[Text truncated here - YouTube allows only 5000 characters "
                     "in the description.]"),
         "kapitel_intro": "Intro",
+        # Serien-Playlist des Kanals; jedes hochgeladene Video wird dort
+        # angehaengt (playlistItems.insert, deckt der force-ssl-Scope).
+        # Kein Geheimnis - die Playlist ist oeffentlich.
+        "playlist": "PLE-UMRGn6d6g",
     },
 }
 # Feste Serien-Tags je Sprache; dazu kommen beim Upload die Tagesthemen
@@ -957,6 +961,10 @@ def hintergrund_liste(plan: list[tuple[Path | None, float]], arbeit: Path,
 # Gesprochene Rahmen-Saetze der Praesentation. Nur englisch: die Praesentation
 # laeuft vorerst nur fuer das englische Video.
 PRAES_INTRO = "This is the 4chan business board report for {datum_lang}."
+# Der Titel-Aufhaenger kauft den Klick, also muss ihn die Eroeffnung auch
+# einloesen: gesprochen steht er vor dem Serien-Satz, passend zur Titel-Karte
+# der Szene (Label "TODAY'S TOP STORY").
+PRAES_HOOK = "Today's top story: {hook}"
 PRAES_AGENDA = "In today's report:"
 PRAES_ZAHLEN = "Before we wrap up, the numbers of the day."
 PRAES_OUTRO = ("That's the board report for today. All source threads and "
@@ -1028,14 +1036,39 @@ def _folien_titel(zuordnung: dict[int, dict], bloecke: list[Block],
     return ""
 
 
+def _hook_gesprochen(hook: str) -> str:
+    """Der Titel-Aufhaenger als sprechbarer Satz.
+
+    Geaendert wird nur die Interpunktion: der Doppelpunkt des Hooks wird zum
+    Komma, weil PRAES_HOOK schon einen fuehrt, und am Ende steht ein
+    Satzzeichen. Die Grossschreibung bleibt, wie der Titel sie hat - gemessen
+    am 17.08.2026 spricht Google TTS (Neural2-J) "IMPOSSIBLE" und
+    "Impossible" gleich lang, buchstabiert also nichts, und Kuerzel wie NVDA
+    erkennt es von selbst (0.70 s gegen 0.29 s fuer GOLD)."""
+    satz = re.sub(r"\s+", " ", hook.replace(":", ",")).strip()
+    satz = re.sub(r"\s+([,.])", r"\1", satz).rstrip(",;:- ")
+    if satz and satz[-1] not in ".!?":
+        satz += "."
+    return satz
+
+
 def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
-                           fdaten: dict, datum: str) -> list[Block]:
+                           fdaten: dict, datum: str,
+                           hook: str = "") -> list[Block]:
     """Das gesprochene Skript der Praesentation: Rahmen-Saetze plus der
     unveraenderte Berichtstext. Jeder Rahmen-Satz ist ein eigener Block, damit
     seine Zeitfenster die Folienwechsel steuern; die art bleibt "absatz",
-    damit der ASS-Ersatzpfad dieselben Bloecke rendern kann."""
-    aus = [Block("absatz", PRAES_INTRO.format(datum_lang=_datum_lang(datum)),
-                 0, rolle="intro"),
+    damit der ASS-Ersatzpfad dieselben Bloecke rendern kann.
+
+    hook ist der Aufhaenger des Tagestitels; er eroeffnet den Intro-Block,
+    damit die ersten Sekunden den Klick einloesen statt mit Datum und
+    Inhaltsverzeichnis zu beginnen. Leer bleibt er beim statischen
+    Serientitel, der keinen Aufhaenger hat."""
+    intro = PRAES_INTRO.format(datum_lang=_datum_lang(datum))
+    satz = _hook_gesprochen(hook)
+    if satz:
+        intro = f"{PRAES_HOOK.format(hook=satz)} {intro}"
+    aus = [Block("absatz", intro, 0, rolle="intro"),
            Block("absatz", PRAES_AGENDA, 0, rolle="agenda_kopf")]
     nummern = [b.abschnitt for b in bloecke if b.art == "ueberschrift"]
     for nr in nummern:
@@ -2050,8 +2083,12 @@ def main() -> None:
     ass_datei = arbeit / f"untertitel{cfg['suffix']}.ass"
     video_mp4 = arbeit / f"video{cfg['suffix']}.mp4"
 
-    titel = titel_laden(tag_dir, args.sprache, cfg["titel"].format(datum=datum))
+    serien_titel = cfg["titel"].format(datum=datum)
+    titel = titel_laden(tag_dir, args.sprache, serien_titel)
     print(f"Titel: {titel}")
+    hook = titel.split(" | ")[0].strip()
+    # Der statische Serientitel ist kein Aufhaenger, den man vorlesen kann.
+    hook_ton = "" if titel == serien_titel else hook
     bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
 
     # Praesentationsmodus (v6): nur englisch und nur mit folien.json; sonst
@@ -2061,7 +2098,8 @@ def main() -> None:
     zuordnung: dict[int, dict] = {}
     if fdaten:
         zuordnung = folien_zuordnen(fdaten, bloecke)
-        bloecke_ton = praesentations_bloecke(bloecke, zuordnung, fdaten, datum)
+        bloecke_ton = praesentations_bloecke(bloecke, zuordnung, fdaten, datum,
+                                             hook_ton)
     else:
         bloecke_ton = bloecke
     text = "\n\n".join(b.text for b in bloecke_ton)
@@ -2082,7 +2120,6 @@ def main() -> None:
         print(f"Untertitel nicht erzeugt: {e}")
         srt_datei = None
 
-    hook = titel.split(" | ")[0].strip()
     fertig = False
     if fdaten and int(fdaten.get("version") or 1) >= 2:
         # Szenen-Layout (v7): Drehbuch-folien.json mit Stichworten,
@@ -2185,6 +2222,17 @@ def main() -> None:
             print(f"Untertitel hochgeladen ({srt_datei.name})")
         except (RuntimeError, OSError) as e:
             print(f"Untertitel nicht hochgeladen: {e}")
+
+    # Serien-Playlist: haelt die Tagesberichte als Reihe zusammen, statt sie
+    # nur einzeln im Kanal liegen zu lassen. Scheitert der Eintrag, bleibt der
+    # Upload gueltig - nachtragen laesst sich das jederzeit.
+    playlist_id = cfg.get("playlist")
+    if playlist_id:
+        try:
+            youtube_auth.playlist_eintragen(video_id, playlist_id)
+            print(f"in Playlist eingehaengt ({playlist_id})")
+        except RuntimeError as e:
+            print(f"Playlist-Eintrag nicht gesetzt: {e}")
 
 
 if __name__ == "__main__":

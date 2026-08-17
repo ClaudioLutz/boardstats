@@ -134,7 +134,14 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    verhindert Doppel-Uploads. Der Video-Titel kommt aus der vom Report-Lauf
    erzeugten `titel.json` (dynamischer Tages-Hook); fehlt sie oder ist sie
    unbrauchbar, fällt der Upload auf den statischen Serientitel
-   «/biz/ Situation Report {datum}» zurück. Die Videobeschreibung enthält den
+   «/biz/ Situation Report {datum}» zurück. Derselbe Hook eröffnet auch die
+   **Vertonung** («Today's top story: …» vor dem Serien-Satz), damit die
+   ersten Sekunden einlösen, wofür der Titel den Klick geholt hat, statt mit
+   Datum und Inhaltsverzeichnis zu beginnen; beim statischen Serientitel
+   bleibt die Eröffnung wie bisher. Nach dem Upload hängt der Lauf das Video
+   in die Serien-Playlist des Kanals (`playlistItems.insert`, Playlist-ID in
+   `SPRACHEN`); scheitert das, bleibt der Upload gültig. Die
+   Videobeschreibung enthält den
    Berichtstext selbst (Markdown-Auszeichnung entfernt) und darunter die
    Quell-Threads; da YouTube nur 5000 Zeichen zulässt, wird an einer
    Abschnittsgrenze gekappt, wobei die Thread-Links ihr Budget vorab

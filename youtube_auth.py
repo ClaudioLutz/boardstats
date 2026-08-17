@@ -154,6 +154,32 @@ def loeschen(video_id: str) -> None:
             f"YouTube-Loeschung fehlgeschlagen ({e.code}): {detail}") from e
 
 
+def playlist_eintragen(video_id: str, playlist_id: str) -> None:
+    """Haengt ein Video an das Ende einer Playlist (playlistItems.insert).
+
+    Braucht den force-ssl-Scope. YouTube prueft nicht auf Duplikate, ein
+    zweiter Aufruf legt also einen zweiten Eintrag an - deshalb nur direkt
+    nach einem gelungenen Upload aufrufen. Ein Fehler hier ist kein
+    Upload-Fehler, der Aufrufer soll ihn abfangen."""
+    token = access_token()
+    daten = json.dumps({"snippet": {
+        "playlistId": playlist_id,
+        "resourceId": {"kind": "youtube#video", "videoId": video_id},
+    }}).encode("utf-8")
+    req = urllib.request.Request(
+        "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet",
+        data=daten, method="POST",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json; charset=UTF-8"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(
+            f"Playlist-Eintrag fehlgeschlagen ({e.code}): {detail}") from e
+
+
 def untertitel_setzen(video_id: str, srt_pfad: Path, sprache: str,
                       name: str = "") -> None:
     """Laedt eine eigene Untertitel-Spur (SRT) zu einem Video hoch.
