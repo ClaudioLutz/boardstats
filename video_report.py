@@ -2224,8 +2224,10 @@ def main() -> None:
             print(f"Untertitel nicht hochgeladen: {e}")
 
     # Serien-Playlist: haelt die Tagesberichte als Reihe zusammen, statt sie
-    # nur einzeln im Kanal liegen zu lassen. Scheitert der Eintrag, bleibt der
-    # Upload gueltig - nachtragen laesst sich das jederzeit.
+    # nur einzeln im Kanal liegen zu lassen. Der neueste Bericht steht vorn
+    # (position 0), das ist bei einer Tagesreihe die nuetzliche Reihenfolge.
+    # Scheitert der Eintrag, bleibt der Upload gueltig - nachtragen laesst
+    # sich das jederzeit.
     playlist_id = cfg.get("playlist")
     if playlist_id:
         try:

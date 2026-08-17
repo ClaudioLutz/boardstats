@@ -154,18 +154,23 @@ def loeschen(video_id: str) -> None:
             f"YouTube-Loeschung fehlgeschlagen ({e.code}): {detail}") from e
 
 
-def playlist_eintragen(video_id: str, playlist_id: str) -> None:
-    """Haengt ein Video an das Ende einer Playlist (playlistItems.insert).
+def playlist_eintragen(video_id: str, playlist_id: str,
+                       position: int | None = 0) -> None:
+    """Traegt ein Video in eine Playlist ein (playlistItems.insert).
 
-    Braucht den force-ssl-Scope. YouTube prueft nicht auf Duplikate, ein
-    zweiter Aufruf legt also einen zweiten Eintrag an - deshalb nur direkt
-    nach einem gelungenen Upload aufrufen. Ein Fehler hier ist kein
-    Upload-Fehler, der Aufrufer soll ihn abfangen."""
+    position=0 setzt es an den Anfang (Tagesberichte: neuester zuerst),
+    None haengt es hinten an. Braucht den force-ssl-Scope. YouTube prueft
+    nicht auf Duplikate, ein zweiter Aufruf legt also einen zweiten Eintrag
+    an - deshalb nur direkt nach einem gelungenen Upload aufrufen. Ein Fehler
+    hier ist kein Upload-Fehler, der Aufrufer soll ihn abfangen."""
     token = access_token()
-    daten = json.dumps({"snippet": {
+    snippet: dict[str, object] = {
         "playlistId": playlist_id,
         "resourceId": {"kind": "youtube#video", "videoId": video_id},
-    }}).encode("utf-8")
+    }
+    if position is not None:
+        snippet["position"] = position
+    daten = json.dumps({"snippet": snippet}).encode("utf-8")
     req = urllib.request.Request(
         "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet",
         data=daten, method="POST",
