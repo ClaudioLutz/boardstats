@@ -79,8 +79,11 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    vertont `bericht.md` mit der Stimme `en-US-Neural2-J`. Der Lauf
    bereinigt den Bericht für die Vertonung (`bloecke_erzeugen()`:
    Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus), ergänzt
-   gesprochene Rahmen-Sätze (Begrüssung, Kapitel-Aufzählung, Tageszahlen,
-   Abspann), vertont per
+   knappe gesprochene Rahmen-Sätze (Aufhänger, drei angeteaserte Kapitel,
+   Tageszahlen, Abspann — der Vorspann ist bewusst kurz, weil YouTube die
+   ersten 30 Sekunden als eigene Kennzahl bewertet; das Video beginnt
+   stattdessen mit dem Schlagwort des Vorschaubilds gross im Bild), vertont
+   per
    Google Cloud TTS (Neural2-Stimme; Wort-Zeitstempel über SSML-`<mark>`-
    Timepoints, absatzweise gestückelt wegen des 5000-Byte-API-Limits; der
    API-Key liegt ausserhalb des Repos unter
@@ -129,6 +132,17 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    fehlt sie ganz oder scheitert der Szenen-Aufbau, entsteht das Video im
    Text-Layout (Text-Happen unten, Titelkarten oben, Wort-Karaoke per
    `libass`) — kein Layout-Problem darf den Upload verhindern.
+   Unter der Stimme läuft ein **selbst synthetisiertes Musikbett**
+   (`--bett-bauen`, Puls im 80er-Takt mit Arpeggio, 12 Minuten, Datei
+   ausserhalb des Repos unter `~/.config/boardstats/bett.opus`) 20 LU unter
+   der Sprache; selbst erzeugt, weil täglich unbeaufsichtigt hochgeladen
+   wird und dieselbe Musik in jedem Video steckt — ein Content-ID-Treffer
+   wäre nicht ein Video, sondern der Kanal. Fehlt die Datei, läuft der Tag
+   ohne Musik. Der Endmix geht per zweipassigem `loudnorm` auf −14 LUFS,
+   YouTubes Normalisierungsziel (die Plattform senkt nur ab, hebt nie an),
+   und die Tonspur wird mit 192 kbit/s in Stereo kodiert. Beide Renderpfade
+   nutzen dieselbe Tonbehandlung, damit ein Fallback-Tag nicht anders
+   klingt.
    Upload als **öffentliches** Video über die YouTube
    Data API v3 (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
    `google-api-python-client`); mitgegeben werden Sprach-Metadaten
