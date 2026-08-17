@@ -18,6 +18,7 @@ __pycache__/
 *.pyc
 
 # Lokale Neben- und Altdateien
+research/
 vorschau_mail.html
 *.bak*
 send_report*.ps1
