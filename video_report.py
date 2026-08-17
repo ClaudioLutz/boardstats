@@ -2087,8 +2087,11 @@ def main() -> None:
     titel = titel_laden(tag_dir, args.sprache, serien_titel)
     print(f"Titel: {titel}")
     hook = titel.split(" | ")[0].strip()
-    # Der statische Serientitel ist kein Aufhaenger, den man vorlesen kann.
-    hook_ton = "" if titel == serien_titel else hook
+    # Gesprochen wird der Aufhaenger nur, wenn er nachweislich einer ist: das
+    # Serien-Suffix " | /biz/ <datum>" muss dahinter stehen. Fehlt es, ist der
+    # Titel entweder der statische Serientitel (kein Aufhaenger) oder er wurde
+    # bei 100 Zeichen gekappt - dann waere der "Hook" ein abgeschnittener Rest.
+    hook_ton = hook if " | " in titel and titel != serien_titel else ""
     bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
 
     # Praesentationsmodus (v6): nur englisch und nur mit folien.json; sonst
