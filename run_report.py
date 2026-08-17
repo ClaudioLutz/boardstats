@@ -1527,10 +1527,12 @@ Rules:
      line from this morning: they show how the board habitually reacts,
      not what one poster once wrote. Where you use one, say in half a
      sentence what it means - the reader does not know it.
-   - HOW THE BOARD WORKS is a finding too. Where the extracts explain the
-     mechanics (what a general is, QRD, 1pbtid, jannies, checked), that
-     belongs in the report wherever it explains WHY a discussion runs the
-     way it does.
+   - HOW THE BOARD WORKS is a finding too, wherever it explains WHY a
+     discussion runs the way it does - but take it ONLY from what the
+     canon bullets hand you, since they carry the meaning with them. The
+     extracts' TERMS AND SLANG section does not reach you: it is stripped
+     before this call and feeds the appended glossary instead. Never
+     supply board mechanics from your own knowledge.
    - THE GENERALS ARE INSTITUTIONS, not just sources: recurring threads
      with fixed names and OP templates (/smg/, /pmg/, /XMR/, /XSG/) are
      re-founded every day. Where a thread carries an iteration number,
@@ -1578,7 +1580,10 @@ Rules:
     upper bound, make no statements about real head counts.
 12. Write NO glossary: it is generated automatically from the extracts and
     appended after you. You may use jargon in the report without
-    explaining it.
+    explaining it. ONE exception, and only it: a board phrase you quote
+    under rule 7 because it carries the finding - there the half sentence
+    of meaning belongs in the sentence itself, because the point is lost
+    without it. That is not a definition and not a glossary entry.
 13. COMPLETENESS: every thread of the input is either used in the report
     or deliberately omitted - nothing disappears silently. You account for
     this in the COVERAGE block (see output).

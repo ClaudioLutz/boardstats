@@ -39,7 +39,10 @@ HOW TO CONTINUE
    important.
 5. The extract stays under 12000 characters. If it grows longer, cut the
    oldest material and what explains today's situation least - but never
-   hard numbers, sources and practical pointers that still apply. This
+   hard numbers, sources and practical pointers that still apply, and
+   never the canon bullets under MOOD AND MEMES: they are the thread's
+   memory of its own voice and cost two lines. Where mood has to give way,
+   a one-off from an earlier day goes first, a canon line last. This
    limit matters: an extract that grows without bound eventually costs more
    than the thread itself.
 6. Verbatim stays verbatim. Numbers, tickers, prices, dates and quotes from
