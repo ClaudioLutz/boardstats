@@ -822,15 +822,17 @@ def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
 # Mischung soll von Abschnitt zu Abschnitt und von Tag zu Tag variieren.
 FOLIEN_PROMPT = """\
 You get today's /biz/ situation report (Markdown, English). The daily video
-shows it as a moving picture story: full-screen board images with text
-moments appearing while the report is read aloud. You write the storyboard.
-Vary the mix from section to section - not every section needs every
-element; pick what fits the material.
+shows it as a moving picture story: full-screen board images while the
+report is read aloud, with a persistent on-screen card (chapter title plus
+bullet points that light up one by one and stay) carrying the narration.
+You write the storyboard. Vary the mix from section to section - not every
+section needs every element; pick what fits the material.
 
 Output ONLY one JSON object, no preamble, no code fence:
-{"abschnitte": [{"ueberschrift": "...", "titel": "...",
+{"abschnitte": [{"ueberschrift": "...", "titel": "...", "lage": "left",
                  "stichworte": [{"text": "...", "anker": "..."}, ...],
-                 "zwischenthemen": [{"titel": "...", "anker": "..."}, ...],
+                 "zwischenthemen": [{"titel": "...", "anker": "...",
+                                     "lage": "right"}, ...],
                  "zitat": {"text": "...", "anker": "..."},
                  "karte": {"wert": "...", "titel": "...", "sub": "...",
                            "anker": "..."}},
@@ -848,14 +850,20 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
 - "ueberschrift": the section heading COPIED VERBATIM (without "## ").
 - "titel": a short chapter title, max 44 characters, sentence case,
   no period.
-- "stichworte": 3 to 6 keyword moments. "text" is the on-screen keyword:
-  2 to 4 punchy words, max 26 characters, tickers and figures welcome
-  (e.g. "$120B CUT", "BTC 61K", "SHORTS WIPED"). They carry the screen
-  while the narrator talks - spread them across the whole section, roughly
-  one every couple of sentences.
+- "lage": "left" or "right" - the screen side of the bullet card. Place it
+  deliberately and switch sides between chapters so the frame stays fresh.
+- "stichworte": the running commentary. One bullet for roughly EVERY
+  sentence of the section - 8 to 14 for a normal section; never let two
+  consecutive sentences pass without one. "text" is the on-screen bullet:
+  2 to 6 punchy words, max 34 characters, tickers and figures welcome
+  (e.g. "$120B CUT", "BTC BACK AT 61K", "SHORTS WIPED"). Each bullet
+  paraphrases the sentence its anker sits in; together they must let a
+  muted viewer follow the whole story.
 - "zwischenthemen": 0 to 2 entries, ONLY when the section clearly switches
   to a second storyline. "titel" (max 40 characters) names the new
-  sub-story; its anker sits where the switch happens.
+  sub-story; its anker sits where the switch happens. The bullet card
+  restarts there ("lage" optional), so at least one stichwort must follow
+  each switch.
 - "zitat" (optional): the single best board one-liner quoted in the
   section, COPIED VERBATIM, max 130 characters, no slurs. Omit if the
   section has no quotable line.
@@ -863,7 +871,7 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
   "wert" max 12 characters as shown on screen (e.g. "$2 TRILLION",
   "70.28 %"), "titel" max 28 characters, "sub" max 32 characters, "anker"
   where the figure is spoken.
-- Sections that only say "unchanged since yesterday": 1-2 stichworte,
+- Sections that only say "unchanged since yesterday": 2 stichworte,
   nothing else.
 
 Rules for "zahlen" (the closing "Numbers of the day" segment):
@@ -893,16 +901,24 @@ def folien_generieren(bericht_md: str) -> dict:
         if not isinstance(a, dict) or not str(a.get("titel") or "").strip():
             raise RuntimeError("Drehbuch-Abschnitt ohne Titel")
         a["titel"] = str(a["titel"]).strip()[:60]
+        lg = str(a.get("lage") or "").strip().lower()
+        if lg in ("left", "right"):
+            a["lage"] = lg
+        else:
+            a.pop("lage", None)
         stich = a.get("stichworte")
         a["stichworte"] = [
-            {"text": str(p["text"]).strip()[:30],
+            {"text": str(p["text"]).strip()[:38],
              "anker": str(p.get("anker") or "").strip()}
             for p in (stich if isinstance(stich, list) else [])
-            if isinstance(p, dict) and str(p.get("text") or "").strip()][:6]
+            if isinstance(p, dict) and str(p.get("text") or "").strip()][:16]
         zwischen = a.get("zwischenthemen")
         a["zwischenthemen"] = [
             {"titel": str(z["titel"]).strip()[:44],
-             "anker": str(z.get("anker") or "").strip()}
+             "anker": str(z.get("anker") or "").strip(),
+             **({"lage": str(z["lage"]).strip().lower()}
+                if str(z.get("lage") or "").strip().lower()
+                in ("left", "right") else {})}
             for z in (zwischen if isinstance(zwischen, list) else [])
             if isinstance(z, dict) and str(z.get("titel") or "").strip()][:2]
         zit = a.get("zitat")

@@ -9,7 +9,8 @@ eingebacken) - Szenen-Timing und ffmpeg-Aufbau macht video_report.py.
 
 Bausteine: Ecken-Bug (Serienmarke + Datum), Vignette (Lesbarkeits-Verlauf,
 als Overlay statt im Hintergrund, damit sie nicht mitzoomt), Titel-Karte
-(Lower Third fuer Intro/Kapitel/Zwischenthemen), kinetische Stichwort-Tags,
+(Lower Third fuer Intro/Kapitel/Zwischenthemen), persistente Themen-Karte
+(Titel + auflaufende Stichpunkte, steht bis zum Themenwechsel),
 Zitat-Karte im 4chan-Post-Look (blue board), Gross-Zahl-Tafel mit
 Count-up-Stufen und Outro-Tafel. Farb- und Schrift-Vokabular kommt aus
 thumbnail.py, gemessen und umbrochen wird mit den Helfern aus folien.py.
@@ -111,27 +112,59 @@ def titel_karte(text: str, label: str = "", quelle: str = "",
     return bild
 
 
-STICHWORT_SLOTS = 3
+KARTE_BREITE = 470
+KARTE_OBEN = 104        # unter dem Ecken-Bug
+KARTE_UNTEN_MAX = 560   # Lower Thirds laufen nie gleichzeitig mit der Karte
+KARTE_ALT = (198, 203, 216)
 
 
-def stichwort(text: str, slot: int) -> Image.Image:
-    """Kinetisches Stichwort: kompaktes Tag mit Amber-Streifen, das synchron
-    zum Gesprochenen aufblendet. Der Slot rotiert die Position, damit die
-    Tags nicht immer am selben Fleck aufpoppen."""
+def themen_karte(titel: str, punkte: list[str], sichtbar: int,
+                 lage: str = "left") -> Image.Image:
+    """Persistente Themen-Karte: Kapitel- oder Zwischenthemen-Titel mit
+    auflaufenden Stichpunkten - sie steht, bis das (Sub-)Thema wechselt,
+    damit das Gesprochene immer von Text gestuetzt ist. Der juengste Punkt
+    ist hervorgehoben; passt der Verlauf nicht mehr in die Hoehe, werden
+    die aeltesten Punkte verdraengt. Die Bildseite (lage: left/right)
+    bestimmt das Drehbuch."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
-    for gr in (42, 36, 30):
-        font = folien._font(True, gr)
-        w = d.textlength(text.upper(), font=font)
-        if w <= 540:
+    x = B - MARGIN - KARTE_BREITE if lage == "right" else MARGIN
+    innen = KARTE_BREITE - 34 - 24
+    tf = folien._font(True, 30)
+    tzeilen = folien._umbrechen(d, titel.upper(), tf, innen)[:2]
+    pf = folien._font(True, 25)
+    bloecke = [folien._umbrechen(d, p.upper(), pf, innen)[:2]
+               for p in punkte[:max(sichtbar, 0)]]
+    # von hinten so viele Punkte aufnehmen wie reinpassen (der juengste zuerst)
+    h = 20 + len(tzeilen) * 38 + (18 if bloecke else 0) + 20
+    anzeige: list[list[str]] = []
+    for zeilen in reversed(bloecke):
+        dh = len(zeilen) * 32 + 10
+        if anzeige and h + dh > KARTE_UNTEN_MAX - KARTE_OBEN:
             break
-    box_w, box_h = int(w) + 60, gr + 34
-    lagen = [(MARGIN, 536), (B - MARGIN - box_w, 150), (MARGIN, 150)]
-    x, y = lagen[slot % STICHWORT_SLOTS]
-    d.rounded_rectangle([x, y, x + box_w, y + box_h], radius=10,
-                        fill=(0, 0, 0, 172))
-    d.rectangle([x, y + 8, x + 8, y + box_h - 8], fill=AKZENT)
-    d.text((x + 34, y + 14), text.upper(), font=font, fill=HELL)
+        anzeige.insert(0, zeilen)
+        h += dh
+    unten = KARTE_OBEN + h
+    d.rounded_rectangle([x, KARTE_OBEN, x + KARTE_BREITE, unten],
+                        radius=12, fill=(0, 0, 0, 160))
+    d.rectangle([x, KARTE_OBEN + 12, x + 8, unten - 12], fill=AKZENT)
+    y = KARTE_OBEN + 20
+    for z in tzeilen:
+        d.text((x + 34, y), z, font=tf, fill=HELL,
+               stroke_width=2, stroke_fill=(0, 0, 0))
+        y += 38
+    if anzeige:
+        d.rectangle([x + 34, y + 4, x + 34 + 56, y + 8], fill=AKZENT)
+        y += 18
+    for i, zeilen in enumerate(anzeige):
+        y += 10
+        aktiv = i == len(anzeige) - 1
+        d.rectangle([x + 34, y + 9, x + 44, y + 19],
+                    fill=AKZENT if aktiv else GEDIMMT)
+        for z in zeilen:
+            d.text((x + 56, y), z, font=pf,
+                   fill=HELL if aktiv else KARTE_ALT)
+            y += 32
     return bild
 
 

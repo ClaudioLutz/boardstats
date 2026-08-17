@@ -38,8 +38,10 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Aufhänger auch bei Dauerthemen nicht wiederholt. Derselbe Aufruf liefert
    ein kurzes Schlagwort für das Vorschaubild. Ein weiterer
    Sonnet-Aufruf schreibt das Szenen-Drehbuch für das Video
-   (`folien.json`, Version 2): je Abschnitt ein Kapiteltitel,
-   Stichwort-Momente, optionale Zwischenthemen, das beste wörtliche
+   (`folien.json`, Version 2): je Abschnitt ein Kapiteltitel, die
+   Bildseite der Stichpunkt-Karte (bewusste Platzierung durch das
+   Modell), Stichpunkte als laufender Kommentar (möglichst einer je
+   gesprochenem Satz), optionale Zwischenthemen, das beste wörtliche
    Board-Zitat und die markanteste Kennzahl — alles mit wörtlichen
    Anker-Phrasen fürs Timing, dazu vier «Numbers of the day». Welche
    Elemente ein Abschnitt bekommt, entscheidet das Modell nach Material,
@@ -78,9 +80,12 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Vorschaubild): jede Szene zeigt ein Board-Bild vollflächig mit langsamem
    Zoom-Drift (`zoompan`), darüber liegen transparente Text-Overlays, die
    zeitgesteuert ein- und ausblenden — Kapitel-Opener als Lower Third,
-   kinetische Stichwort-Tags synchron zum Gesprochenen, Zwischenthemen als
-   eigene Mini-Opener, Board-Zitate als 4chan-Post-Karte und Kennzahlen als
-   bildschirmfüllende Zahl mit Count-up. Das Drehbuch dazu stammt aus dem
+   eine persistente Themen-Karte (Titel plus Stichpunkte, die synchron zum
+   Gesprochenen aufleuchten und stehen bleiben, bis das Thema oder
+   Zwischenthema wechselt; damit läuft keine Sprechsekunde ohne Text im
+   Bild), Zwischenthemen als eigene Mini-Opener, Board-Zitate als
+   4chan-Post-Karte und Kennzahlen als bildschirmfüllende Zahl mit
+   Count-up. Das Drehbuch dazu stammt aus dem
    Report-Lauf (`folien.json`, Version 2); wann ein Element erscheint,
    steuert der Fundort seiner Anker-Phrase in den Wort-Zeitstempeln. Jede
    Szene wird als eigener kurzer ffmpeg-Clip gerendert und am Ende auf dem

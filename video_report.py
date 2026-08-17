@@ -71,18 +71,20 @@ verhindern.
 
 v7 (16.08.2026, Nutzerwunsch "es sieht zu fest nach PowerPoint aus"):
 Szenen-Layout statt Folien. Traegt folien.json die Version 2, ist sie ein
-Drehbuch: je Abschnitt Stichwort-Momente, optionale Zwischenthemen, ein
-Board-Zitat und eine Kennzahl, alles mit Anker-Phrasen im Berichtstext.
-Das Video besteht dann aus Szenen mit vollflaechigem, langsam zoomendem
-Board-Bild (ffmpeg zoompan, je Szene ein eigener kleiner ffmpeg-Lauf,
-am Ende per concat zusammengefuegt); aller Text liegt als transparente
-PNG-Overlays (szenen.py) darueber und blendet zeitgesteuert ein und aus:
-Kapitel-Opener als Lower Third, kinetische Stichwort-Tags synchron zum
-Gesprochenen, Zitate als 4chan-Post-Karte, Kennzahlen als Gross-Zahl mit
-Count-up. Gesprochen wird unveraendert der ganze Berichtstext samt
-Rahmen-Saetzen. Scheitert der Szenen-Aufbau, greift v5; folien.json ohne
-Version faellt auf die v6-Folien zurueck - kein Layout-Problem darf den
-Upload verhindern.
+Drehbuch: je Abschnitt Stichpunkt-Momente (moeglichst je Satz einer),
+optionale Zwischenthemen, ein Board-Zitat und eine Kennzahl, alles mit
+Anker-Phrasen im Berichtstext. Das Video besteht dann aus Szenen mit
+vollflaechigem, langsam zoomendem Board-Bild (ffmpeg zoompan, je Szene ein
+eigener kleiner ffmpeg-Lauf, am Ende per concat zusammengefuegt); aller
+Text liegt als transparente PNG-Overlays (szenen.py) darueber und blendet
+zeitgesteuert ein und aus: Kapitel-Opener als Lower Third, eine persistente
+Themen-Karte (Titel + auflaufende Stichpunkte, Bildseite bestimmt das
+Drehbuch), die steht, bis das Thema oder Zwischenthema wechselt - keine
+Sprechsekunde ohne Text im Bild (Nutzeranforderung 17.08.) -, Zitate als
+4chan-Post-Karte, Kennzahlen als Gross-Zahl mit Count-up. Gesprochen wird
+unveraendert der ganze Berichtstext samt Rahmen-Saetzen. Scheitert der
+Szenen-Aufbau, greift v5; folien.json ohne Version faellt auf die
+v6-Folien zurueck - kein Layout-Problem darf den Upload verhindern.
 """
 from __future__ import annotations
 
@@ -1252,7 +1254,6 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
 
 ZOOM_HUB = 0.10          # Zoomweg je Szene: 10 % rein oder raus, kaum merklich
 STORY_MAX = 20.0         # spaetestens dann wechselt die Story-Szene das Motiv
-STICHWORT_DAUER = 5.0    # Standzeit eines Stichwort-Tags
 ZITAT_MAX = 12.0         # Hoechstdauer der Zitat-Szene
 ZWISCHEN_MAX = 6.0       # Hoechstdauer eines Zwischenthema-Openers
 KARTE_MAX = 9.0          # Hoechstdauer der Kennzahl-Szene im Kapitel
@@ -1288,10 +1289,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float) -> list[Szene]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
-    Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, Stichwort-
-    Tags, Zwischenthemen, Zitat-Karten und Kennzahlen liegen als zeitlich
-    verankerte Overlays darauf. Die Motiv-Auswahl folgt der v6-Logik:
-    frisches eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung."""
+    Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, die
+    persistente Themen-Karte (Titel + auflaufende Stichpunkte, steht bis
+    zum Themen- oder Zwischenthemen-Wechsel), Zitat-Karten und Kennzahlen
+    liegen als zeitlich verankerte Overlays darauf - keine Sprechsekunde
+    ohne Text im Bild. Die Motiv-Auswahl folgt der v6-Logik: frisches
+    eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung."""
     zuteilung = motiv_zuordnung(datum)
     werte = motiv_werte(datum)
     motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
@@ -1326,11 +1329,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
     ov_nr = 0
 
-    def ov(bild, start: float, bis: float, fade: float = 0.35) -> Overlay:
+    def png(bild) -> Path:
         nonlocal ov_nr
         pfad = szenen.speichern(bild, arbeit / f"overlay_{ov_nr:03d}.png")
         ov_nr += 1
-        return Overlay(pfad, start, bis, fade)
+        return pfad
+
+    def ov(bild, start: float, bis: float, fade: float = 0.35) -> Overlay:
+        return Overlay(png(bild), start, bis, fade)
 
     folge: list[Szene] = []
 
@@ -1360,7 +1366,6 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                               or pool_bild(nur_frisch=True)
                               or (eigene[0] if eigene else pool_bild()))
     titel_map = thread_titel(datum)
-    slot = 0
 
     # Intro
     kopf_idx = next((i for i, b in enumerate(bloecke)
@@ -1473,13 +1478,41 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 gewaehlt.append((tz, bis, art, px))
                 frei = bis + EREIGNIS_ABSTAND
 
-        # Stichwort-Momente: Zeiten wie die v6-Stichpunkte (Anker-Phrase,
-        # Luecken interpoliert, monoton mit Mindestabstand)
+        # Themen-Karte: Titel + auflaufende Stichpunkte (moeglichst je Satz
+        # einer) stehen dauerhaft im Bild, bis das Thema oder Zwischenthema
+        # wechselt; auf Zitat-, Kennzahl- und NEXT-UP-Szenen traegt deren
+        # eigene Grafik den Text. Die Bildseite waehlt das Drehbuch.
         stich = [p for p in eintrag.get("stichworte") or []
                  if isinstance(p, dict) and str(p.get("text") or "").strip()]
         zeiten = _punkt_zeiten(stich, rumpf_worte, rumpf_start, naechster) \
             if stich else []
         tags = list(zip(zeiten, stich))
+        lage = str(eintrag.get("lage") or ("left" if k % 2 == 0 else "right"))
+        segmente: list[tuple[float, str, str]] = [(rumpf_start, titel, lage)]
+        for tz, _, art, px in gewaehlt:
+            if art == "zwischen":
+                segmente.append((tz, str(px["titel"]),
+                                 str(px.get("lage") or lage)))
+        karten_plan: list[tuple[Path, float, float]] = []
+        for gi, (g0, gtitel, glage) in enumerate(segmente):
+            g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
+            texte = [str(p["text"]) for t, p in tags if g0 <= t < g1]
+            marken = [g0] + [t for t, p in tags if g0 <= t < g1]
+            beginn = g0
+            for stand in range(len(marken)):
+                bis_f = marken[stand + 1] if stand + 1 < len(marken) else g1
+                if bis_f - beginn <= 0.05 and stand + 1 < len(marken):
+                    continue  # zu kurzes Fenster: der naechste Stand deckt es
+                karten_plan.append(
+                    (png(szenen.themen_karte(gtitel, texte, stand, glage)),
+                     beginn, bis_f))
+                beginn = bis_f
+
+        def karte_auflegen(sz: Szene, a: float, b: float) -> None:
+            for pfad, m0, m1 in karten_plan:
+                a0, b0 = max(a, m0), min(b, m1)
+                if b0 - a0 > 0.02:
+                    sz.overlays.append(Overlay(pfad, a0, b0, 0.0))
 
         # Story-Strecken zwischen den Sonderszenen; lange Strecken werden am
         # naechsten Stichwort geteilt (= Motivwechsel gegen die Monotonie)
@@ -1510,12 +1543,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     else:
                         akt = naechstes_motiv(akt)
                         sz = neu(akt, a)
-                    for t, p in tags:
-                        if a <= t < b:
-                            sz.overlays.append(ov(
-                                szenen.stichwort(str(p["text"]), slot),
-                                t, min(t + STICHWORT_DAUER, b)))
-                            slot += 1
+                    karte_auflegen(sz, a, b)
             else:
                 art, px = sonder
                 erste_story = False
