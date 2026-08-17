@@ -2251,6 +2251,142 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
     return ziel
 
 
+BETT = Path.home() / ".config" / "boardstats" / "bett.opus"
+BETT_DB = -20.0          # so viel leiser als die Sprache laeuft das Bett
+BETT_AUSBLENDE = 4.0     # Sekunden Ausblende am Videoende
+BETT_SEKUNDEN = 720      # Bettlaenge; alle Perioden gehen glatt darin auf
+ZIEL_LUFS = -14.0        # YouTubes Normalisierungsziel
+# Toene des Betts: Puls (A1), Bass (A2) und ein Arpeggio A-C-E-A, dazu ein
+# hoher Ton als Farbe. Bewusst im Mittenbereich und nicht nur als
+# Tieffrequenz-Flaeche: eine Flaeche unter 150 Hz ist messbar vorhanden, aber
+# selbst auf Studiokopfhoerern nicht als Musik zu erkennen (Befund
+# 17.08.2026). Alle Perioden teilen BETT_SEKUNDEN, damit die Loop-Naht
+# phasenrichtig sitzt - erreicht wird sie bei rund 10 min Video ohnehin nie.
+BETT_STIMMEN = [
+    # (Frequenz, Amplitude, Periode, Versatz, Abfall); Abfall None = Flaeche
+    (55.0, 0.70, 0.75, 0.0, 8.0),        # Puls im 80er-Takt
+    (110.0, 0.22, 12.0, 0.0, None),      # Bass als Flaeche
+    (220.0, 0.50, 3.0, 0.0, 3.2),        # Arpeggio
+    (261.63, 0.42, 3.0, 0.75, 3.2),
+    (329.63, 0.42, 3.0, 1.5, 3.2),
+    (440.0, 0.30, 3.0, 2.25, 3.2),
+    (659.26, 0.16, 12.0, 6.0, 2.6),      # Farbe, nur jede vierte Runde
+]
+
+
+def bett_bauen(ziel: Path = BETT) -> Path:
+    """Das Musikbett synthetisieren und normalisiert ablegen.
+
+    Selbst erzeugt statt lizenziert, weil der Upload taeglich unbeaufsichtigt
+    laeuft und dieselbe Musik in jedem Video der Serie steckt: ein
+    Content-ID-Treffer waere nicht ein Video, sondern der Kanal. Synthese hat
+    keinen Rechteinhaber, keinen Fingerprint und braucht keine Credit-Zeile in
+    der Beschreibung (das Beschreibungsbudget ist ohnehin knapp).
+
+    Die Datei liegt ausserhalb des Repos - das Repo ist oeffentlich, und
+    Audio gehoert dort so wenig hin wie Board-Bilder. Vorab auf einen festen
+    Wert normalisiert, damit BETT_DB im Lauf eine Konstante ist und jeder Tag
+    gleich klingt."""
+    ein: list[str] = []
+    teile: list[str] = []
+    for i, (f, a, p, v, abfall) in enumerate(BETT_STIMMEN):
+        ein += ["-f", "lavfi", "-i",
+                f"sine=f={f}:d={BETT_SEKUNDEN}:r=48000"]
+        if abfall is None:
+            # Flaeche mit langsamer Schwebung, damit sie nicht steht
+            kurve = f"{a}*(0.85+0.15*sin(2*PI*t/{p}))"
+        else:
+            # Anschlag mit exponentiellem Abfall, ab dem Versatz in der Periode
+            m = f"mod(t,{p})"
+            kurve = f"{a}*gte({m},{v})*exp(-{abfall}*({m}-{v}))"
+            if v + p / 4 < p:      # nur das eigene Viertel der Periode
+                kurve = f"{kurve}*lt({m},{v + p / 4 + 0.75})"
+        teile.append(f"[{i}:a]volume='{kurve}':eval=frame[s{i}]")
+    misch = "".join(f"[s{i}]" for i in range(len(BETT_STIMMEN)))
+    teile.append(f"{misch}amix=inputs={len(BETT_STIMMEN)}:normalize=0,"
+                 f"aecho=0.8:0.7:420|900:0.28|0.16,alimiter=limit=0.9,"
+                 f"loudnorm=I=-20:TP=-2:LRA=6[out]")
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-nostdin", "-loglevel", "error", *ein,
+         "-filter_complex", ";".join(teile), "-map", "[out]",
+         "-ac", "2", "-c:a", "libopus", "-b:a", "96k", str(ziel)],
+        check=True, timeout=900, capture_output=True)
+    print(f"Bett gebaut: {ziel} ({ziel.stat().st_size // 1024} KiB, "
+          f"{BETT_SEKUNDEN} s)")
+    return ziel
+
+
+def _ton_kette(start: int, ende: float) -> tuple[list[str], list[str], str]:
+    """Eingaben, Filterteile und Ausgangs-Label der Tonspur (ohne Loudness).
+
+    start ist der ffmpeg-Input-Index der Sprachdatei; der Messlauf zaehlt ab
+    0, der Mux ab 1, weil dort das Video Input 0 ist. Ohne Bettdatei bleibt
+    es bei der Sprache - fehlt sie, laeuft der Cron-Tag ohne Musik weiter."""
+    if not BETT.exists():
+        return [], [], f"[{start}:a]"
+    ab = max(ende - BETT_AUSBLENDE, 0.1)
+    return (["-stream_loop", "-1", "-i", str(BETT)],
+            [f"[{start + 1}:a]volume={BETT_DB}dB,afade=t=in:st=0:d=2,"
+             f"afade=t=out:st={ab:.2f}:d={BETT_AUSBLENDE}[bett]",
+             # normalize=0 ist Pflicht: mit dem Standard teilt amix durch die
+             # Zahl der Eingaenge und die Sprache verliert 6 dB.
+             # duration=first haelt die Laenge an der Sprache, damit ein
+             # zu kurzes Bett nicht ueber -shortest das Video kappt.
+             f"[{start}:a][bett]amix=inputs=2:duration=first:normalize=0[mix]"],
+            "[mix]")
+
+
+def _loudnorm_gemessen(audio_mp3: Path, ende: float) -> str:
+    """loudnorm-Filter mit den Messwerten eines Analysedurchlaufs.
+
+    Zweipass, weil einpassiges loudnorm vorwaertsblickend regelt und hoerbar
+    pumpt; mit measured_* ist es eine reine Verstaerkung. Gemessen wird die
+    fertige Mischung, nicht die Sprache allein. Wir liegen ohne diesen
+    Schritt bei rund -19.5 LUFS, YouTubes Ziel ist -14 und die Plattform
+    hebt nur ab, nie an - der Bericht klingt im Feed also duenner als das
+    Nachbarvideo. Scheitert die Messung, bleibt es bei einpassig: lieber
+    ungenau normalisiert als kein Video."""
+    ziel = f"loudnorm=I={ZIEL_LUFS}:TP=-1.5:LRA=11"
+    bett_ein, teile, quelle = _ton_kette(0, ende)
+    kette = ";".join([*teile, f"{quelle}{ziel}:print_format=json[m]"])
+    try:
+        aus = subprocess.run(
+            ["ffmpeg", "-nostdin", "-hide_banner", "-i", str(audio_mp3),
+             *bett_ein, "-filter_complex", kette, "-map", "[m]",
+             "-f", "null", "-"],
+            capture_output=True, text=True, check=True, timeout=900)
+        werte = json.loads(aus.stderr[aus.stderr.rindex("{"):
+                                      aus.stderr.rindex("}") + 1])
+        return (f"{ziel}:measured_I={werte['input_i']}"
+                f":measured_TP={werte['input_tp']}"
+                f":measured_LRA={werte['input_lra']}"
+                f":measured_thresh={werte['input_thresh']}"
+                f":offset={werte['target_offset']}:linear=true")
+    except (subprocess.SubprocessError, ValueError, KeyError) as e:
+        print(f"Loudness-Messung gescheitert ({e}) - einpassig normalisieren")
+        return ziel
+
+
+def ton_argumente(audio_mp3: Path, ende: float) -> tuple[list[str], list[str]]:
+    """ffmpeg-Argumente fuer die Tonspur: Bett dazu, Endmix auf ZIEL_LUFS.
+
+    Zurueck kommen die Eingabe-Argumente (hinter dem Video-Input) und die
+    Ausgabe-Argumente. Beide Renderpfade nutzen dieselbe Funktion, damit ein
+    Fallback-Tag nicht anders klingt als die uebrigen. An der Sprachdatei
+    selbst wird nichts geaendert: an ihren Wort-Zeitstempeln haengen
+    Overlays, Kapitelmarken und Untertitel."""
+    bett_ein, teile, quelle = _ton_kette(1, ende)
+    # level=false am Limiter ist wichtig: mit dem Standard normalisiert er den
+    # Ausgang auf seinen limit-Wert und verschiebt damit die Lautheit, die
+    # loudnorm gerade gesetzt hat. So greift er nur noch als Notbremse.
+    norm = _loudnorm_gemessen(audio_mp3, ende)
+    teile.append(f"{quelle}{norm},alimiter=limit=0.95:level=false[ton]")
+    return (["-i", str(audio_mp3), *bett_ein],
+            ["-filter_complex", ";".join(teile), "-map", "0:v", "-map", "[ton]",
+             "-c:a", "aac", "-b:a", "192k"])
+
+
 def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
                  arbeit: Path, suffix: str, datum: str, ende: float) -> None:
     """Alle Szenen rendern, auf dem 25-fps-Frame-Raster nahtlos aneinander
@@ -2276,11 +2412,11 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
     liste.write_text(
         "\n".join("file '" + str(c).replace("\\", "/") + "'" for c in clips)
         + "\n", encoding="utf-8")
+    ton_ein, ton_aus = ton_argumente(audio_mp3, ende)
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error",
          "-f", "concat", "-safe", "0", "-i", str(liste),
-         "-i", str(audio_mp3),
-         "-c:v", "copy", "-c:a", "aac", "-shortest", str(ziel_mp4)],
+         *ton_ein, "-c:v", "copy", *ton_aus, "-shortest", str(ziel_mp4)],
         check=True, timeout=900, capture_output=True)
     print(f"Szenen-Video: {len(clips)} Szenen, {grenzen[-1] / FPS:.0f} s")
 
@@ -2288,7 +2424,7 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
 # ----------------------------------------------------------- Video-Zusammenbau
 
 def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
-                   konkat: Path | None = None) -> None:
+                   konkat: Path | None = None, ende: float = 0.0) -> None:
     """ass_datei=None ist der Praesentationsmodus: der Text steckt schon in
     den Standbildern der ffconcat-Liste, eingebrannt wird nichts mehr."""
     filter_teile: list[str] = []
@@ -2302,12 +2438,15 @@ def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
         filter_teile.append(
             "ass=" + str(ass_datei).replace("\\", "/").replace(":", r"\:"))
     vf = ",".join(filter_teile) or "null"
+    # Dieselbe Tonbehandlung wie im Szenen-Pfad: sonst klingt genau der Tag
+    # anders, an dem der Fallback greift. -vf trifft den Videostream,
+    # -filter_complex nur die Tonspur - sie liegen nicht uebereinander.
+    ton_ein, ton_aus = ton_argumente(audio_mp3, ende or _mp3_dauer(audio_mp3))
     subprocess.run(
-        ["ffmpeg", "-y", *eingabe,
-         "-i", str(audio_mp3),
+        ["ffmpeg", "-y", *eingabe, *ton_ein,
          "-vf", vf,
          "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-shortest", str(ziel_mp4)],
+         *ton_aus, "-shortest", str(ziel_mp4)],
         check=True, timeout=1800)
 
 
@@ -2548,7 +2687,15 @@ def main() -> None:
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="en")
     ap.add_argument("--nur-video", action="store_true",
                     help="Video nur bauen, ohne Upload und ohne Marker (Test)")
+    ap.add_argument("--bett-bauen", action="store_true",
+                    help=f"Musikbett neu synthetisieren ({BETT}) und beenden")
     args = ap.parse_args()
+    if args.bett_bauen:
+        # Bewusst ein eigener Aufruf und nicht "baue es, wenn die Datei
+        # fehlt": ein Cron-Lauf soll keine Tonspur erzeugen, die niemand
+        # gehoert hat. Fehlt die Datei, laeuft der Tag ohne Musik.
+        bett_bauen()
+        return
     cfg = SPRACHEN[args.sprache]
 
     datum = date.today().isoformat()
@@ -2659,7 +2806,7 @@ def main() -> None:
 
     if not fertig:
         print("baue Video ...")
-        video_erzeugen(audio_mp3, ass_arg, video_mp4, konkat)
+        video_erzeugen(audio_mp3, ass_arg, video_mp4, konkat, ende)
 
     if args.nur_video:
         print(f"nur Video gebaut, kein Upload: {video_mp4}")
