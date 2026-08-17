@@ -1,0 +1,200 @@
+{
+  "abschnitte": [
+    {
+      "ueberschrift": "STOCKS: GPUS AS COLLATERAL, BUFFETT'S GOOGLE, A ROBOT PRICE TARGET",
+      "titel": "GPUs as collateral, Buffett's Google bet",
+      "punkte": [
+        {
+          "text": "Nvidia GPUs now pledged as loan collateral, seen as bubble marker.",
+          "anker": "GPUs are now being pledged"
+        },
+        {
+          "text": "Buffett's Google stake: cost basis $286.67 GOOGL, $317.49 GOOG, 12% of portfolio.",
+          "anker": "stated cost basis is $286.67"
+        },
+        {
+          "text": "Intel: bought Jan $40 puts as premium jumped $0.37 to $1.40 at $80.",
+          "anker": "bought January $40 puts"
+        },
+        {
+          "text": "Datacenter power bets: Riot, Hut, Wulf, CIFR, CORZ, CLSK, neoclouds.",
+          "anker": "Riot January 2028 $40 calls"
+        }
+      ],
+      "karte": {
+        "wert": "$500",
+        "titel": "TSLA robot price target",
+        "sub": "Unitree IPO could trigger it"
+      }
+    },
+    {
+      "ueberschrift": "MACRO: OIL RISK NOBODY IS PRICING",
+      "titel": "Oil risk nobody is pricing",
+      "punkte": [
+        {
+          "text": "SPR releases nearing cavern limits amid Iran war, signaling risk.",
+          "anker": "releases are nearing operational cavern"
+        },
+        {
+          "text": "Hormuz, Bab al-Mandab disruption yet no stress in oil or equities.",
+          "anker": "Hormuz and Bab al-Mandab disruption"
+        },
+        {
+          "text": "Diesel and fuel oil sit at May 2022 levels, index near double.",
+          "anker": "diesel and fuel oil sit"
+        }
+      ]
+    },
+    {
+      "ueberschrift": "THE GOLD STANDARD ARGUMENT",
+      "titel": "The gold standard math",
+      "punkte": [
+        {
+          "text": "244,000 tonnes of gold exist, worth $35.05 trillion at $4,467.80/oz.",
+          "anker": "244,000 tonnes of gold"
+        },
+        {
+          "text": "Covering $155 trillion money supply needs ~7 billion oz of gold.",
+          "anker": "total money supply near"
+        },
+        {
+          "text": "Historic gold peg: $20.67/oz 1834-1933, then $35 until 1971.",
+          "anker": "$20.67 per ounce from 1834"
+        },
+        {
+          "text": "Fed blamed for $5 trillion in new dollars printed in 2020/2021.",
+          "anker": "5 trillion in new dollars"
+        }
+      ],
+      "karte": {
+        "wert": "$35 TRILLION",
+        "titel": "Total gold value",
+        "sub": "at $4,467.80 per oz"
+      }
+    },
+    {
+      "ueberschrift": "PRECIOUS METALS: THE RATIO TRADE AND JUNK SILVER MATH",
+      "titel": "Silver ratio trade and junk math",
+      "punkte": [
+        {
+          "text": "Gold-silver ratio near 1:100, seen reverting toward 1:16 or 1:8.",
+          "anker": "gold-silver ratio near 1:100"
+        },
+        {
+          "text": "Silver trades near $2.10/gram; $64 floated as resistance ceiling.",
+          "anker": "Silver quoted around $2.10 per"
+        },
+        {
+          "text": "Junk silver: $1 face value carries ~0.77oz Morgan vs 0.72oz quarters, ~$4 gap.",
+          "anker": "$1 face value in Morgan"
+        },
+        {
+          "text": "$14 face value of 90% junk silver equals about 10 troy oz.",
+          "anker": "$14 face value of 90%"
+        }
+      ],
+      "karte": {
+        "wert": "1:100",
+        "titel": "Gold-silver ratio",
+        "sub": "Bulls say reverts to 1:16"
+      }
+    },
+    {
+      "ueberschrift": "CRYPTO: KRAKEN 27X'D THE MONERO WITHDRAWAL FEE",
+      "titel": "Kraken 27x's Monero withdrawal fee",
+      "punkte": [
+        {
+          "text": "Kraken's XMR withdrawal fee jumped ~27x, from $0.04 to $1.10.",
+          "anker": "went from 0.0001 XMR"
+        },
+        {
+          "text": "Posters hunting alternative USDT/USDC-to-XMR venues, no answer yet.",
+          "anker": "Posters are hunting alternative"
+        },
+        {
+          "text": "RandomX v2 cuts Bitmain X9 hashpower ~40%, rest of thread unchanged.",
+          "anker": "RandomX v2 cutting Bitmain X9"
+        },
+        {
+          "text": "Chainlink and BBBYQ threads unchanged: no new evidence today.",
+          "anker": "unchanged, and today's thread is"
+        }
+      ],
+      "karte": {
+        "wert": "27X",
+        "titel": "Kraken XMR fee hike",
+        "sub": "from $0.04 to $1.10"
+      }
+    },
+    {
+      "ueberschrift": "FILLING FAST",
+      "titel": "Which threads are heating up",
+      "punkte": [
+        {
+          "text": "/pmg/ up 1.2x to 6 posts/hr on ratio trade, junk silver talk.",
+          "anker": "runs 6 posts in the"
+        },
+        {
+          "text": "Dating-cost thread up 1.8x to 7 posts/hr debating $100 per date.",
+          "anker": "7 posts in the last"
+        },
+        {
+          "text": "\"Nostradamus of AI\" thread: 5 posts, zero AI content.",
+          "anker": "gained 5 posts in 0.7"
+        },
+        {
+          "text": "Overnight /smg/ cooling: 16 posts/hr but 0.4x its own average.",
+          "anker": "16 posts an hour, but"
+        }
+      ]
+    },
+    {
+      "ueberschrift": "BOARD LIFE",
+      "titel": "Board life: same cope as yesterday",
+      "punkte": [
+        {
+          "text": "Burnout thread: exhaustion framed as deconditioning, not a hard ceiling.",
+          "anker": "exhaustion is deconditioning rather than"
+        },
+        {
+          "text": "Divorced father owes $4,500/month against 132 claimed weekly work hours.",
+          "anker": "owing 4,500 a month against"
+        },
+        {
+          "text": "Millionaire-migration threads recycle $100k income as disputed benchmark.",
+          "anker": "with $100k income as the"
+        },
+        {
+          "text": "Kurumi-chan anime thread unchanged, zero new posts today.",
+          "anker": "is unchanged with zero new"
+        }
+      ]
+    }
+  ],
+  "zahlen": [
+    {
+      "wert": "27X",
+      "titel": "Kraken Monero fee hike",
+      "sub": "withdrawal fee up 27-fold",
+      "satz": "Kraken raised its Monero withdrawal fee about twenty seven times, from four cents to one dollar ten."
+    },
+    {
+      "wert": "$35 TRILLION",
+      "titel": "Total gold value",
+      "sub": "244,000 tonnes at $4,467.80/oz",
+      "satz": "All the gold ever mined is worth about thirty five trillion dollars at current prices."
+    },
+    {
+      "wert": "1:100",
+      "titel": "Gold-silver ratio",
+      "sub": "Bulls say reverts to 1:16",
+      "satz": "The gold to silver ratio sits near one hundred to one, which bulls say must revert toward sixteen to one."
+    },
+    {
+      "wert": "12%",
+      "titel": "Buffett's Alphabet stake",
+      "sub": "12% of Berkshire's portfolio",
+      "satz": "Warren Buffett's Alphabet stake is now said to be twelve percent of Berkshire's entire portfolio."
+    }
+  ]
+}

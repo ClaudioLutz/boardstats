@@ -1,5 +1,7 @@
 # /biz/ Situation Report: 2026-08-17
 
+[Report of the day](bericht.md)
+
 15 threads, by substance density.
 
 | Thread | Mode | Posts | Substance |
