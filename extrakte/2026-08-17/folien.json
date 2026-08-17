@@ -2,199 +2,404 @@
   "abschnitte": [
     {
       "ueberschrift": "STOCKS: GPUS AS COLLATERAL, BUFFETT'S GOOGLE, A ROBOT PRICE TARGET",
-      "titel": "GPUs as collateral, Buffett's Google bet",
-      "punkte": [
+      "titel": "AI collateral, Buffett's Google bet",
+      "lage": "left",
+      "stichworte": [
         {
-          "text": "Nvidia GPUs now pledged as loan collateral, seen as bubble marker.",
-          "anker": "GPUs are now being pledged"
+          "text": "GPUS AS LOAN COLLATERAL",
+          "anker": "pledged as loan collateral"
         },
         {
-          "text": "Buffett's Google stake: cost basis $286.67 GOOGL, $317.49 GOOG, 12% of portfolio.",
-          "anker": "stated cost basis is $286.67"
+          "text": "NEVER GO BEARISH",
+          "anker": "never go bearish"
         },
         {
-          "text": "Intel: bought Jan $40 puts as premium jumped $0.37 to $1.40 at $80.",
-          "anker": "bought January $40 puts"
+          "text": "BUFFETT'S $286 GOOGL BET",
+          "anker": "cost basis is $286.67"
         },
         {
-          "text": "Datacenter power bets: Riot, Hut, Wulf, CIFR, CORZ, CLSK, neoclouds.",
-          "anker": "Riot January 2028 $40 calls"
+          "text": "WAYMO VS UBER: $52B",
+          "anker": "citing Uber's $52 billion"
+        },
+        {
+          "text": "INTEL PUTS: PREMIUM 4X",
+          "anker": "premium ran from $0.37"
+        },
+        {
+          "text": "PUSHBACK: PURELY POLITICAL",
+          "anker": "Pushback is political, not financial"
+        },
+        {
+          "text": "KSPI: 8% DIVIDEND PITCH",
+          "anker": "pitched at an 8% dividend"
+        },
+        {
+          "text": "RISK: AI LAB BALANCE SHEETS",
+          "anker": "mostly comes down to OpenAI/Antropic"
+        },
+        {
+          "text": "FAKE SHORT LIST EXPOSED",
+          "anker": "one openly fake short list"
+        },
+        {
+          "text": "JAPAN GDP MISS",
+          "anker": "Japan Q2 GDP came in"
+        },
+        {
+          "text": "SNDK +4.09%, MU DISPUTED",
+          "anker": "SNDK +4.09% and a disputed"
+        },
+        {
+          "text": "STRIPE BUYS OPENROUTER?",
+          "anker": "Unsourced: Stripe bought OpenRouter"
+        },
+        {
+          "text": "TSLA 'MUST HIT $500'",
+          "anker": "do 500 a share very"
+        },
+        {
+          "text": "SUBPRIME ROBOT LOANS?",
+          "anker": "sub prime robot crisis"
         }
       ],
+      "zwischenthemen": [
+        {
+          "titel": "Overnight /smg/: second thread",
+          "anker": "The newer overnight /smg/",
+          "lage": "right"
+        }
+      ],
+      "zitat": {
+        "text": "literally can't go down because trump won't let it.",
+        "anker": "can't go down because trump"
+      },
       "karte": {
-        "wert": "$500",
-        "titel": "TSLA robot price target",
-        "sub": "Unitree IPO could trigger it"
+        "wert": "$7 BILLION",
+        "titel": "STRIPE BUYS OPENROUTER",
+        "sub": "unsourced $7B deal claim",
+        "anker": "bought OpenRouter for $7"
       }
     },
     {
       "ueberschrift": "MACRO: OIL RISK NOBODY IS PRICING",
       "titel": "Oil risk nobody is pricing",
-      "punkte": [
+      "lage": "right",
+      "stichworte": [
         {
-          "text": "SPR releases nearing cavern limits amid Iran war, signaling risk.",
-          "anker": "releases are nearing operational cavern"
+          "text": "SPR NEARING CAVERN LIMITS",
+          "anker": "nearing operational cavern limits"
         },
         {
-          "text": "Hormuz, Bab al-Mandab disruption yet no stress in oil or equities.",
-          "anker": "Hormuz and Bab al-Mandab disruption"
+          "text": "CALL: CORRECTION IS COMING",
+          "anker": "correction is coming"
         },
         {
-          "text": "Diesel and fuel oil sit at May 2022 levels, index near double.",
+          "text": "HORMUZ, BAB AL-MANDAB RISK",
+          "anker": "Hormuz and Bab al-Mandab"
+        },
+        {
+          "text": "NO STRESS IN OIL YET",
+          "anker": "no visible stress in oil"
+        },
+        {
+          "text": "DIESEL STUCK AT 2022 LEVELS",
           "anker": "diesel and fuel oil sit"
         }
-      ]
+      ],
+      "zitat": {
+        "text": "What will it take for something to happen?",
+        "anker": "will it take for something"
+      },
+      "zwischenthemen": []
     },
     {
       "ueberschrift": "THE GOLD STANDARD ARGUMENT",
-      "titel": "The gold standard math",
-      "punkte": [
+      "titel": "Could gold anchor money again",
+      "lage": "left",
+      "stichworte": [
         {
-          "text": "244,000 tonnes of gold exist, worth $35.05 trillion at $4,467.80/oz.",
+          "text": "244,000 TONNES OF GOLD",
           "anker": "244,000 tonnes of gold"
         },
         {
-          "text": "Covering $155 trillion money supply needs ~7 billion oz of gold.",
+          "text": "WORTH $35 TRILLION",
+          "anker": "worth about $35,050,000,000,000 at"
+        },
+        {
+          "text": "MONEY SUPPLY: $155 TRILLION",
           "anker": "total money supply near"
         },
         {
-          "text": "Historic gold peg: $20.67/oz 1834-1933, then $35 until 1971.",
-          "anker": "$20.67 per ounce from 1834"
+          "text": "NEEDS 7 BILLION OZ COVER",
+          "anker": "roughly 7,000,000,000 troy ounces"
         },
         {
-          "text": "Fed blamed for $5 trillion in new dollars printed in 2020/2021.",
-          "anker": "5 trillion in new dollars"
+          "text": "OLD PEG: $20.67/OZ",
+          "anker": "$20.67 per ounce from"
+        },
+        {
+          "text": "THEN $35/OZ TO 1971",
+          "anker": "$35 from 1934 to"
+        },
+        {
+          "text": "FED BLAMED FOR PRINTING",
+          "anker": "blames the Fed for"
+        },
+        {
+          "text": "OR IS IT LABOUR & OIL?",
+          "anker": "labour force and oil"
+        },
+        {
+          "text": "CREDIT CAP = ECONOMY PAIN",
+          "anker": "loans capped by metal"
+        },
+        {
+          "text": "1971: NIXON VS FORT KNOX",
+          "anker": "stopping France from draining"
+        },
+        {
+          "text": "SAVED BY OIL-FOR-DOLLARS",
+          "anker": "on the oil-for-dollars arrangement"
         }
       ],
+      "zitat": {
+        "text": "Can buy house because inflation / Can't buy house because deflation. Pick one.",
+        "anker": "Can buy house because"
+      },
       "karte": {
         "wert": "$35 TRILLION",
-        "titel": "Total gold value",
-        "sub": "at $4,467.80 per oz"
-      }
+        "titel": "ALL THE GOLD'S WORTH",
+        "sub": "244,000 tonnes at spot price",
+        "anker": "$4,467.80 per troy ounce"
+      },
+      "zwischenthemen": []
     },
     {
       "ueberschrift": "PRECIOUS METALS: THE RATIO TRADE AND JUNK SILVER MATH",
-      "titel": "Silver ratio trade and junk math",
-      "punkte": [
+      "titel": "Gold-silver ratio and junk math",
+      "lage": "right",
+      "stichworte": [
         {
-          "text": "Gold-silver ratio near 1:100, seen reverting toward 1:16 or 1:8.",
+          "text": "GSR AT 1:100 - SUPPRESSED?",
           "anker": "gold-silver ratio near 1:100"
         },
         {
-          "text": "Silver trades near $2.10/gram; $64 floated as resistance ceiling.",
-          "anker": "Silver quoted around $2.10 per"
+          "text": "SHOULD REVERT TO 1:16",
+          "anker": "revert toward the historic"
         },
         {
-          "text": "Junk silver: $1 face value carries ~0.77oz Morgan vs 0.72oz quarters, ~$4 gap.",
-          "anker": "$1 face value in Morgan"
+          "text": "REBUTTAL: JUST SCARCITY",
+          "anker": "technological bottleneck/scarcity rather than"
         },
         {
-          "text": "$14 face value of 90% junk silver equals about 10 troy oz.",
-          "anker": "$14 face value of 90%"
+          "text": "SILVER AT $2.10/GRAM",
+          "anker": "Silver quoted around $2.10"
+        },
+        {
+          "text": "BIX WEIR: $64 CEILING",
+          "anker": "$64 named as a"
+        },
+        {
+          "text": "9/11 SYSTEMIC EVENT CALL",
+          "anker": "predicts a systemic event"
+        },
+        {
+          "text": "MORGAN $1 = 0.77 OZ",
+          "anker": "carries about 0.77 troy"
+        },
+        {
+          "text": "$14 FACE = 10 OZ JUNK",
+          "anker": "$14 face value of"
+        },
+        {
+          "text": "CHINA'S SILVER EXPORT CURBS",
+          "anker": "Chinese export restrictions in"
+        },
+        {
+          "text": "PMS: BRAKES, NOT GAS",
+          "anker": "great for saving you"
+        },
+        {
+          "text": "14 FREE OZ SHILL CALL",
+          "anker": "called out in-thread as"
         }
       ],
+      "zitat": {
+        "text": "PMs are like brakes on a car, great for saving you when you're going downhill, but useless when you're going up.",
+        "anker": "brakes on a car"
+      },
       "karte": {
         "wert": "1:100",
-        "titel": "Gold-silver ratio",
-        "sub": "Bulls say reverts to 1:16"
-      }
+        "titel": "THE SUPPRESSED RATIO",
+        "sub": "vs historic 1:16 target",
+        "anker": "1:100 is suppressed and"
+      },
+      "zwischenthemen": []
     },
     {
       "ueberschrift": "CRYPTO: KRAKEN 27X'D THE MONERO WITHDRAWAL FEE",
-      "titel": "Kraken 27x's Monero withdrawal fee",
-      "punkte": [
+      "titel": "Kraken 27x's the Monero fee",
+      "lage": "left",
+      "stichworte": [
         {
-          "text": "Kraken's XMR withdrawal fee jumped ~27x, from $0.04 to $1.10.",
+          "text": "XMR FEE: $0.04 TO START",
           "anker": "went from 0.0001 XMR"
         },
         {
-          "text": "Posters hunting alternative USDT/USDC-to-XMR venues, no answer yet.",
-          "anker": "Posters are hunting alternative"
+          "text": "KRAKEN HIKES FEE 27X",
+          "anker": "roughly 27 times, in"
         },
         {
-          "text": "RandomX v2 cuts Bitmain X9 hashpower ~40%, rest of thread unchanged.",
-          "anker": "RandomX v2 cutting Bitmain X9"
+          "text": "HUNT FOR NEW XMR VENUES",
+          "anker": "hunting alternative USDT/USDC-to-XMR venues"
         },
         {
-          "text": "Chainlink and BBBYQ threads unchanged: no new evidence today.",
-          "anker": "unchanged, and today's thread is"
+          "text": "UNSUPPORTED '1K EOY' CALL",
+          "anker": "Also new and unsupported"
+        },
+        {
+          "text": "REST OF THREAD: STALE",
+          "anker": "is unchanged, same poster"
+        },
+        {
+          "text": "JUST A CREDIBILITY FIGHT",
+          "anker": "purely a credibility fight"
+        },
+        {
+          "text": "'INSIDER HERE' = BAIT",
+          "anker": "dismissed as content-farm bait"
         }
       ],
+      "zwischenthemen": [
+        {
+          "titel": "Chainlink: stale credibility fight",
+          "anker": "Chainlink (Clarity Act declared",
+          "lage": "left"
+        },
+        {
+          "titel": "BBBYQ: CUSIP saga drags on",
+          "anker": "BBBYQ (the CUSIP-6 change",
+          "lage": "right"
+        }
+      ],
+      "zitat": {
+        "text": "They 27x the fee WTF.",
+        "anker": "They 27x the fee"
+      },
       "karte": {
         "wert": "27X",
-        "titel": "Kraken XMR fee hike",
-        "sub": "from $0.04 to $1.10"
+        "titel": "MONERO FEE HIKE",
+        "sub": "Kraken's XMR withdrawal cost",
+        "anker": "to 0.0027 XMR (about"
       }
     },
     {
       "ueberschrift": "FILLING FAST",
-      "titel": "Which threads are heating up",
-      "punkte": [
+      "titel": "Filling fast: what's trending",
+      "lage": "right",
+      "stichworte": [
         {
-          "text": "/pmg/ up 1.2x to 6 posts/hr on ratio trade, junk silver talk.",
+          "text": "/PMG/: 6 POSTS/HR, UP 1.2X",
           "anker": "runs 6 posts in the"
         },
         {
-          "text": "Dating-cost thread up 1.8x to 7 posts/hr debating $100 per date.",
-          "anker": "7 posts in the last"
+          "text": "DATING: IS $100 NORMAL?",
+          "anker": "$100 per outing is normal"
         },
         {
-          "text": "\"Nostradamus of AI\" thread: 5 posts, zero AI content.",
+          "text": "'NOSTRADAMUS OF AI': EMPTY",
           "anker": "gained 5 posts in 0.7"
         },
         {
-          "text": "Overnight /smg/ cooling: 16 posts/hr but 0.4x its own average.",
-          "anker": "16 posts an hour, but"
+          "text": "'WHERE ARE YOU GOING': DEAD",
+          "anker": "is 5 posts of nothing"
+        },
+        {
+          "text": "OVERNIGHT /SMG/: COOLING",
+          "anker": "16 posts an hour"
         }
-      ]
+      ],
+      "zitat": {
+        "text": "if you cant spend time with her without spending money, she doesnt really like you.",
+        "anker": "if you cant spend time"
+      },
+      "zwischenthemen": []
     },
     {
       "ueberschrift": "BOARD LIFE",
-      "titel": "Board life: same cope as yesterday",
-      "punkte": [
+      "titel": "Board life: burnout and bad bets",
+      "lage": "left",
+      "stichworte": [
         {
-          "text": "Burnout thread: exhaustion framed as deconditioning, not a hard ceiling.",
-          "anker": "exhaustion is deconditioning rather than"
+          "text": "BURNOUT: NOT A CEILING?",
+          "anker": "exhaustion is deconditioning rather"
         },
         {
-          "text": "Divorced father owes $4,500/month against 132 claimed weekly work hours.",
-          "anker": "owing 4,500 a month against"
+          "text": "FERTILITY CLAIM: AGE 30",
+          "anker": "fertility-timing claim about age"
         },
         {
-          "text": "Millionaire-migration threads recycle $100k income as disputed benchmark.",
-          "anker": "with $100k income as the"
+          "text": "132 HRS/WEEK CLAIMED",
+          "anker": "132 claimed weekly work"
         },
         {
-          "text": "Kurumi-chan anime thread unchanged, zero new posts today.",
-          "anker": "is unchanged with zero new"
+          "text": "BAD IDEAS: CASH WORK, FLEE",
+          "anker": "(unreported cash work, emigration)"
+        },
+        {
+          "text": "$100K: THE COPE BENCHMARK",
+          "anker": "$100k income as the"
+        },
+        {
+          "text": "20M YEN LOST TO FX",
+          "anker": "her mother lost trading"
         }
-      ]
+      ],
+      "zwischenthemen": [
+        {
+          "titel": "Divorced dad: $4,500/month",
+          "anker": "owing 4,500 a month",
+          "lage": "left"
+        },
+        {
+          "titel": "Anime corner: Kurumi-chan",
+          "anker": "FX Senshi Kurumi-chan",
+          "lage": "right"
+        }
+      ],
+      "karte": {
+        "wert": "20M YEN",
+        "titel": "LOST TO FX TRADING",
+        "sub": "Anime plot: mother's losses",
+        "anker": "20,000,000 yen her mother"
+      }
     }
   ],
   "zahlen": [
     {
-      "wert": "27X",
-      "titel": "Kraken Monero fee hike",
-      "sub": "withdrawal fee up 27-fold",
-      "satz": "Kraken raised its Monero withdrawal fee about twenty seven times, from four cents to one dollar ten."
+      "wert": "$35 TRILLION",
+      "titel": "ALL EARTH'S GOLD",
+      "sub": "Value of 244,000 tonnes",
+      "satz": "All the gold ever mined on Earth, about 244,000 tonnes, would be worth roughly 35 trillion dollars at today's price of about 4,467 dollars per troy ounce."
     },
     {
-      "wert": "$35 TRILLION",
-      "titel": "Total gold value",
-      "sub": "244,000 tonnes at $4,467.80/oz",
-      "satz": "All the gold ever mined is worth about thirty five trillion dollars at current prices."
+      "wert": "27X",
+      "titel": "MONERO FEE HIKE",
+      "sub": "Kraken's XMR withdrawal cost",
+      "satz": "Kraken quietly raised its Monero withdrawal fee by twenty seven times in just a few days."
+    },
+    {
+      "wert": "$7 BILLION",
+      "titel": "STRIPE'S OPENROUTER DEAL",
+      "sub": "Unverified acquisition claim",
+      "satz": "An unsourced claim says Stripe bought the AI startup OpenRouter for seven billion dollars."
     },
     {
       "wert": "1:100",
-      "titel": "Gold-silver ratio",
-      "sub": "Bulls say reverts to 1:16",
-      "satz": "The gold to silver ratio sits near one hundred to one, which bulls say must revert toward sixteen to one."
-    },
-    {
-      "wert": "12%",
-      "titel": "Buffett's Alphabet stake",
-      "sub": "12% of Berkshire's portfolio",
-      "satz": "Warren Buffett's Alphabet stake is now said to be twelve percent of Berkshire's entire portfolio."
+      "titel": "GOLD SILVER RATIO",
+      "sub": "Bulls say it must revert",
+      "satz": "The gold to silver ratio sits near one to one hundred, and precious metals bulls argue it has to fall back toward one to sixteen."
     }
-  ]
+  ],
+  "version": 2
 }
