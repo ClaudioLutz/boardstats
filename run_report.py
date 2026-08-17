@@ -844,7 +844,8 @@ Anchors: every "anker" is 3 to 5 CONSECUTIVE words copied VERBATIM from the
 section's body text (not from the heading). It times when the element
 appears on screen while the report is read aloud - it must match the body
 text exactly (capitalization does not matter), and all anchors of a section
-must appear in the body in the same order as their elements.
+must appear in the body in the same order as their elements. Never pick a
+phrase containing a URL - links are not read aloud.
 
 Rules per "## " section (one entry each, same order; skip the GLOSSARY):
 - "ueberschrift": the section heading COPIED VERBATIM (without "## ").

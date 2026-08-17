@@ -138,6 +138,22 @@ def hochladen(video_pfad: Path, titel: str, beschreibung: str,
     return video_id, f"https://youtu.be/{video_id}"
 
 
+def loeschen(video_id: str) -> None:
+    """Loescht ein Video des Kanals endgueltig (videos.delete; braucht den
+    force-ssl-Scope). Nur auf ausdrueckliche Anweisung aufrufen."""
+    token = access_token()
+    req = urllib.request.Request(
+        f"https://www.googleapis.com/youtube/v3/videos?id={video_id}",
+        method="DELETE", headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(
+            f"YouTube-Loeschung fehlgeschlagen ({e.code}): {detail}") from e
+
+
 def untertitel_setzen(video_id: str, srt_pfad: Path, sprache: str,
                       name: str = "") -> None:
     """Laedt eine eigene Untertitel-Spur (SRT) zu einem Video hoch.

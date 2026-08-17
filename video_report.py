@@ -225,6 +225,22 @@ _DATENSTAND_PREFIXE = ("*Datenstand:", "*Data as of:")
 
 _THREAD_URL = re.compile(r"boards\.4chan\.org/biz/thread/(\d+)")
 
+# Links MITTEN im Fliesstext: die Zeilenfilter oben fangen nur reine
+# URL-/Quellen-Zeilen; eingeklammerte oder nackte URLs im Satz wuerden vom
+# TTS Buchstabe fuer Buchstabe vorgelesen (Nutzerfeedback 17.08.).
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_INLINE_URL = re.compile(r"\(\s*(?:https?://|www\.)[^)]*\)"
+                         r"|(?:https?://|www\.)\S+")
+
+
+def _ohne_links(text: str) -> str:
+    """Blocktext ohne Links: Markdown-Links auf ihren Linktext reduziert,
+    URLs entfernt, danach Leerraum vor Satzzeichen geglaettet."""
+    t = _MD_LINK.sub(r"\1", text)
+    t = _INLINE_URL.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t)
+    return re.sub(r"\s+([.,;:!?])", r"\1", t).strip()
+
 
 @dataclass
 class Block:
@@ -279,11 +295,17 @@ def abschnitte_erzeugen(markdown: str) -> tuple[list[Block], list[Abschnitt]]:
             continue
         if z.startswith("## "):
             abschnitte.append(Abschnitt(threads=[]))
-            bloecke.append(Block("ueberschrift", z[3:], len(abschnitte) - 1))
+            t = _ohne_links(z[3:])
+            if t:
+                bloecke.append(Block("ueberschrift", t, len(abschnitte) - 1))
         elif z.startswith("- "):
-            bloecke.append(Block("punkt", z[2:], len(abschnitte) - 1))
+            t = _ohne_links(z[2:])
+            if t:
+                bloecke.append(Block("punkt", t, len(abschnitte) - 1))
         else:
-            bloecke.append(Block("absatz", z, len(abschnitte) - 1))
+            t = _ohne_links(z)
+            if t:
+                bloecke.append(Block("absatz", t, len(abschnitte) - 1))
     return bloecke, abschnitte
 
 
@@ -1254,6 +1276,10 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
 
 ZOOM_HUB = 0.10          # Zoomweg je Szene: 10 % rein oder raus, kaum merklich
 STORY_MAX = 20.0         # spaetestens dann wechselt die Story-Szene das Motiv
+OPENER_MIN = 4.0         # Mindest-Standzeit des Kapitel-Openers: kurze
+                         # Ueberschriften ("BOARD LIFE") sind in unter einer
+                         # Sekunde gesprochen, der Titel muss trotzdem lesbar
+                         # stehen (Nutzerfeedback 17.08.)
 ZITAT_MAX = 12.0         # Hoechstdauer der Zitat-Szene
 ZWISCHEN_MAX = 6.0       # Hoechstdauer eines Zwischenthema-Openers
 KARTE_MAX = 9.0          # Hoechstdauer der Kennzahl-Szene im Kapitel
@@ -1438,11 +1464,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # gesprochen wird; die Szene laeuft danach als erste Story weiter.
         akt = kapitel_motive[k]
         kapitel_szene = neu(akt, kopf_start)
+        opener_bis = min(max(rumpf_start, kopf_start + OPENER_MIN),
+                         naechster - 0.5)
         kapitel_szene.overlays.append(ov(
             szenen.titel_karte(titel,
                                label=f"CHAPTER {k + 1:02d} / {len(koepfe)}",
                                quelle=f"Source: {quelle}" if quelle else ""),
-            kopf_start + 0.2, max(rumpf_start, kopf_start + 1.0)))
+            kopf_start + 0.2, opener_bis))
 
         # Sonderereignisse des Drehbuchs im Kapitelrumpf verorten
         ereignisse: list[tuple[float, str, dict]] = []
@@ -1467,7 +1495,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 ereignisse.append((max(tz, rumpf_start + 1.0), "karte", kar))
         ereignisse.sort(key=lambda e: e[0])
         gewaehlt: list[tuple[float, float, str, dict]] = []
-        frei = rumpf_start
+        frei = opener_bis  # keine Sonderszene, solange der Opener steht
         for tz, art, px in ereignisse:
             if tz < frei + 1.0:
                 continue
