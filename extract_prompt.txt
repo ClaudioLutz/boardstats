@@ -47,12 +47,31 @@ For each claim at least one short VERBATIM quote from a post: original
 wording, in quotation marks, at most 15 words.
 
 MOOD AND MEMES
-Two to four bullets: the thread's prevailing sentiment (euphoric, coping,
-panicking, ironic) and the standout lines that carry it - the memes,
-running jokes and one-liners the board itself would remember. Quote them
-VERBATIM, in quotation marks, at most 15 words each. This is the board's
-humor, keep its original wording. NO slurs, no insults aimed at people or
-groups - if a memorable line contains one, drop the line.
+Three to six bullets on the thread's voice. Two different kinds of
+material belong here, and you mark which is which:
+
+- MOOD: the prevailing sentiment (euphoric, coping, panicking, ironic) and
+  the standout lines of THIS thread that carry it - what this thread would
+  be remembered for.
+- BOARD CANON: fixed expressions the board reuses across threads and days,
+  not invented this morning. Start such a bullet with "Canon:" and add
+  half a sentence on what the board means by it and when it deploys it.
+  The kind of thing that counts: the board's own reaction vocabulary
+  ("kek", "based", "checked", "it's over"), how it talks about itself and
+  its people ("anon", "jannies", "wagmi"), its recurring characters and
+  running gags ("bobo", "two more weeks"). Read that as examples of the
+  KIND, not as a checklist to fill.
+
+Quote VERBATIM, in quotation marks, at most 15 words each.
+HARD RULE for both kinds: quote only what is LITERALLY in the posts,
+character for character. Do NOT complete a half-said phrase into the form
+you know, do NOT turn a paraphrase into the canonical wording, do NOT put
+quotation marks around your own summary. If the attitude is in the thread
+but the fixed phrase is not, describe the attitude WITHOUT quotation
+marks. A quoted line that was never posted is a fabrication, and nothing
+downstream can tell the difference.
+NO slurs, no insults aimed at people or groups - if a memorable line
+contains one, drop the line.
 
 PRACTICAL
 Concretely usable pointers: exchanges, brokers, wallets, services, fees,
@@ -64,9 +83,16 @@ thread - with one sentence on what they contain.
 
 TERMS AND SLANG
 Every term an outsider would not understand, with a short factual
-explanation. This covers finance jargon (e.g. warrant, strike, RBF,
-softfork, guidance, short interest) AND board slang (e.g. bagholder,
-moonfag, FUD, rugpull, jeet, DFV). Format: term - one-sentence explanation.
+explanation. Three kinds:
+- finance jargon (e.g. warrant, strike, RBF, softfork, guidance, short
+  interest),
+- board slang (e.g. bagholder, moonfag, FUD, rugpull, jeet, DFV),
+- HOW THE BOARD WORKS - the mechanical vocabulary an outsider stumbles
+  over because it describes the site, not the market: what a general is,
+  OP, bump, QRD, 1pbtid, jannies, anon, checked/get. Explain the mechanism
+  in one sentence ("1pbtid - 'one post by this ID', the objection that a
+  poster showed up once to push a claim and never returned").
+Format: term - one-sentence explanation.
 For slang that is a slur or insult, explain only the factual meaning and do
 not repeat the insult.
 

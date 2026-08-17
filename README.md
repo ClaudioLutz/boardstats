@@ -19,14 +19,24 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
 2. **Extrahieren** — Sonnet liest je Thread parallel und schreibt einen
    strukturierten Extrakt auf Englisch (Topic, Hard Numbers, Claims,
    Sources, ... und «Mood and Memes»: die wörtlichen Einzeiler und Memes,
-   die den Ton des Threads tragen). Liegt ein
+   die den Ton des Threads tragen — getrennt nach Tageszitat und
+   «Canon:», den festen Wendungen, die das Board über Threads und Tage
+   hinweg wiederverwendet; dazu erklärt «Terms and Slang» neben Fach- und
+   Board-Jargon auch die Mechanik des Boards selbst, an der ein
+   Aussenstehender hängenbleibt: General, OP, QRD, 1pbtid, jannies).
+   Zitiert wird ausschliesslich wörtlich: eine halb gesagte Wendung darf
+   nicht zur bekannten Form vervollständigt werden — gemessen am 17.08.
+   war genau das passiert. Liegt ein
    Extrakt vom Vortag vor, wird er fortgeschrieben statt neu erstellt
    (inkrementeller Extrakt-Cache); nach 5 Fortschreibungen oder >50 % neuen
    Posts seit der letzten Voll-Extraktion wird neu verankert.
 3. **Synthetisieren** — Opus schreibt aus den Extrakten den englischen
-   Bericht (700–1000 Wörter): faktenorientiert, aber mit der Stimme des
-   Boards als Würze (die stärksten Mood-and-Memes-Zitate wandern in die
-   passenden Themen; Slurs und Streit bleiben draussen). Die Extrakte gehen
+   Bericht (700–1000 Wörter): faktenorientiert, aber die Stimme des
+   Boards zählt als Material, nicht als Würze — jedes Thema mit brauchbarer
+   Zeile trägt mindestens ein wörtliches Zitat, Canon-Wendungen haben
+   Vorrang vor dem Einfall von heute Morgen, und die Generals gelten als
+   Institution: die laufende Nummer eines Threads (z. B. `/XSG/ #2555`)
+   ist selbst ein Befund. Slurs und Streit bleiben draussen. Die Extrakte gehen
    in Sandwich-Reihenfolge hinein
    (stärkster zuerst, zweitstärkster zuletzt, gegen den "lost in the
    middle"-Positionsbias), und die Synthese legt je Thread Rechenschaft ab

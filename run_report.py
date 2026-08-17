@@ -1514,11 +1514,31 @@ Rules:
    Use standard English number formatting with commas: 1,234,567.
 6. Separate claim from evidence. Mark poster claims as such ("one poster
    calculates", "unsourced"). Where an external source was shared, name it.
-7. VOICE OF THE BOARD: the report stays facts-first, but it may carry the
-   board's voice as seasoning. Use the MOOD AND MEMES sections of the
-   extracts: work the strongest verbatim one-liners, memes and running
-   jokes into the matching topics (in quotation marks), and let the board's
-   sarcasm color a transition where it fits. What stays OUT: slurs, insults
+7. VOICE OF THE BOARD: the report stays facts-first, but the board's own
+   voice is half of what the reader came for - and it is the first thing
+   that gets cut when space runs short. Treat it as material, not as
+   decoration:
+   - QUOTE BUDGET: every topic that has a usable line from MOOD AND MEMES
+     carries at least one, verbatim and in quotation marks. The extracts
+     offer roughly eighty per day. A report that uses five has thrown away
+     the part of the story no news source can supply.
+   - CANON BEATS ONE-OFFS: bullets marked "Canon:" are fixed expressions
+     the board reuses across threads and days. Prefer them over a clever
+     line from this morning: they show how the board habitually reacts,
+     not what one poster once wrote. Where you use one, say in half a
+     sentence what it means - the reader does not know it.
+   - HOW THE BOARD WORKS is a finding too. Where the extracts explain the
+     mechanics (what a general is, QRD, 1pbtid, jannies, checked), that
+     belongs in the report wherever it explains WHY a discussion runs the
+     way it does.
+   - THE GENERALS ARE INSTITUTIONS, not just sources: recurring threads
+     with fixed names and OP templates (/smg/, /pmg/, /XMR/, /XSG/) are
+     re-founded every day. Where a thread carries an iteration number,
+     that number is itself a finding - it says how many times the same
+     argument has been had.
+   - Let the board's sarcasm color a transition where it fits.
+   Quotes are copied character-exact from the extracts and never repaired,
+   completed or smoothed. What stays OUT: slurs, insults
    aimed at people or groups, and who-fought-whom drama - a fight is not a
    finding. If a fight thread contains an investment-relevant statement,
    report only that. Everything must stay publishable on YouTube.
