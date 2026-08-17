@@ -68,6 +68,21 @@ ergaenzt um Rahmen-Saetze (Intro, Agenda-Aufzaehlung, Zahlen, Outro).
 Ohne folien.json oder bei jedem Fehler im Folien-Aufbau entsteht das Video
 im bisherigen v5-Text-Layout - die Praesentation darf den Upload nie
 verhindern.
+
+v7 (16.08.2026, Nutzerwunsch "es sieht zu fest nach PowerPoint aus"):
+Szenen-Layout statt Folien. Traegt folien.json die Version 2, ist sie ein
+Drehbuch: je Abschnitt Stichwort-Momente, optionale Zwischenthemen, ein
+Board-Zitat und eine Kennzahl, alles mit Anker-Phrasen im Berichtstext.
+Das Video besteht dann aus Szenen mit vollflaechigem, langsam zoomendem
+Board-Bild (ffmpeg zoompan, je Szene ein eigener kleiner ffmpeg-Lauf,
+am Ende per concat zusammengefuegt); aller Text liegt als transparente
+PNG-Overlays (szenen.py) darueber und blendet zeitgesteuert ein und aus:
+Kapitel-Opener als Lower Third, kinetische Stichwort-Tags synchron zum
+Gesprochenen, Zitate als 4chan-Post-Karte, Kennzahlen als Gross-Zahl mit
+Count-up. Gesprochen wird unveraendert der ganze Berichtstext samt
+Rahmen-Saetzen. Scheitert der Szenen-Aufbau, greift v5; folien.json ohne
+Version faellt auf die v6-Folien zurueck - kein Layout-Problem darf den
+Upload verhindern.
 """
 from __future__ import annotations
 
@@ -79,7 +94,7 @@ import re
 import subprocess
 import time
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
@@ -87,6 +102,7 @@ from xml.sax.saxutils import escape as xml_escape
 from PIL import ImageFont
 
 import folien
+import szenen
 import thumbnail
 import youtube_auth
 
@@ -1232,6 +1248,424 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
     return liste
 
 
+# ------------------------------------------------- Szenen-Praesentation (v7)
+
+ZOOM_HUB = 0.10          # Zoomweg je Szene: 10 % rein oder raus, kaum merklich
+STORY_MAX = 20.0         # spaetestens dann wechselt die Story-Szene das Motiv
+STICHWORT_DAUER = 5.0    # Standzeit eines Stichwort-Tags
+ZITAT_MAX = 12.0         # Hoechstdauer der Zitat-Szene
+ZWISCHEN_MAX = 6.0       # Hoechstdauer eines Zwischenthema-Openers
+KARTE_MAX = 9.0          # Hoechstdauer der Kennzahl-Szene im Kapitel
+EREIGNIS_ABSTAND = 4.0   # Ruhe zwischen zwei Sonderszenen
+SZENE_MIN_FRAMES = 8     # kuerzer darf keine Szene sein (0,32 s)
+COUNTUP_TAKT = 0.16      # Standzeit je Count-up-Stufe
+
+
+@dataclass
+class Overlay:
+    png: Path
+    start: float          # Sekunden, global; wird beim Rendern relativiert
+    ende: float
+    fade: float = 0.35    # 0.0 = harter Schnitt (Count-up-Stufen)
+
+
+@dataclass
+class Szene:
+    motiv: Path | None
+    start: float          # globaler Start; das Ende ist der Start der naechsten
+    zoom_rein: bool = True
+    overlays: list[Overlay] = field(default_factory=list)
+
+
+def _post_datum(datum: str) -> str:
+    """2026-08-16 -> 08/16/26 (Datumsstil der 4chan-Post-Kopfzeile)."""
+    j, m, t = datum.split("-")
+    return f"{m}/{t}/{j[2:]}"
+
+
+def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
+                 abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
+                 fdaten: dict, hook: str, datum: str, arbeit: Path,
+                 ende: float) -> list[Szene]:
+    """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
+    Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, Stichwort-
+    Tags, Zwischenthemen, Zitat-Karten und Kennzahlen liegen als zeitlich
+    verankerte Overlays darauf. Die Motiv-Auswahl folgt der v6-Logik:
+    frisches eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung."""
+    zuteilung = motiv_zuordnung(datum)
+    werte = motiv_werte(datum)
+    motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
+    tages_motiv = motive[0] if motive else None
+    pool: list[Path] = sorted(
+        {p for pfade in zuteilung.values() for p in pfade},
+        key=lambda p: (-_bild_wert(werte, p.name, "unterhaltung"), p.name))
+    pool_i = 0
+    verwendet: set[Path] = set()
+
+    def pool_bild(nur_frisch: bool = False) -> Path | None:
+        nonlocal pool_i
+        if not pool:
+            return None if nur_frisch else tages_motiv
+        for k in range(len(pool)):
+            p = pool[(pool_i + k) % len(pool)]
+            if p not in verwendet:
+                pool_i = (pool_i + k + 1) % len(pool)
+                verwendet.add(p)
+                return p
+        if nur_frisch:
+            return None
+        pool_i += 1
+        return pool[(pool_i - 1) % len(pool)]
+
+    def eigenes_bild(eigene: list[Path]) -> Path | None:
+        for p in eigene:
+            if p not in verwendet:
+                verwendet.add(p)
+                return p
+        return None
+
+    ov_nr = 0
+
+    def ov(bild, start: float, bis: float, fade: float = 0.35) -> Overlay:
+        nonlocal ov_nr
+        pfad = szenen.speichern(bild, arbeit / f"overlay_{ov_nr:03d}.png")
+        ov_nr += 1
+        return Overlay(pfad, start, bis, fade)
+
+    folge: list[Szene] = []
+
+    def neu(motiv: Path | None, start: float) -> Szene:
+        s = Szene(motiv, start, zoom_rein=len(folge) % 2 == 0)
+        folge.append(s)
+        return s
+
+    def start_von(index: int) -> float:
+        return block_worte[index][0].start if block_worte[index] else 0.0
+
+    agenda_idx = [i for i, b in enumerate(bloecke) if b.rolle == "agenda"]
+    zahl_idx = [i for i, b in enumerate(bloecke) if b.rolle == "zahl"]
+    eintraege = [bloecke[i].text.rstrip(".") for i in agenda_idx]
+    koepfe = [(i, b.abschnitt) for i, b in enumerate(bloecke)
+              if b.art == "ueberschrift" and not b.rolle]
+
+    # Kapitel-Motive vorab reservieren (die Agenda-Vorschau nutzt sie mit,
+    # ohne selbst frische Bilder zu verbrauchen - wie in v6).
+    kapitel_eigene: list[list[Path]] = []
+    kapitel_motive: list[Path | None] = []
+    for _, nr in koepfe:
+        eigene = [p for tid in abschnitte[nr].threads
+                  for p in zuteilung.get(tid, [])]
+        kapitel_eigene.append(eigene)
+        kapitel_motive.append(eigenes_bild(eigene)
+                              or pool_bild(nur_frisch=True)
+                              or (eigene[0] if eigene else pool_bild()))
+    titel_map = thread_titel(datum)
+    slot = 0
+
+    # Intro
+    kopf_idx = next((i for i, b in enumerate(bloecke)
+                     if b.rolle == "agenda_kopf"), None)
+    erster_kopf = start_von(koepfe[0][0]) if koepfe else ende
+    intro_bis = start_von(kopf_idx) if kopf_idx is not None else erster_kopf
+    s = neu(tages_motiv or pool_bild(), 0.0)
+    s.overlays.append(ov(szenen.titel_karte(hook, label="TODAY'S TOP STORY"),
+                         0.4, max(intro_bis, 1.0)))
+
+    # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
+    # Motiv seines Kapitels als Vorschau.
+    if kopf_idx is not None and agenda_idx:
+        t0 = start_von(kopf_idx)
+        s = neu(pool_bild(nur_frisch=True) or tages_motiv, t0)
+        s.overlays.append(ov(szenen.titel_karte("Coming up today",
+                                                label="AGENDA"),
+                             t0 + 0.2, start_von(agenda_idx[0])))
+        for k, i in enumerate(agenda_idx):
+            t = start_von(i)
+            bis = start_von(agenda_idx[k + 1]) if k + 1 < len(agenda_idx) \
+                else erster_kopf
+            m = kapitel_motive[k] if k < len(kapitel_motive) else None
+            s = neu(m or tages_motiv, t)
+            s.overlays.append(ov(
+                szenen.titel_karte(eintraege[k],
+                                   label=f"COMING UP · {k + 1:02d}",
+                                   gross=False),
+                t + 0.15, bis))
+
+    # Kapitel
+    schluss = next((start_von(i) for i, b in enumerate(bloecke)
+                    if b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
+                   ende)
+    for k, (kopf, nr) in enumerate(koepfe):
+        kopf_start = start_von(kopf)
+        naechster = start_von(koepfe[k + 1][0]) if k + 1 < len(koepfe) \
+            else schluss
+        rumpf_idx = [i for i, b in enumerate(bloecke)
+                     if b.abschnitt == nr and not b.rolle
+                     and b.art != "ueberschrift"]
+        rumpf_worte = [w for i in rumpf_idx for w in block_worte[i]]
+        rumpf_start = rumpf_worte[0].start if rumpf_worte else kopf_start + 2.0
+
+        eintrag = zuordnung.get(nr, {})
+        titel = _folien_titel(zuordnung, bloecke, nr) or bloecke[kopf].text
+        eigene = kapitel_eigene[k]
+        quelle = (titel_map.get(abschnitte[nr].threads[0])
+                  or f"thread {abschnitte[nr].threads[0]}") \
+            if abschnitte[nr].threads else ""
+        if len(quelle) > 60:
+            quelle = quelle[:59].rstrip() + "…"
+
+        eigen_i = 0
+
+        def naechstes_motiv(aktuell: Path | None) -> Path | None:
+            nonlocal eigen_i
+            p = eigenes_bild(eigene)
+            if p is not None:
+                return p
+            if len(eigene) >= 2:
+                for _ in range(len(eigene)):
+                    kandidat = eigene[eigen_i % len(eigene)]
+                    eigen_i += 1
+                    if kandidat != aktuell:
+                        return kandidat
+            return pool_bild(nur_frisch=True) or aktuell
+
+        # Opener: Kapiteltitel als Lower Third, solange die Ueberschrift
+        # gesprochen wird; die Szene laeuft danach als erste Story weiter.
+        akt = kapitel_motive[k]
+        kapitel_szene = neu(akt, kopf_start)
+        kapitel_szene.overlays.append(ov(
+            szenen.titel_karte(titel,
+                               label=f"CHAPTER {k + 1:02d} / {len(koepfe)}",
+                               quelle=f"Source: {quelle}" if quelle else ""),
+            kopf_start + 0.2, max(rumpf_start, kopf_start + 1.0)))
+
+        # Sonderereignisse des Drehbuchs im Kapitelrumpf verorten
+        ereignisse: list[tuple[float, str, dict]] = []
+        for zt in eintrag.get("zwischenthemen") or []:
+            if isinstance(zt, dict) and str(zt.get("titel") or "").strip():
+                tz = _anker_zeit(str(zt.get("anker") or ""), rumpf_worte)
+                if tz is not None and rumpf_start + 2.0 < tz < naechster - 3.0:
+                    ereignisse.append((tz, "zwischen", zt))
+        zit = eintrag.get("zitat")
+        if isinstance(zit, dict) and str(zit.get("text") or "").strip():
+            tz = _anker_zeit(str(zit.get("anker") or ""), rumpf_worte)
+            if tz is None:  # das Zitat selbst steht oft woertlich im Bericht
+                tz = _anker_zeit(str(zit["text"]), rumpf_worte)
+            if tz is not None and tz < naechster - 3.0:
+                ereignisse.append((max(tz, rumpf_start + 1.0), "zitat", zit))
+        kar = eintrag.get("karte")
+        if isinstance(kar, dict) and str(kar.get("wert") or "").strip():
+            tz = _anker_zeit(str(kar.get("anker") or ""), rumpf_worte)
+            if tz is None:
+                tz = rumpf_start + (naechster - rumpf_start) * 0.6
+            if tz < naechster - 3.0:
+                ereignisse.append((max(tz, rumpf_start + 1.0), "karte", kar))
+        ereignisse.sort(key=lambda e: e[0])
+        gewaehlt: list[tuple[float, float, str, dict]] = []
+        frei = rumpf_start
+        for tz, art, px in ereignisse:
+            if tz < frei + 1.0:
+                continue
+            dauer = {"zwischen": ZWISCHEN_MAX, "zitat": ZITAT_MAX,
+                     "karte": KARTE_MAX}[art]
+            bis = min(tz + dauer, naechster - 0.5)
+            if bis > tz + 2.0:
+                gewaehlt.append((tz, bis, art, px))
+                frei = bis + EREIGNIS_ABSTAND
+
+        # Stichwort-Momente: Zeiten wie die v6-Stichpunkte (Anker-Phrase,
+        # Luecken interpoliert, monoton mit Mindestabstand)
+        stich = [p for p in eintrag.get("stichworte") or []
+                 if isinstance(p, dict) and str(p.get("text") or "").strip()]
+        zeiten = _punkt_zeiten(stich, rumpf_worte, rumpf_start, naechster) \
+            if stich else []
+        tags = list(zip(zeiten, stich))
+
+        # Story-Strecken zwischen den Sonderszenen; lange Strecken werden am
+        # naechsten Stichwort geteilt (= Motivwechsel gegen die Monotonie)
+        strecken: list[tuple[float, float, tuple[str, dict] | None]] = []
+        cursor = rumpf_start
+        for tz, bis, art, px in gewaehlt:
+            if tz > cursor + 0.3:
+                strecken.append((cursor, tz, None))
+            strecken.append((tz, bis, (art, px)))
+            cursor = bis
+        if naechster > cursor + 0.3:
+            strecken.append((cursor, naechster, None))
+
+        erste_story = True
+        for von, bis, sonder in strecken:
+            if sonder is None:
+                teile: list[tuple[float, float]] = []
+                s0 = von
+                while bis - s0 > STORY_MAX:
+                    kand = [t for t, _ in tags if s0 + 8.0 <= t <= s0 + STORY_MAX]
+                    c = kand[-1] if kand else s0 + STORY_MAX
+                    teile.append((s0, c))
+                    s0 = c
+                teile.append((s0, bis))
+                for a, b in teile:
+                    if erste_story:
+                        sz, erste_story = kapitel_szene, False
+                    else:
+                        akt = naechstes_motiv(akt)
+                        sz = neu(akt, a)
+                    for t, p in tags:
+                        if a <= t < b:
+                            sz.overlays.append(ov(
+                                szenen.stichwort(str(p["text"]), slot),
+                                t, min(t + STICHWORT_DAUER, b)))
+                            slot += 1
+            else:
+                art, px = sonder
+                erste_story = False
+                akt = naechstes_motiv(akt)
+                sz = neu(akt, von)
+                if art == "zwischen":
+                    sz.overlays.append(ov(
+                        szenen.titel_karte(str(px["titel"]), label="NEXT UP",
+                                           gross=False),
+                        von + 0.1, bis))
+                elif art == "zitat":
+                    sz.overlays.append(ov(
+                        szenen.zitat_post(str(px["text"]), _post_datum(datum)),
+                        von + 0.1, bis))
+                else:
+                    _countup_overlays(sz, px, von + 0.2, bis, ov)
+
+    # Zahlen des Tages: je Kennzahl eine eigene Gross-Zahl-Szene mit Count-up
+    karten = [z for z in fdaten.get("zahlen") or []
+              if isinstance(z, dict) and z.get("wert")][:4]
+    zk_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "zahl_kopf"),
+                  None)
+    outro_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "outro"),
+                     None)
+    if zk_idx is not None and karten:
+        t0 = start_von(zk_idx)
+        s = neu(pool_bild(), t0)
+        s.overlays.append(ov(szenen.titel_karte("Numbers of the day",
+                                                label="THE NUMBERS"),
+                             t0 + 0.2,
+                             start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0))
+        genutzt = zahl_idx[:len(karten)]
+        for j, i in enumerate(genutzt):
+            t = start_von(i)
+            bis = start_von(genutzt[j + 1]) if j + 1 < len(genutzt) \
+                else (start_von(outro_idx) if outro_idx is not None else ende)
+            s = neu(pool_bild(), t)
+            _countup_overlays(s, karten[j], t + 0.2, bis, ov)
+
+    if outro_idx is not None:
+        t = start_von(outro_idx)
+        s = neu(tages_motiv or pool_bild(), t)
+        s.overlays.append(ov(szenen.outro_tafel(), t + 0.3, ende))
+
+    print(f"Szenen: {len(folge)}, Overlays: {ov_nr}")
+    return folge
+
+
+def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
+                      ov) -> None:
+    """Kennzahl als Gross-Zahl mit hart geschnittenen Count-up-Stufen."""
+    wert = str(karte["wert"])
+    titel = str(karte.get("titel") or "")
+    sub = str(karte.get("sub") or "")
+    stufen = szenen.countup_werte(wert)
+    for si, w in enumerate(stufen):
+        sz.overlays.append(ov(szenen.zahl_tafel(w, titel, sub),
+                              ab + si * COUNTUP_TAKT,
+                              ab + (si + 1) * COUNTUP_TAKT, 0.0))
+    sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub),
+                          ab + len(stufen) * COUNTUP_TAKT, bis, 0.0))
+
+
+def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
+                suffix: str, bug_png: Path, vig_png: Path) -> Path:
+    """Eine Szene als eigenen kurzen Clip rendern: Motiv mit langsamem
+    zoompan-Drift, darueber Vignette, die zeitgesteuerten Text-Overlays und
+    zuoberst der Ecken-Bug. Bewusst je Szene ein kleiner, immer gleich
+    aufgebauter ffmpeg-Lauf statt einer grossen fragilen Filterkette."""
+    n = max(f1 - f0, 1)
+    dauer = n / FPS
+    t0 = f0 / FPS
+    ovs: list[tuple[Path, float, float, float]] = [(vig_png, 0.0, dauer, 0.0)]
+    for o in s.overlays:
+        a = max(0.0, o.start - t0)
+        b = min(dauer, o.ende - t0)
+        if b - a > 0.05:
+            ovs.append((o.png, a, b, o.fade))
+    ovs.append((bug_png, 0.0, dauer, 0.0))
+
+    cmd = ["ffmpeg", "-y", "-loglevel", "error"]
+    if s.motiv is not None:
+        cmd += ["-i", str(s.motiv)]
+        z = f"1+{ZOOM_HUB}*on/{n}" if s.zoom_rein \
+            else f"1+{ZOOM_HUB}*({n}-on)/{n}"
+        # 2x-Supersampling vor zoompan gegen das bekannte Zittern des Filters
+        teile = [f"[0:v]scale={2 * CANVAS_W}:{2 * CANVAS_H}"
+                 f":force_original_aspect_ratio=increase,"
+                 f"crop={2 * CANVAS_W}:{2 * CANVAS_H},"
+                 f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                 f":d={n}:s={CANVAS_W}x{CANVAS_H}:fps={FPS}[bg]"]
+    else:
+        cmd += ["-f", "lavfi", "-i",
+                f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}:r={FPS}"
+                f":d={dauer + 0.3:.3f}"]
+        teile = ["[0:v]null[bg]"]
+    for p, *_ in ovs:
+        cmd += ["-loop", "1", "-framerate", str(FPS),
+                "-t", f"{dauer + 0.3:.3f}", "-i", str(p)]
+    kette = "[bg]"
+    for j, (p, a, b, fd) in enumerate(ovs):
+        filt = f"[{j + 1}:v]format=rgba"
+        if fd > 0:
+            filt += f",fade=t=in:st={a:.3f}:d={fd:.2f}:alpha=1"
+            if b < dauer - 0.05:
+                filt += f",fade=t=out:st={max(a, b - fd):.3f}:d={fd:.2f}:alpha=1"
+        filt += f"[o{j}]"
+        teile.append(filt)
+        teile.append(f"{kette}[o{j}]overlay=0:0"
+                     f":enable='between(t,{a:.3f},{b:.3f})'[v{j}]")
+        kette = f"[v{j}]"
+    ziel = arbeit / f"szene{suffix}_{idx:03d}.mp4"
+    cmd += ["-filter_complex", ";".join(teile), "-map", kette,
+            "-frames:v", str(n), "-r", str(FPS),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", str(ziel)]
+    subprocess.run(cmd, check=True, timeout=600, capture_output=True)
+    return ziel
+
+
+def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
+                 arbeit: Path, suffix: str, datum: str, ende: float) -> None:
+    """Alle Szenen rendern, auf dem 25-fps-Frame-Raster nahtlos aneinander
+    schneiden (kein Drift zur Tonspur) und mit dem Audio muxen."""
+    if not folge:
+        raise RuntimeError("keine Szenen")
+    bug_png = szenen.speichern(szenen.bug(datum),
+                               arbeit / f"overlay{suffix}_bug.png")
+    vig_png = szenen.speichern(szenen.vignette(),
+                               arbeit / f"overlay{suffix}_vignette.png")
+    grenzen = [round(s.start * FPS) for s in folge]
+    grenzen.append(max(int(ende * FPS + 0.5), grenzen[-1] + SZENE_MIN_FRAMES))
+    for i in range(1, len(grenzen)):
+        grenzen[i] = max(grenzen[i], grenzen[i - 1] + SZENE_MIN_FRAMES)
+    clips = [_szene_clip(s, grenzen[i], grenzen[i + 1], i, arbeit, suffix,
+                         bug_png, vig_png)
+             for i, s in enumerate(folge)]
+    liste = arbeit / f"szenen{suffix}.txt"
+    liste.write_text(
+        "\n".join("file '" + str(c).replace("\\", "/") + "'" for c in clips)
+        + "\n", encoding="utf-8")
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error",
+         "-f", "concat", "-safe", "0", "-i", str(liste),
+         "-i", str(audio_mp3),
+         "-c:v", "copy", "-c:a", "aac", "-shortest", str(ziel_mp4)],
+        check=True, timeout=900, capture_output=True)
+    print(f"Szenen-Video: {len(clips)} Szenen, {grenzen[-1] / FPS:.0f} s")
+
+
 # ----------------------------------------------------------- Video-Zusammenbau
 
 def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
@@ -1542,11 +1976,26 @@ def main() -> None:
         print(f"Untertitel nicht erzeugt: {e}")
         srt_datei = None
 
+    hook = titel.split(" | ")[0].strip()
+    fertig = False
+    if fdaten and int(fdaten.get("version") or 1) >= 2:
+        # Szenen-Layout (v7): Drehbuch-folien.json mit Stichworten,
+        # Zwischenthemen, Zitaten und Kennzahlen.
+        try:
+            folge = szenen_bauen(bloecke_ton, block_worte, abschnitte,
+                                 zuordnung, fdaten, hook, datum, arbeit, ende)
+            print("baue Szenen-Video ...")
+            szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
+                         datum, ende)
+            fertig = True
+        except Exception as e:
+            # Kein Layout-Problem darf den Upload verhindern.
+            print(f"Szenen-Aufbau fehlgeschlagen ({e}) - Ersatz-Layout")
     konkat: Path | None = None
     ass_arg: Path | None = None
-    if fdaten:
+    if not fertig and fdaten and int(fdaten.get("version") or 1) < 2:
+        # Alte folien.json ohne Version: v6-Folien-Praesentation.
         try:
-            hook = titel.split(" | ")[0].strip()
             konkat = folien_konkat(bloecke_ton, block_worte, abschnitte,
                                    zuordnung, fdaten, hook, datum, arbeit,
                                    cfg["suffix"], ende)
@@ -1556,7 +2005,7 @@ def main() -> None:
             # Rahmen-Saetze erscheinen dort als gewoehnliche Absaetze).
             print(f"Folien-Aufbau fehlgeschlagen ({e}) - Text-Layout als Ersatz")
             konkat = None
-    if konkat is None:
+    if not fertig and konkat is None:
         anzeigen = anzeigen_bauen(bloecke_ton, block_worte, fonts_laden())
         print(f"{len(anzeigen)} Anzeigen in {len(bloecke_ton)} Bloecken, "
               f"{len(abschnitte)} Abschnitte")
@@ -1571,8 +2020,9 @@ def main() -> None:
             # Ohne Hintergrund entsteht das Video wie bisher auf der Grundflaeche.
             print(f"Hintergrund nicht aufgebaut ({e}) - nehme die Grundflaeche")
 
-    print("baue Video ...")
-    video_erzeugen(audio_mp3, ass_arg, video_mp4, konkat)
+    if not fertig:
+        print("baue Video ...")
+        video_erzeugen(audio_mp3, ass_arg, video_mp4, konkat)
 
     if args.nur_video:
         print(f"nur Video gebaut, kein Upload: {video_mp4}")

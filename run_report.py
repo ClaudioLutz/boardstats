@@ -812,44 +812,61 @@ def titel_generieren(bericht_md: str, datum: str) -> dict[str, str]:
     raise RuntimeError(f"Hook wiederholt sich trotz zweitem Versuch: {hook!r}")
 
 
-# ------------------------------------------------- Folien fuers Video (v6)
+# -------------------------------------------- Drehbuch fuers Video (v7)
 
-# Der Folien-Prompt ist englisch wie der Bericht selbst: alle Ausgaben
-# (Folientitel, Stichpunkte, Anker-Phrasen) muessen im Wortlaut des
-# Berichts verankert sein, denn die Anker steuern die Einblendung waehrend
-# der Vorlesung.
+# Der Drehbuch-Prompt ist englisch wie der Bericht selbst: alle Ausgaben
+# muessen im Wortlaut des Berichts verankert sein, denn die Anker-Phrasen
+# steuern, wann ein Element waehrend der Vorlesung erscheint. Seit v7
+# (16.08.2026) plant das Modell den Aufbau je Abschnitt selbst: Stichwort-
+# Momente, optionale Zwischenthemen, ein Board-Zitat, eine Kennzahl - die
+# Mischung soll von Abschnitt zu Abschnitt und von Tag zu Tag variieren.
 FOLIEN_PROMPT = """\
 You get today's /biz/ situation report (Markdown, English). The daily video
-presents it as a slide deck; condense the report into slide content.
+shows it as a moving picture story: full-screen board images with text
+moments appearing while the report is read aloud. You write the storyboard.
+Vary the mix from section to section - not every section needs every
+element; pick what fits the material.
 
 Output ONLY one JSON object, no preamble, no code fence:
 {"abschnitte": [{"ueberschrift": "...", "titel": "...",
-                 "punkte": [{"text": "...", "anker": "..."}, ...],
-                 "karte": {"wert": "...", "titel": "...", "sub": "..."}},
+                 "stichworte": [{"text": "...", "anker": "..."}, ...],
+                 "zwischenthemen": [{"titel": "...", "anker": "..."}, ...],
+                 "zitat": {"text": "...", "anker": "..."},
+                 "karte": {"wert": "...", "titel": "...", "sub": "...",
+                           "anker": "..."}},
                 ...],
  "zahlen": [{"wert": "...", "titel": "...", "sub": "...", "satz": "..."},
             ...]}
 
-Rules for "abschnitte" (one entry per "## " section, same order; skip the
-GLOSSARY):
-- "ueberschrift": the section heading COPIED VERBATIM (without "## ").
-- "titel": a short slide title, max 48 characters, sentence case, no period.
-- "punkte": 2 to 4 bullet points, each max 90 characters, telegram style,
-  keep the concrete numbers. Only what the section actually says.
-- Each bullet's "anker": 3 to 5 CONSECUTIVE words copied VERBATIM from the
-  section's body text (not from the heading), taken from the sentence that
-  the bullet summarizes. It times when the bullet appears on screen while
-  the report is read aloud - so it must match the body text exactly,
-  including capitalization-insensitive wording, and the anchors of a section
-  must appear in the body in the same order as their bullets.
-- "karte" (optional, omit if the section has no striking figure): the ONE
-  most striking number of the section. "wert" max 12 characters as shown on
-  screen (e.g. "$2 TRILLION", "70.28 %"), "titel" max 28 characters,
-  "sub" max 32 characters.
-- Sections that only say "unchanged since yesterday" get 1 short bullet and
-  no karte.
+Anchors: every "anker" is 3 to 5 CONSECUTIVE words copied VERBATIM from the
+section's body text (not from the heading). It times when the element
+appears on screen while the report is read aloud - it must match the body
+text exactly (capitalization does not matter), and all anchors of a section
+must appear in the body in the same order as their elements.
 
-Rules for "zahlen" (the closing "Numbers of the day" slide):
+Rules per "## " section (one entry each, same order; skip the GLOSSARY):
+- "ueberschrift": the section heading COPIED VERBATIM (without "## ").
+- "titel": a short chapter title, max 44 characters, sentence case,
+  no period.
+- "stichworte": 3 to 6 keyword moments. "text" is the on-screen keyword:
+  2 to 4 punchy words, max 26 characters, tickers and figures welcome
+  (e.g. "$120B CUT", "BTC 61K", "SHORTS WIPED"). They carry the screen
+  while the narrator talks - spread them across the whole section, roughly
+  one every couple of sentences.
+- "zwischenthemen": 0 to 2 entries, ONLY when the section clearly switches
+  to a second storyline. "titel" (max 40 characters) names the new
+  sub-story; its anker sits where the switch happens.
+- "zitat" (optional): the single best board one-liner quoted in the
+  section, COPIED VERBATIM, max 130 characters, no slurs. Omit if the
+  section has no quotable line.
+- "karte" (optional): the ONE most striking figure of the section.
+  "wert" max 12 characters as shown on screen (e.g. "$2 TRILLION",
+  "70.28 %"), "titel" max 28 characters, "sub" max 32 characters, "anker"
+  where the figure is spoken.
+- Sections that only say "unchanged since yesterday": 1-2 stichworte,
+  nothing else.
+
+Rules for "zahlen" (the closing "Numbers of the day" segment):
 - Exactly 4 entries, the most striking figures across the whole report.
 - "wert" max 12 characters, "titel" max 28, "sub" max 32.
 - "satz": one short spoken sentence for the narrator. TTS-friendly: write
@@ -860,25 +877,48 @@ TIMEOUT_FOLIEN = 420
 
 
 def folien_generieren(bericht_md: str) -> dict:
-    """Folien-Inhalte fuer die Video-Praesentation (ein Sonnet-Aufruf auf
-    den fertigen Bericht). Liefert das geprueft geparste JSON-Objekt."""
+    """Szenen-Drehbuch fuer das Video (ein Sonnet-Aufruf auf den fertigen
+    Bericht). Liefert das geprueft geparste JSON-Objekt mit version=2;
+    video_report.py erkennt daran das v7-Szenen-Layout."""
     out = claude_ruf(FOLIEN_PROMPT, bericht_md, "sonnet", TIMEOUT_FOLIEN)
     out = _json_schneiden(out.strip())
     try:
         daten = json.loads(out)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Folien-Ausgabe kein JSON: {out[:200]!r}") from e
+        raise RuntimeError(f"Drehbuch-Ausgabe kein JSON: {out[:200]!r}") from e
     abschnitte = daten.get("abschnitte") if isinstance(daten, dict) else None
     if not isinstance(abschnitte, list) or not abschnitte:
-        raise RuntimeError(f"Folien-Ausgabe ohne Abschnitte: {out[:200]!r}")
+        raise RuntimeError(f"Drehbuch-Ausgabe ohne Abschnitte: {out[:200]!r}")
     for a in abschnitte:
         if not isinstance(a, dict) or not str(a.get("titel") or "").strip():
-            raise RuntimeError("Folien-Abschnitt ohne Titel")
+            raise RuntimeError("Drehbuch-Abschnitt ohne Titel")
         a["titel"] = str(a["titel"]).strip()[:60]
+        stich = a.get("stichworte")
+        a["stichworte"] = [
+            {"text": str(p["text"]).strip()[:30],
+             "anker": str(p.get("anker") or "").strip()}
+            for p in (stich if isinstance(stich, list) else [])
+            if isinstance(p, dict) and str(p.get("text") or "").strip()][:6]
+        zwischen = a.get("zwischenthemen")
+        a["zwischenthemen"] = [
+            {"titel": str(z["titel"]).strip()[:44],
+             "anker": str(z.get("anker") or "").strip()}
+            for z in (zwischen if isinstance(zwischen, list) else [])
+            if isinstance(z, dict) and str(z.get("titel") or "").strip()][:2]
+        zit = a.get("zitat")
+        if isinstance(zit, dict) and str(zit.get("text") or "").strip():
+            a["zitat"] = {"text": str(zit["text"]).strip()[:140],
+                          "anker": str(zit.get("anker") or "").strip()}
+        else:
+            a.pop("zitat", None)
+        if not (isinstance(a.get("karte"), dict)
+                and str(a["karte"].get("wert") or "").strip()):
+            a.pop("karte", None)
     zahlen = daten.get("zahlen")
     daten["zahlen"] = [z for z in zahlen if isinstance(z, dict)
                        and str(z.get("wert") or "").strip()][:4] \
         if isinstance(zahlen, list) else []
+    daten["version"] = 2
     return daten
 
 
@@ -1316,12 +1356,12 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         log.warning("Titel-Generierung fehlgeschlagen (Video nimmt den "
                     "statischen Serientitel): %s", e)
     try:
-        log.info("Erzeuge Video-Folien (Sonnet) ...")
+        log.info("Erzeuge Video-Drehbuch (Sonnet) ...")
         daten = folien_generieren(bericht_md)
         (tag_dir / "folien.json").write_text(
             json.dumps(daten, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")
-        log.info("Folien: %d Abschnitte, %d Tageszahlen",
+        log.info("Drehbuch: %d Abschnitte, %d Tageszahlen",
                  len(daten["abschnitte"]), len(daten["zahlen"]))
     except Exception as e:
         # Ohne folien.json baut video_report.py das Video im alten

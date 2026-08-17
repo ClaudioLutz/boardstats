@@ -37,10 +37,13 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Titel der letzten 14 Tage gehen als Sperrliste mit, damit sich der
    Aufhänger auch bei Dauerthemen nicht wiederholt. Derselbe Aufruf liefert
    ein kurzes Schlagwort für das Vorschaubild. Ein weiterer
-   Sonnet-Aufruf verdichtet den Bericht zu Folieninhalten für die
-   Video-Präsentation (`folien.json`: je Abschnitt Folientitel, Stichpunkte
-   mit wörtlichen Anker-Phrasen fürs Timing, optionale Kennzahl, dazu vier
-   «Numbers of the day»). Danach sucht der
+   Sonnet-Aufruf schreibt das Szenen-Drehbuch für das Video
+   (`folien.json`, Version 2): je Abschnitt ein Kapiteltitel,
+   Stichwort-Momente, optionale Zwischenthemen, das beste wörtliche
+   Board-Zitat und die markanteste Kennzahl — alles mit wörtlichen
+   Anker-Phrasen fürs Timing, dazu vier «Numbers of the day». Welche
+   Elemente ein Abschnitt bekommt, entscheidet das Modell nach Material,
+   der Aufbau variiert also von Tag zu Tag. Danach sucht der
    Lauf ein Bildmotiv für dieses Vorschaubild: die Kandidaten kommen aus den
    Anhängen der ausgewerteten Threads im Crawl-Snapshot (OP-Bilder zuerst,
    gespoilerte, gelöschte, zu kleine und Bannerformate fallen raus), Sonnet
@@ -70,35 +73,33 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Timepoints, absatzweise gestückelt wegen des 5000-Byte-API-Limits; der
    API-Key liegt ausserhalb des Repos unter
    `~/.config/boardstats/google_tts_key.txt`, ohne Key fällt der Lauf auf
-   `edge-tts` mit `en-US-GuyNeural` zurück) und baut mit `ffmpeg` eine
-   **Folien-Präsentation** (`folien.py`, Design wie das Vorschaubild):
-   Intro-Folie mit dem Tages-Aufhänger, Agenda, je Berichtsabschnitt eine
-   Themen-Folie mit verdichteten Stichpunkten und optionaler Zahlen-Karte,
-   zum Schluss «Numbers of the day» und ein Abspann. Die Folieninhalte
-   verdichtet ein Sonnet-Aufruf im Report-Lauf (`folien.json`: Folientitel,
-   Stichpunkte mit wörtlichen Anker-Phrasen, Kennzahlen). Beim
-   Kapitelwechsel erscheint das Board-Bild des Abschnitts zuerst
-   vollflächig und unverdunkelt mit der Überschrift (solange sie gesprochen
-   wird) und blendet dann weich zur Folie über; die Stichpunkte leuchten
-   auf, sobald die Vorlesestimme ihre Anker-Phrase erreicht. Alle Zustände
-   sind PIL-Standbilder, zeitgesteuert über eine ffconcat-Liste — Text wird
-   auf diesem Pfad nicht mehr per ASS eingebrannt. Die Bilder kommen aus
-   den freigegebenen Anhängen der besprochenen Threads
-   (`arbeit/motive/<datum>/`, Zuordnung über die Quell-URLs unter jedem
-   Berichtsabschnitt, je Thread die bestbewerteten zuerst); jede Folie
-   bekommt ein frisches, noch nicht gezeigtes Bild — zuerst aus dem eigenen
-   Thread, dann aus dem Pool der übrigen Tagesbilder (die unterhaltsamsten
-   zuerst), erst wenn alle durch sind wiederholt sich eines. Auch innerhalb
-   einer Themen-Folie wechselt das Motiv: mit jedem aufleuchtenden
-   Stichpunkt kommt ein weiteres Bild, bevorzugt aus dem eigenen Thread
-   (notfalls rotieren dessen Bilder), und die Agenda zeigt beim Aufleuchten
-   eines Eintrags das Motiv des zugehörigen Kapitels als Vorschau. Die
-   Fusszeile der Themen-Folie nennt den Original-Betreff des Quell-Threads
-   (aus dem H1 der Extrakt-Seite; nur wenn der fehlt, die Thread-Nummer).
-   Ein Tag ganz ohne Bilder läuft auf der dunklen Grundfläche. Fehlt `folien.json` oder scheitert der
-   Folien-Aufbau, entsteht das Video im bisherigen Text-Layout
-   (Text-Happen unten, Titelkarten oben, Wort-Karaoke per `libass`) — die
-   Präsentation darf den Upload nie verhindern.
+   `edge-tts` mit `en-US-GuyNeural` zurück) und baut mit `ffmpeg` ein
+   **Szenen-Video** (Overlays aus `szenen.py`, Design-Vokabular wie das
+   Vorschaubild): jede Szene zeigt ein Board-Bild vollflächig mit langsamem
+   Zoom-Drift (`zoompan`), darüber liegen transparente Text-Overlays, die
+   zeitgesteuert ein- und ausblenden — Kapitel-Opener als Lower Third,
+   kinetische Stichwort-Tags synchron zum Gesprochenen, Zwischenthemen als
+   eigene Mini-Opener, Board-Zitate als 4chan-Post-Karte und Kennzahlen als
+   bildschirmfüllende Zahl mit Count-up. Das Drehbuch dazu stammt aus dem
+   Report-Lauf (`folien.json`, Version 2); wann ein Element erscheint,
+   steuert der Fundort seiner Anker-Phrase in den Wort-Zeitstempeln. Jede
+   Szene wird als eigener kurzer ffmpeg-Clip gerendert und am Ende auf dem
+   25-fps-Frame-Raster nahtlos zusammengefügt (kein Drift zur Tonspur).
+   Die Bilder kommen aus den freigegebenen Anhängen der besprochenen
+   Threads (`arbeit/motive/<datum>/`, Zuordnung über die Quell-URLs unter
+   jedem Berichtsabschnitt, je Thread die bestbewerteten zuerst); jede
+   Szene bekommt ein frisches, noch nicht gezeigtes Bild — zuerst aus dem
+   eigenen Thread, dann aus dem Pool der übrigen Tagesbilder (die
+   unterhaltsamsten zuerst), erst wenn alle durch sind wiederholt sich
+   eines. Lange Sprechstrecken wechseln spätestens alle zwanzig Sekunden
+   die Szene, das «Coming up» zeigt zu jedem Kapitel das Motiv als
+   Vorschau, und der Kapitel-Opener nennt den Original-Betreff des
+   Quell-Threads (aus dem H1 der Extrakt-Seite). Ein Tag ganz ohne Bilder
+   läuft auf der dunklen Grundfläche. Eine `folien.json` im alten Format
+   (ohne Version) rendert weiter die v6-Folien-Präsentation (`folien.py`);
+   fehlt sie ganz oder scheitert der Szenen-Aufbau, entsteht das Video im
+   Text-Layout (Text-Happen unten, Titelkarten oben, Wort-Karaoke per
+   `libass`) — kein Layout-Problem darf den Upload verhindern.
    Upload als **öffentliches** Video über die YouTube
    Data API v3 (`youtube_auth.py`, rohes Resumable-Upload per `urllib`, kein
    `google-api-python-client`); mitgegeben werden Sprach-Metadaten
@@ -155,8 +156,9 @@ offenen Fragen je Thread.
 | `update_prompt.txt` | Prompt Stufe 2, Delta-Fortschreibung |
 | `bericht_html.py` | Überschrift-Erkennung fürs Markdown (Rest aus der Mail-Zeit) |
 | `send_mail.py` | SMTP-Versand — seit 16.08.2026 ungenutzt (Mail abgebaut) |
-| `video_report.py` | Bericht → TTS → Video, Upload zu YouTube |
-| `folien.py` | Präsentations-Folien des Videos (PIL, Design wie Vorschaubild) |
+| `video_report.py` | Bericht → TTS → Szenen-Video, Upload zu YouTube |
+| `szenen.py` | Text-Overlays des Szenen-Videos (PIL, transparente PNGs) |
+| `folien.py` | v6-Präsentations-Folien — nur noch Fallback für alte `folien.json` |
 | `thumbnail.py` | Vorschaubild: Serienrahmen + Tages-Schlagwort + Motiv |
 | `youtube_auth.py` | YouTube-OAuth-Refresh + Resumable-Upload |
 | `youtube_auth_setup.py` | Einmaliges interaktives YouTube-OAuth-Setup |
