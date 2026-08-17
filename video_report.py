@@ -128,7 +128,12 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "marker": "video_en.json",
         "suffix": "_en",
         "stimme": "en-US-GuyNeural",
-        "google_stimme": "en-US-Neural2-J",
+        # Studio-Q klingt deutlich natuerlicher als Neural2, kennt aber kein
+        # <mark> - die Zeitachse baut der Studio-Pfad unten selbst. Scheitert
+        # Studio (Quota, Netz), springt die Vertonung auf die Marken-Stimme
+        # und erst danach auf edge-tts.
+        "google_stimme": "en-US-Studio-Q",
+        "google_stimme_marken": "en-US-Neural2-J",
         "titel": "/biz/ Situation Report {datum}",
         "beschreibung": (
             "Automated situation report from the 4chan board /biz/ (Business & "
@@ -387,7 +392,8 @@ GOOGLE_SSML_MAX_BYTES = 4000    # API-Limit 5000 Bytes je Aufruf, Marks zaehlen 
 GOOGLE_SPRECHRATE = 1.15        # schneller wirkt draengender; die <break>-
                                 # Pausen sind Festzeiten und skalieren NICHT mit
 GOOGLE_ABSATZ_PAUSE = "600ms"   # edge-tts pausierte an Absatzgrenzen von selbst
-# Lange Pause vor jeder Kapitel-Ueberschrift. Sie ist nicht Kosmetik: das
+# Lange Pause vor jeder Kapitel-Ueberschrift (im Studio-Pfad als Stille, im
+# Marken-Pfad als SSML-<break>). Sie ist nicht Kosmetik: das
 # Szenen-Layout laesst den letzten Stichpunkt eines Themas in die Karte
 # fliegen und die vollstaendige Liste danach stehen (LETZT_HALT). Dieser Halt
 # braucht Stille in der Tonspur - ohne sie muesste der Punkt mitten im
@@ -516,17 +522,235 @@ def google_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
     return worte
 
 
+# -------------------------------------------------- Studio-Stimmen (ohne Marks)
+# Studio-Stimmen klingen natuerlicher als Neural2, kennen aber kein <mark>:
+# die API lehnt es mit HTTP 400 ab ("`<mark>` tags are not currently supported
+# by Studio voices"), und ohne Marks kommt eine leere timepoints-Liste zurueck
+# (am 17.08.2026 gegen die API geprueft, fuer Chirp3-HD ebenso). Die Zeitachse
+# entsteht deshalb selbst: jeder Satz wird einzeln synthetisiert, die Stuecke
+# werden als rohes PCM aneinandergesetzt, die Pausen als Stille eingerechnet.
+# Damit sind die SATZGRENZEN sample-exakt - und genau dort haengen die Anker
+# des Szenen-Layouts (ein Stichpunkt je Satz). Die Wortzeiten innerhalb eines
+# Satzes werden nach Zeichenlaenge interpoliert; feiner braucht sie nur der
+# Untertitel-Umbruch innerhalb eines langen Satzes.
+#
+# Drei Messungen tragen diesen Aufbau (17.08.2026, en-US-Studio-Q):
+#   - Satzweise synthetisiert dauert ein Absatz 36.83s, in einem Stueck
+#     36.98s: Studio verliert satzweise praktisch nichts.
+#   - Vor-/Nachlaufstille eines Einzelclips 0-30ms vorn, 60-80ms hinten -
+#     kein Trimmen noetig, es addiert sich nichts auf.
+#   - speakingRate wirkt (27.53s -> 25.34s bei 1.15), das Byte-Limit ist
+#     dasselbe wie sonst (5000).
+# Der zuerst gepruefte Weg - Absatz in einem Stueck und Satzgrenzen per
+# silencedetect an eingefuegten <break>-Marken wiederfinden - ist verworfen:
+# ein Doppelpunkt erzeugt schon 0.49s Stille, ein 500-ms-<break> nur 0.56s.
+# Auf dieser Schwelle darf das Layout-Timing nicht stehen.
+# PCM statt MP3, weil MP3-Frames beim Aneinanderhaengen padden; bei rund 90
+# Stuecken waere die Drift sekundengross. Und "text" statt "ssml": ohne Marks
+# braucht es kein SSML mehr, also zaehlen nur die echten Sprechzeichen zur
+# Abrechnung (7'878 statt 32'242 je Bericht).
+STUDIO_SR = 24000            # LINEAR16-Abtastrate
+STUDIO_SATZ_PAUSE = 0.20     # eigene Stille zwischen Saetzen eines Absatzes
+STUDIO_SATZ_MIN = 45         # kuerzere Fragmente an den Vorgaenger haengen
+STUDIO_MAX_BYTES = 4000      # API-Limit 5000 Bytes je Aufruf
+# Nach diesen Woertern ist ein Punkt kein Satzende.
+STUDIO_ABKUERZUNGEN = frozenset((
+    "u.s.", "e.g.", "i.e.", "vs.", "mr.", "mrs.", "ms.", "dr.", "prof.",
+    "no.", "inc.", "corp.", "co.", "ltd.", "llc.", "etc.", "approx.",
+    "est.", "jr.", "sr.", "st.", "fig.", "vol.", "cf.", "al.",
+))
+
+
+def _pause_sekunden(angabe: str) -> float:
+    """"600ms" -> 0.6 (die Pausen sind fuer den SSML-Pfad als Text notiert)."""
+    return float(angabe.removesuffix("ms")) / 1000.0
+
+
+def _saetze_teilen(absatz: str) -> list[str]:
+    """Zerlegt einen Absatz in Saetze, ohne an Abkuerzungen zu zerbrechen.
+
+    Getrennt wird nur, wenn nach dem Satzzeichen ein Grossbuchstabe, eine
+    Ziffer oder ein Anfuehrungszeichen folgt und das Wort davor keine
+    Abkuerzung und keine Initiale ist. Der Bericht ist voll von Zahlen wie
+    "$4,467.80" und Kuerzeln wie "U.S." - ein naiver Split an ". " zerlegt
+    genau die."""
+    grenzen: list[int] = []
+    for m in re.finditer(r"[.!?…][\"')\]”]*\s+", absatz):
+        woerter = absatz[:m.start() + 1].split()
+        letztes = woerter[-1].lower() if woerter else ""
+        danach = absatz[m.end():m.end() + 1]
+        initiale = len(letztes) == 2 and letztes[0].isalpha()
+        if letztes in STUDIO_ABKUERZUNGEN or initiale:
+            continue
+        if danach and not (danach.isupper() or danach.isdigit()
+                           or danach in "\"'“($"):
+            continue
+        grenzen.append(m.end())
+
+    roh: list[str] = []
+    vorher = 0
+    for g in grenzen:
+        roh.append(absatz[vorher:g].strip())
+        vorher = g
+    rest = absatz[vorher:].strip()
+    if rest:
+        roh.append(rest)
+
+    saetze: list[str] = []
+    for s in roh:
+        if saetze and len(s) < STUDIO_SATZ_MIN:
+            saetze[-1] = f"{saetze[-1]} {s}"
+        else:
+            saetze.append(s)
+    return saetze or [absatz.strip()]
+
+
+def _bytes_kappen(satz: str) -> list[str]:
+    """Zerlegt einen ueberlangen Satz an Wortgrenzen unter das API-Limit."""
+    if len(satz.encode()) <= STUDIO_MAX_BYTES:
+        return [satz]
+    happen: list[str] = []
+    offen: list[str] = []
+    breite = 0
+    for tok in satz.split():
+        kosten = len(tok.encode()) + 1
+        if offen and breite + kosten > STUDIO_MAX_BYTES:
+            happen.append(" ".join(offen))
+            offen, breite = [], 0
+        offen.append(tok)
+        breite += kosten
+    if offen:
+        happen.append(" ".join(offen))
+    return happen
+
+
+def _studio_stuecke(text: str) -> list[tuple[str, float]]:
+    """Liefert je Sprechstueck (Satz, Stille davor in Sekunden).
+
+    Die Pausenlaenge steckt wie im Marken-Pfad im Trenner: drei oder mehr
+    Zeilenumbrueche sind eine Kapitelgrenze, zwei eine Absatzgrenze
+    (ton_text setzt sie)."""
+    teile = re.split(r"(\n{2,})", text)
+    absaetze = [(teile[0], 0.0)] + [
+        (teile[i + 1],
+         _pause_sekunden(GOOGLE_KAPITEL_PAUSE if len(teile[i]) > 2
+                         else GOOGLE_ABSATZ_PAUSE))
+        for i in range(1, len(teile) - 1, 2)]
+    stuecke: list[tuple[str, float]] = []
+    for absatz, pause in absaetze:
+        if not absatz.strip():
+            continue
+        for i, satz in enumerate(_saetze_teilen(absatz)):
+            for j, happen in enumerate(_bytes_kappen(satz)):
+                if j:
+                    vor = 0.0            # gekappter Satz laeuft ohne Bruch weiter
+                elif i:
+                    vor = STUDIO_SATZ_PAUSE
+                else:
+                    vor = pause
+                stuecke.append((happen, vor))
+    return stuecke
+
+
+def _wav_nutzlast(roh: bytes) -> bytes:
+    """Schneidet den RIFF-Kopf ab; LINEAR16 kommt als vollstaendige WAV-Datei."""
+    if not roh.startswith(b"RIFF"):
+        return roh
+    pos = 12
+    while pos + 8 <= len(roh):
+        kennung = roh[pos:pos + 4]
+        laenge = int.from_bytes(roh[pos + 4:pos + 8], "little")
+        if kennung == b"data":
+            nutz = roh[pos + 8:pos + 8 + laenge] if laenge else roh[pos + 8:]
+            return nutz[:len(nutz) - len(nutz) % 2]
+        pos += 8 + laenge + (laenge & 1)
+    raise RuntimeError("LINEAR16-Antwort ohne data-Chunk")
+
+
+def _studio_pcm(satz: str, stimme: str, schluessel: str) -> bytes:
+    sprache = "-".join(stimme.split("-")[:2])
+    body = json.dumps({
+        "input": {"text": satz},
+        "voice": {"languageCode": sprache, "name": stimme},
+        "audioConfig": {"audioEncoding": "LINEAR16",
+                        "sampleRateHertz": STUDIO_SR,
+                        "speakingRate": GOOGLE_SPRECHRATE},
+    }).encode()
+    return _wav_nutzlast(base64.b64decode(
+        _google_anfrage(body, schluessel)["audioContent"]))
+
+
+def _worte_verteilen(satz: str, start: float, ende: float) -> list[Wort]:
+    """Verteilt die gemessene Satzdauer nach Zeichenlaenge auf die Tokens."""
+    tokens = satz.split()
+    if not tokens:
+        return []
+    gewicht = [len(t) + 1 for t in tokens]
+    gesamt = sum(gewicht)
+    worte: list[Wort] = []
+    lauf = start
+    for tok, g in zip(tokens, gewicht):
+        dauer = (ende - start) * g / gesamt
+        worte.append(Wort(tok, lauf, lauf + dauer))
+        lauf += dauer
+    letztes = worte[-1]
+    worte[-1] = Wort(letztes.text, letztes.start, ende)   # Rundung auffangen
+    return worte
+
+
+def _pcm_zu_mp3(pcm: bytes, ziel_mp3: Path) -> None:
+    subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-f", "s16le", "-ar", str(STUDIO_SR),
+         "-ac", "1", "-i", "pipe:0", "-b:a", "192k", str(ziel_mp3)],
+        input=pcm, check=True)
+
+
+def studio_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
+    """Vertont satzweise und baut die Zeitachse sample-exakt selbst auf."""
+    schluessel = GOOGLE_TTS_KEY.read_text(encoding="utf-8").strip()
+    stuecke = _studio_stuecke(text)
+    puffer = bytearray()
+    worte: list[Wort] = []
+    zeichen = 0
+    for nr, (satz, pause) in enumerate(stuecke, 1):
+        puffer += b"\x00\x00" * round(pause * STUDIO_SR)
+        start = len(puffer) / 2 / STUDIO_SR
+        puffer += _studio_pcm(satz, stimme, schluessel)
+        ende = len(puffer) / 2 / STUDIO_SR
+        worte.extend(_worte_verteilen(satz, start, ende))
+        zeichen += len(satz)
+        if nr % 15 == 0 or nr == len(stuecke):
+            print(f"  Studio TTS {nr}/{len(stuecke)} Saetze, {ende:.1f}s, "
+                  f"{zeichen} abgerechnete Zeichen")
+    _pcm_zu_mp3(bytes(puffer), ziel_mp3)
+    return worte
+
+
+def _ohne_marken(stimme: str) -> bool:
+    """Stimmfamilien, die keine SSML-Mark-Timepoints liefern."""
+    return "Studio" in stimme or "Chirp" in stimme
+
+
 def tts_mit_worten(text: str, ziel_mp3: Path, cfg: dict[str, str]) -> list[Wort]:
     """Google Cloud TTS, wenn der API-Key hinterlegt ist, sonst edge-tts.
 
-    Der Fallback haelt den Cron-Lauf am Leben: fehlt der Key oder scheitert
-    Google (Netz, Quota, ffprobe), wird mit edge-tts vertont statt abgebrochen."""
+    Die Fallback-Kette haelt den Cron-Lauf am Leben: scheitert die
+    eingestellte Stimme (Netz, Quota, ffmpeg), wird die Marken-Stimme
+    versucht und erst danach edge-tts - abgebrochen wird nie."""
     if GOOGLE_TTS_KEY.exists():
-        try:
-            print(f"Vertonung: Google TTS ({cfg['google_stimme']})")
-            return google_tts_mit_worten(text, ziel_mp3, cfg["google_stimme"])
-        except Exception as e:  # noqa: BLE001
-            print(f"Google TTS fehlgeschlagen ({e}) - Fallback auf edge-tts")
+        stimmen = [cfg["google_stimme"]]
+        ersatz = cfg.get("google_stimme_marken")
+        if ersatz and ersatz not in stimmen:
+            stimmen.append(ersatz)
+        for stimme in stimmen:
+            try:
+                if _ohne_marken(stimme):
+                    print(f"Vertonung: Google TTS satzweise ({stimme})")
+                    return studio_tts_mit_worten(text, ziel_mp3, stimme)
+                print(f"Vertonung: Google TTS ({stimme})")
+                return google_tts_mit_worten(text, ziel_mp3, stimme)
+            except Exception as e:  # noqa: BLE001
+                print(f"Google TTS mit {stimme} fehlgeschlagen ({e})")
     print(f"Vertonung: edge-tts ({cfg['stimme']})")
     return edge_tts_mit_worten(text, ziel_mp3, cfg["stimme"])
 
@@ -1048,7 +1272,11 @@ PRAES_INTRO = "This is the 4chan business board report for {datum_lang}."
 PRAES_HOOK = "Today's top story: {hook}"
 PRAES_AGENDA = "Coming up:"
 AGENDA_TEASER = 3        # so viele Kapitel nennt die Agenda (von sieben)
-TOKENS_PRO_S = 2.30      # gemessene Sprechrate: Neural2-J, speakingRate 1.15
+TOKENS_PRO_S = 2.50      # gemessene Sprechrate ohne Pausen: Studio-Q satzweise
+                         # 2.53 (Neural2-J war 2.30). Zaehlt nur fuer die
+                         # Vorspann-Schaetzung: greift der Fallback auf
+                         # Neural2, wird der Vorspann etwas kurz geschaetzt -
+                         # das kostet hoechstens einen Rahmensatz.
 INTRO_BODEN = 11.5       # Sekunden; darunter wird der Vorspann gestreckt
 PRAES_ZAHLEN = "Before we wrap up, the numbers of the day."
 PRAES_OUTRO = ("That's the board report for today. All source threads and "

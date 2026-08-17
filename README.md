@@ -76,7 +76,7 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
 
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
-   vertont `bericht.md` mit der Stimme `en-US-Neural2-J`. Der Lauf
+   vertont `bericht.md` mit der Stimme `en-US-Studio-Q`. Der Lauf
    bereinigt den Bericht für die Vertonung (`bloecke_erzeugen()`:
    Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus), ergänzt
    knappe gesprochene Rahmen-Sätze (Aufhänger, drei angeteaserte Kapitel,
@@ -84,11 +84,7 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    ersten 30 Sekunden als eigene Kennzahl bewertet; das Video beginnt
    stattdessen mit dem Schlagwort des Vorschaubilds gross im Bild), vertont
    per
-   Google Cloud TTS (Neural2-Stimme; Wort-Zeitstempel über SSML-`<mark>`-
-   Timepoints, absatzweise gestückelt wegen des 5000-Byte-API-Limits; der
-   API-Key liegt ausserhalb des Repos unter
-   `~/.config/boardstats/google_tts_key.txt`, ohne Key fällt der Lauf auf
-   `edge-tts` mit `en-US-GuyNeural` zurück) und baut mit `ffmpeg` ein
+   Google Cloud TTS und baut mit `ffmpeg` ein
    **Szenen-Video** (Overlays aus `szenen.py`, Design-Vokabular wie das
    Vorschaubild): jede Szene zeigt ein Board-Bild vollflächig mit langsamem
    Zoom-Drift (`zoompan`); darüber liegen transparente Text-Overlays, die
@@ -130,6 +126,25 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    fehlt sie ganz oder scheitert der Szenen-Aufbau, entsteht das Video im
    Text-Layout (Text-Happen unten, Titelkarten oben, Wort-Karaoke per
    `libass`) — kein Layout-Problem darf den Upload verhindern.
+   Die **Vertonung** läuft über Google Cloud TTS (API-Key ausserhalb des
+   Repos unter `~/.config/boardstats/google_tts_key.txt`). Studio-Stimmen
+   klingen natürlicher als Neural2, kennen aber kein SSML-`<mark>` — die API
+   lehnt es ab, und ohne Marks gibt es keine Zeitstempel. Weil das
+   Szenen-Layout, die Untertitel und die Kapitelmarken an Zeitstempeln
+   hängen, baut der Lauf die Zeitachse selbst: jeder **Satz** wird einzeln
+   als LINEAR16 synthetisiert, die Stücke werden als rohes PCM
+   aneinandergesetzt und die Pausen (0.2 s zwischen Sätzen, 0.6 s zwischen
+   Absätzen, 2.5 s vor jedem Kapitel) als Stille eingerechnet. Damit sind
+   die Satzgrenzen sample-exakt — genau dort sitzen die Anker der
+   Stichpunkte; innerhalb eines Satzes werden die Wortzeiten nach
+   Zeichenlänge interpoliert. PCM statt MP3, weil MP3-Frames beim
+   Aneinanderhängen padden und die Drift über rund 80 Stücke sekundengross
+   würde; gemessen bleibt die Abweichung über zehn Minuten unter 0.1 s. Der
+   Satz-Splitter trennt nicht an Abkürzungen (`U.S.`) und nicht in Zahlen
+   (`$4,467.80`). Scheitert Studio, vertont der Lauf mit der Marken-Stimme
+   `en-US-Neural2-J` über SSML-`<mark>`-Timepoints (absatzweise gestückelt
+   wegen des 5000-Byte-API-Limits), und ohne Key mit `edge-tts`
+   (`en-US-GuyNeural`) — abgebrochen wird nie.
    Unter der Stimme läuft ein **selbst synthetisiertes Musikbett**
    (`--bett-bauen`, Puls im 80er-Takt mit Arpeggio, 12 Minuten, Datei
    ausserhalb des Repos unter `~/.config/boardstats/bett.opus`) 20 LU unter
