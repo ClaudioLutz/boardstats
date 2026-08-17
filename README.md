@@ -80,10 +80,13 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Vorschaubild): jede Szene zeigt ein Board-Bild vollflächig mit langsamem
    Zoom-Drift (`zoompan`), darüber liegen transparente Text-Overlays, die
    zeitgesteuert ein- und ausblenden — Kapitel-Opener als Lower Third,
-   eine persistente Themen-Karte (Titel plus Stichpunkte, die synchron zum
-   Gesprochenen aufleuchten und stehen bleiben, bis das Thema oder
-   Zwischenthema wechselt; damit läuft keine Sprechsekunde ohne Text im
-   Bild), Zwischenthemen als eigene Mini-Opener, Board-Zitate als
+   eine persistente Themen-Karte, die stehen bleibt, bis das Thema oder
+   Zwischenthema wechselt, und daneben der Stichpunkt, über den gerade
+   gesprochen wird: er erscheint synchron zum Gesprochenen groß in der
+   freien Bildhälfte, steht dort, bis der nächste ihn ablöst, und fliegt
+   dann in die Karte, wo er als Listeneintrag parkt (damit läuft keine
+   Sprechsekunde ohne Text im Bild und die freie Bildhälfte bleibt
+   belebt), Zwischenthemen als eigene Mini-Opener, Board-Zitate als
    4chan-Post-Karte und Kennzahlen als bildschirmfüllende Zahl mit
    Count-up. Das Drehbuch dazu stammt aus dem
    Report-Lauf (`folien.json`, Version 2); wann ein Element erscheint,

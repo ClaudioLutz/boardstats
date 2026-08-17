@@ -116,24 +116,28 @@ KARTE_BREITE = 470
 KARTE_OBEN = 104        # unter dem Ecken-Bug
 KARTE_UNTEN_MAX = 560   # Lower Thirds laufen nie gleichzeitig mit der Karte
 KARTE_ALT = (198, 203, 216)
+KARTE_INNEN = KARTE_BREITE - 34 - 24   # Textbreite im Kasten
+KARTE_TEXT_X = 56       # Einzug des Punkt-Textes (neben dem Quadrat)
+KARTE_PUNKT_FONT = 25
 
 
-def themen_karte(titel: str, punkte: list[str], sichtbar: int,
-                 lage: str = "left") -> Image.Image:
-    """Persistente Themen-Karte: Kapitel- oder Zwischenthemen-Titel mit
-    auflaufenden Stichpunkten - sie steht, bis das (Sub-)Thema wechselt,
-    damit das Gesprochene immer von Text gestuetzt ist. Der juengste Punkt
-    ist hervorgehoben; passt der Verlauf nicht mehr in die Hoehe, werden
-    die aeltesten Punkte verdraengt. Die Bildseite (lage: left/right)
-    bestimmt das Drehbuch."""
-    bild = _leer()
-    d = ImageDraw.Draw(bild)
+def _karte_layout(d: ImageDraw.ImageDraw, titel: str, punkte: list[str],
+                  sichtbar: int, lage: str
+                  ) -> tuple[int, list[str], list[list[str]], list[int], int]:
+    """Layoutrechnung der Themen-Karte, getrennt vom Zeichnen.
+
+    Zurueck kommen die linke Kante, die Titelzeilen, die tatsaechlich
+    angezeigten Punkt-Bloecke, deren y-Positionen und die Unterkante des
+    Kastens. Getrennt, weil zwei Aufrufer dieselbe Rechnung brauchen:
+    themen_karte zum Zeichnen und karte_punkt_ziel fuer das Flugziel der
+    Fokus-Karte. Die Position darf nicht aus dem vorigen Stand
+    hochgerechnet werden - greift die Verdraengung, rutscht der juengste
+    Punkt nach oben statt eine Zeile nach unten."""
     x = B - MARGIN - KARTE_BREITE if lage == "right" else MARGIN
-    innen = KARTE_BREITE - 34 - 24
     tf = folien._font(True, 30)
-    tzeilen = folien._umbrechen(d, titel.upper(), tf, innen)[:2]
-    pf = folien._font(True, 25)
-    bloecke = [folien._umbrechen(d, p.upper(), pf, innen)[:2]
+    tzeilen = folien._umbrechen(d, titel.upper(), tf, KARTE_INNEN)[:2]
+    pf = folien._font(True, KARTE_PUNKT_FONT)
+    bloecke = [folien._umbrechen(d, p.upper(), pf, KARTE_INNEN)[:2]
                for p in punkte[:max(sichtbar, 0)]]
     # von hinten so viele Punkte aufnehmen wie reinpassen (der juengste zuerst)
     h = 20 + len(tzeilen) * 38 + (18 if bloecke else 0) + 20
@@ -144,28 +148,117 @@ def themen_karte(titel: str, punkte: list[str], sichtbar: int,
             break
         anzeige.insert(0, zeilen)
         h += dh
-    unten = KARTE_OBEN + h
+    y = KARTE_OBEN + 20 + len(tzeilen) * 38 + (18 if anzeige else 0)
+    punkt_y: list[int] = []
+    for zeilen in anzeige:
+        y += 10
+        punkt_y.append(y)
+        y += len(zeilen) * 32
+    return x, tzeilen, anzeige, punkt_y, KARTE_OBEN + h
+
+
+def themen_karte(titel: str, punkte: list[str], sichtbar: int,
+                 lage: str = "left") -> Image.Image:
+    """Persistente Themen-Karte: Kapitel- oder Zwischenthemen-Titel mit
+    den bereits geparkten Stichpunkten - sie steht, bis das (Sub-)Thema
+    wechselt. Der Punkt, ueber den gerade gesprochen wird, steht nicht
+    hier, sondern als fokus_punkt in der freien Bildhaelfte; er landet
+    hier erst, wenn der naechste ihn ersetzt. Der juengste gelandete
+    Punkt bleibt hervorgehoben, damit die Liste eine Leserichtung hat.
+    Passt der Verlauf nicht mehr in die Hoehe, werden die aeltesten
+    Punkte verdraengt. Die Bildseite (lage: left/right) bestimmt das
+    Drehbuch."""
+    bild = _leer()
+    d = ImageDraw.Draw(bild)
+    x, tzeilen, anzeige, punkt_y, unten = _karte_layout(
+        d, titel, punkte, sichtbar, lage)
     d.rounded_rectangle([x, KARTE_OBEN, x + KARTE_BREITE, unten],
                         radius=12, fill=(0, 0, 0, 160))
     d.rectangle([x, KARTE_OBEN + 12, x + 8, unten - 12], fill=AKZENT)
     y = KARTE_OBEN + 20
     for z in tzeilen:
-        d.text((x + 34, y), z, font=tf, fill=HELL,
+        d.text((x + 34, y), z, font=folien._font(True, 30), fill=HELL,
                stroke_width=2, stroke_fill=(0, 0, 0))
         y += 38
     if anzeige:
         d.rectangle([x + 34, y + 4, x + 34 + 56, y + 8], fill=AKZENT)
-        y += 18
-    for i, zeilen in enumerate(anzeige):
-        y += 10
+    pf = folien._font(True, KARTE_PUNKT_FONT)
+    for i, (zeilen, py) in enumerate(zip(anzeige, punkt_y)):
         aktiv = i == len(anzeige) - 1
-        d.rectangle([x + 34, y + 9, x + 44, y + 19],
+        d.rectangle([x + 34, py + 9, x + 44, py + 19],
                     fill=AKZENT if aktiv else GEDIMMT)
-        for z in zeilen:
-            d.text((x + 56, y), z, font=pf,
+        for j, z in enumerate(zeilen):
+            d.text((x + KARTE_TEXT_X, py + j * 32), z, font=pf,
                    fill=HELL if aktiv else KARTE_ALT)
-            y += 32
     return bild
+
+
+def karte_punkt_ziel(titel: str, punkte: list[str], sichtbar: int,
+                     lage: str = "left") -> tuple[int, int] | None:
+    """Wo der Text des juengsten Punkts im Kartenstand `sichtbar` steht -
+    das Flugziel der Fokus-Karte. Gerechnet wird mit genau dem Stand, der
+    nach der Landung geschnitten wird."""
+    x, _, anzeige, punkt_y, _ = _karte_layout(
+        ImageDraw.Draw(_leer()), titel, punkte, sichtbar, lage)
+    if not anzeige or not punkt_y:
+        return None
+    return x + KARTE_TEXT_X, punkt_y[-1]
+
+
+def karte_text(text: str) -> str:
+    """Der Stichpunkt so, wie ihn die Themen-Karte zeigt: auf die
+    Kartenbreite umbrochen und auf zwei Zeilen gekappt.
+
+    Die Fokus-Karte in der Bildmitte hat deutlich mehr Platz. Ohne diese
+    Kappung stuende dort Text, der beim Parken in der Karte wegfaellt -
+    das Parken waere dann ein sichtbarer Informationsverlust."""
+    zeilen = folien._umbrechen(ImageDraw.Draw(_leer()), text.upper(),
+                              folien._font(True, KARTE_PUNKT_FONT),
+                              KARTE_INNEN)[:2]
+    return " ".join(zeilen)
+
+
+FOKUS_BREITE = 620
+FOKUS_MITTE = 318       # vertikale Mitte des Kastens: hoch genug, dass ein
+                        # ein- oder zweizeiliger Kapitel-Opener darunter Platz
+                        # hat (dessen Bande beginnt bei y=426), tief genug,
+                        # dass die Bildmitte belebt wird und nicht der
+                        # Kopfbereich. Bei einem dreizeiligen Opener (Bande ab
+                        # y=362) beruehrt eine zweizeilige Fokus-Karte die
+                        # Bande auf den letzten rund 24 px - verdeckt wird
+                        # dabei kein Text, nur zwei dunkle Flaechen stossen
+                        # aneinander.
+FOKUS_RAND = 28
+FOKUS_ZEILE = 44
+
+
+def fokus_punkt(text: str, lage: str = "left") -> tuple[Image.Image, int, int]:
+    """Der Stichpunkt, ueber den gerade gesprochen wird: gross in der
+    freien Bildhaelfte gegenueber der Themen-Karte. Danach fliegt er in
+    die Karte und parkt dort (video_report._lage).
+
+    Zurueck kommen Bild und die Textecke im 1280x720-Raster, damit der
+    Renderer das Flugziel aus der Kartenposition ableiten kann - bewegt
+    wird das zugeschnittene Overlay, dessen Ecke nicht die Textecke ist.
+
+    Der Kasten ist mitgezeichnet: die Karte sitzt auf rohem Board-Motiv,
+    und heller Text ohne Grund darunter ist genau der Lesbarkeitsfehler,
+    den das Layout sonst vermeidet."""
+    bild = _leer()
+    d = ImageDraw.Draw(bild)
+    x = MARGIN if lage == "right" else B - MARGIN - FOKUS_BREITE
+    f = folien._font(True, 34)
+    zeilen = folien._umbrechen(d, text.upper(), f,
+                               FOKUS_BREITE - 2 * FOKUS_RAND)[:3]
+    h = 24 + len(zeilen) * FOKUS_ZEILE + 24
+    oben = FOKUS_MITTE - h // 2
+    d.rounded_rectangle([x, oben, x + FOKUS_BREITE, oben + h],
+                        radius=14, fill=(0, 0, 0, 170))
+    d.rectangle([x, oben + 14, x + 6, oben + h - 14], fill=AKZENT)
+    for i, z in enumerate(zeilen):
+        d.text((x + FOKUS_RAND, oben + 24 + i * FOKUS_ZEILE), z, font=f,
+               fill=HELL, stroke_width=2, stroke_fill=(0, 0, 0))
+    return bild, x + FOKUS_RAND, oben + 24
 
 
 def zitat_post(text: str, datum: str) -> Image.Image:

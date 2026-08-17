@@ -78,10 +78,14 @@ vollflaechigem, langsam zoomendem Board-Bild (ffmpeg zoompan, je Szene ein
 eigener kleiner ffmpeg-Lauf, am Ende per concat zusammengefuegt); aller
 Text liegt als transparente PNG-Overlays (szenen.py) darueber und blendet
 zeitgesteuert ein und aus: Kapitel-Opener als Lower Third, eine persistente
-Themen-Karte (Titel + auflaufende Stichpunkte, Bildseite bestimmt das
-Drehbuch), die steht, bis das Thema oder Zwischenthema wechselt - keine
-Sprechsekunde ohne Text im Bild (Nutzeranforderung 17.08.) -, Zitate als
-4chan-Post-Karte, Kennzahlen als Gross-Zahl mit Count-up. Gesprochen wird
+Themen-Karte (Titel + Liste der geparkten Stichpunkte, Bildseite bestimmt
+das Drehbuch), die steht, bis das Thema oder Zwischenthema wechselt, dazu
+der Stichpunkt, ueber den gerade gesprochen wird, gross in der freien
+Bildhaelfte: er steht dort, bis der naechste ihn abloest, und fliegt dann in
+die Karte, wo er als Listeneintrag parkt (Nutzerwunsch 17.08. abends, "damit
+haben wir den toten Platz lebendig gemacht") - keine Sprechsekunde ohne Text
+im Bild (Nutzeranforderung 17.08.) -, Zitate als 4chan-Post-Karte,
+Kennzahlen als Gross-Zahl mit Count-up. Gesprochen wird
 unveraendert der ganze Berichtstext samt Rahmen-Saetzen. Scheitert der
 Szenen-Aufbau, greift v5; folien.json ohne Version faellt auf die
 v6-Folien zurueck - kein Layout-Problem darf den Upload verhindern.
@@ -91,6 +95,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import hashlib
 import json
 import re
 import subprocess
@@ -483,6 +488,41 @@ def tts_mit_worten(text: str, ziel_mp3: Path, cfg: dict[str, str]) -> list[Wort]
             print(f"Google TTS fehlgeschlagen ({e}) - Fallback auf edge-tts")
     print(f"Vertonung: edge-tts ({cfg['stimme']})")
     return edge_tts_mit_worten(text, ziel_mp3, cfg["stimme"])
+
+
+def ton_holen(text: str, ziel_mp3: Path, cfg: dict[str, str],
+              cache: bool) -> list[Wort]:
+    """Vertonung besorgen, im Testpfad aus dem Cache neben der MP3.
+
+    Am Layout wird in mehreren Renderlaeufen gearbeitet, waehrend Text und
+    Stimme unveraendert bleiben; jeder Lauf kostet sonst wieder die vollen
+    rund 8'500 abgerechneten TTS-Zeichen. Der Cache greift nur mit
+    --nur-video und nur, wenn Text und Stimme bitgleich sind - der
+    Cron-Lauf vertont also immer frisch."""
+    pfad = ziel_mp3.with_suffix(".worte.json")
+    schluessel = hashlib.sha1(
+        f"{cfg['google_stimme']}|{cfg['stimme']}|{text}".encode()).hexdigest()
+    if cache and ziel_mp3.exists() and pfad.exists():
+        try:
+            d = json.loads(pfad.read_text("utf-8"))
+            if d.get("schluessel") == schluessel:
+                worte = [Wort(str(w[0]), float(w[1]), float(w[2]))
+                         for w in d["worte"]]
+                print(f"Vertonung aus dem Cache: {len(worte)} Woerter "
+                      f"({pfad.name})")
+                return worte
+            print("Ton-Cache passt nicht zum Text - vertone neu")
+        except (OSError, ValueError, TypeError, KeyError, IndexError) as e:
+            print(f"Ton-Cache unbrauchbar ({e}) - vertone neu")
+    worte = tts_mit_worten(text, ziel_mp3, cfg)
+    if cache:
+        try:
+            pfad.write_text(json.dumps(
+                {"schluessel": schluessel,
+                 "worte": [[w.text, w.start, w.end] for w in worte]}), "utf-8")
+        except OSError as e:
+            print(f"Ton-Cache nicht geschrieben ({e})")
+    return worte
 
 
 # ----------------------------------------------------------- SRT-Untertitel
@@ -1372,6 +1412,15 @@ class Overlay:
                           # die Karte hereinfaehrt (nur beim ersten Erscheinen)
     ausblenden: bool = False   # setzt nur der Renderer: Overlay endet in
                                # dieser Szene und darf weich weggehen
+    einblenden: bool = True    # setzt nur der Renderer: Overlay beginnt in
+                               # dieser Szene (sonst laeuft es weiter und
+                               # darf an der Naht nicht neu aufblenden)
+    weiter: bool = False       # dieses Stueck ist an einer Szenengrenze
+                               # abgeschnitten und laeuft dort weiter: es darf
+                               # an der Naht nicht ausblenden
+    flug_ab: float | None = None   # ab dieser Zeit fliegt das Overlay nach
+    flug_x: int = 0                # (flug_x, flug_y) und verblasst dabei -
+    flug_y: int = 0                # so parkt ein Fokus-Punkt in der Karte
 
 
 @dataclass
@@ -1380,6 +1429,34 @@ class Szene:
     start: float          # globaler Start; das Ende ist der Start der naechsten
     zoom_rein: bool = True
     overlays: list[Overlay] = field(default_factory=list)
+
+
+@dataclass
+class KartenStand:
+    """Ein Stand der Themen-Karte: derselbe Kasten mit einem geparkten
+    Stichpunkt mehr. Bewusst eine Dataclass und kein Tupel - beim Entpacken
+    eines Tupels ist in dieser Funktion schon einmal ein Name kollidiert."""
+    png: Path
+    x: int
+    y: int
+    von: float
+    bis: float
+    einflug: str = ""
+
+
+@dataclass
+class FokusKarte:
+    """Der Stichpunkt, ueber den gerade gesprochen wird: gross in der freien
+    Bildhaelfte, ab flug_ab auf dem Weg an seinen Platz in der Themen-Karte
+    (ziel_x/ziel_y sind die Ecke des zugeschnittenen Overlays am Ziel)."""
+    png: Path
+    x: int
+    y: int
+    von: float
+    bis: float
+    flug_ab: float | None     # None: der Punkt parkt ohne Flug (harter Schnitt)
+    ziel_x: int
+    ziel_y: int
 
 
 def _post_datum(datum: str) -> str:
@@ -1394,8 +1471,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  ende: float) -> list[Szene]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, die
-    persistente Themen-Karte (Titel + auflaufende Stichpunkte, steht bis
-    zum Themen- oder Zwischenthemen-Wechsel), Zitat-Karten und Kennzahlen
+    persistente Themen-Karte (Titel + geparkte Stichpunkte, steht bis zum
+    Themen- oder Zwischenthemen-Wechsel), der gerade besprochene Stichpunkt
+    als Fokus-Karte in der freien Bildhaelfte, Zitat-Karten und Kennzahlen
     liegen als zeitlich verankerte Overlays darauf - keine Sprechsekunde
     ohne Text im Bild. Die Motiv-Auswahl folgt der v6-Logik: frisches
     eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung."""
@@ -1613,11 +1691,83 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             if art == "zwischen":
                 segmente.append((tz, str(px["titel"]),
                                  str(px.get("lage") or lage)))
-        karten_plan: list[tuple[Path, int, int, float, float, str]] = []
+        # Story-Strecken zwischen den Sonderszenen; lange Strecken werden am
+        # naechsten Stichwort geteilt (= Motivwechsel gegen die Monotonie).
+        # Steht vor der Kartenplanung, weil ein Flug keine Szenengrenze
+        # ueberqueren darf - die Grenzen muessen also vorher bekannt sein.
+        strecken: list[tuple[float, float, tuple[str, dict] | None]] = []
+        cursor = rumpf_start
+        for tz, bis, art, px in gewaehlt:
+            if tz > cursor + 0.3:
+                strecken.append((cursor, tz, None))
+            strecken.append((tz, bis, (art, px)))
+            cursor = bis
+        if naechster > cursor + 0.3:
+            strecken.append((cursor, naechster, None))
+
+        def story_teile(von: float, bis: float) -> list[tuple[float, float]]:
+            """Lange Story-Strecke am naechsten Stichwort teilen."""
+            teile: list[tuple[float, float]] = []
+            s0 = von
+            while bis - s0 > STORY_MAX:
+                kand = [t for t, _ in tags if s0 + 8.0 <= t <= s0 + STORY_MAX]
+                c = kand[-1] if kand else s0 + STORY_MAX
+                teile.append((s0, c))
+                s0 = c
+            teile.append((s0, bis))
+            return teile
+
+        naehte = sorted({naechster} | {
+            grenze for von, bis, so in strecken
+            for paar in (story_teile(von, bis) if so is None else [(von, bis)])
+            for grenze in paar})
+
+        def naht_nach(t: float) -> float:
+            """Erste Szenengrenze nach t, sonst das Kapitelende."""
+            return next((n for n in naehte if n > t + 0.05), naechster)
+
+        karten_plan: list[KartenStand] = []
+        fokus_plan: list[FokusKarte] = []
         for gi, (g0, gtitel, glage) in enumerate(segmente):
             g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
             texte = [str(p["text"]) for t, p in tags if g0 <= t < g1]
-            marken = [g0] + [t for t, p in tags if g0 <= t < g1]
+            zeit = [t for t, p in tags if g0 <= t < g1]
+            # Landezeit je Punkt: er steht als Fokus-Karte in der freien
+            # Bildhaelfte, bis der naechste ihn abloest, und fliegt dann in
+            # die Themen-Karte. Der letzte Punkt parkt vor dem Segmentende,
+            # damit die vollstaendige Liste am Themenende kurz steht. Zu kurze
+            # Fenster bekommen gar keine Fokus-Karte; ihr Punkt erscheint
+            # sofort in der Liste, wie vor der Bewegung.
+            land: list[float] = []
+            fliegt: list[bool] = []
+            zeigt: list[bool] = []
+            for n in range(len(zeit)):
+                wechsel = zeit[n + 1] if n + 1 < len(zeit) \
+                    else g1 - FLUG_DAUER - LETZT_HALT
+                # Der Punkt steht bis zum Wechsel - auch ueber Szenengrenzen
+                # hinweg, dort laeuft er ohne Blende weiter wie die
+                # Themen-Karte. Nur der Flug selbst darf keine Grenze
+                # ueberqueren, weil fade= das Alpha nicht bei halber
+                # Deckkraft fortsetzen kann; faellt eine Grenze in die
+                # Flugzeit, parkt der Punkt beim Wechsel mit hartem Schnitt.
+                f = (wechsel - zeit[n] >= FOKUS_MIN
+                     and naht_nach(wechsel) >= wechsel + FLUG_DAUER)
+                z = wechsel + FLUG_DAUER if f else wechsel
+                steht = z - zeit[n] >= FOKUS_MIN
+                if not steht:
+                    # Zu kurz fuer eine Fokus-Karte: der Punkt erscheint
+                    # sofort in der Liste, wie vor der Bewegung.
+                    f, z = False, zeit[n]
+                # Nur gegen Rueckwaertsspringen sichern, ohne Mindestabstand:
+                # ein Kartenstand mit Dauer 0 wird unten uebersprungen und der
+                # naechste zeigt seinen Punkt mit. Ein Abstand wuerde sich bei
+                # mehreren kurzen Punkten hintereinander aufsummieren und die
+                # Liste gegen die Anker verschieben.
+                gerade = min(max(z, land[-1]) if land else z, g1)
+                fliegt.append(f and abs(gerade - z) < 0.01)
+                zeigt.append(steht and gerade - zeit[n] >= FOKUS_MIN)
+                land.append(gerade)
+            marken = [g0] + land
             beginn = g0
             # Die Karte faehrt nur bei ihrem ersten Stand herein; jeder weitere
             # Stand ist derselbe Kasten mit einem Stichpunkt mehr und muss
@@ -1631,50 +1781,68 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     continue  # zu kurzes Fenster: der naechste Stand deckt es
                 pfad, kx, ky = png(
                     szenen.themen_karte(gtitel, texte, stand, glage))
-                karten_plan.append(
-                    (pfad, kx, ky, beginn, bis_f,
-                     ("rechts" if glage == "right" else "links") if erster
-                     else ""))
+                karten_plan.append(KartenStand(
+                    pfad, kx, ky, beginn, bis_f,
+                    ("rechts" if glage == "right" else "links") if erster
+                    else ""))
                 erster = False
                 beginn = bis_f
+            for n, t_n in enumerate(zeit):
+                if not zeigt[n]:
+                    continue
+                # Flugziel ist die Textecke im Kartenstand nach der Landung.
+                ziel = szenen.karte_punkt_ziel(gtitel, texte, n + 1, glage)
+                if ziel is None:
+                    continue
+                # Derselbe Textinhalt wie in der Karte, sonst verliert der
+                # Punkt beim Parken Text (die Fokus-Karte ist breiter).
+                bild, tx, ty = szenen.fokus_punkt(
+                    szenen.karte_text(texte[n]), glage)
+                pfad, fx, fy = png(bild)
+                # Bewegt wird das zugeschnittene Overlay: sein Ziel ist die
+                # Kartenposition minus dem Textversatz innerhalb des Bildes.
+                fokus_plan.append(FokusKarte(
+                    pfad, fx, fy, t_n, land[n],
+                    land[n] - FLUG_DAUER if fliegt[n] else None,
+                    ziel[0] - (tx - fx), ziel[1] - (ty - fy)))
 
         def karte_auflegen(sz: Szene, a: float, b: float) -> None:
-            for pfad, kx, ky, m0, m1, richtung in karten_plan:
-                a0, b0 = max(a, m0), min(b, m1)
+            for st in karten_plan:
+                a0, b0 = max(a, st.von), min(b, st.bis)
                 if b0 - a0 > 0.02:
                     # Hereinfahren darf nur der Abschnitt, der den echten
                     # Kartenbeginn enthaelt: laeuft dieselbe Karte in der
                     # naechsten Szene weiter (Motivwechsel mitten im Thema),
-                    # muss sie dort stehen. max() gibt m0 bitgleich zurueck,
-                    # der Vergleich braucht also keine Toleranz.
+                    # muss sie dort stehen. max() gibt st.von bitgleich
+                    # zurueck, der Vergleich braucht also keine Toleranz.
                     sz.overlays.append(
-                        Overlay(pfad, a0, b0, 0.0, kx, ky,
-                                richtung if a0 == m0 else ""))
-
-        # Story-Strecken zwischen den Sonderszenen; lange Strecken werden am
-        # naechsten Stichwort geteilt (= Motivwechsel gegen die Monotonie)
-        strecken: list[tuple[float, float, tuple[str, dict] | None]] = []
-        cursor = rumpf_start
-        for tz, bis, art, px in gewaehlt:
-            if tz > cursor + 0.3:
-                strecken.append((cursor, tz, None))
-            strecken.append((tz, bis, (art, px)))
-            cursor = bis
-        if naechster > cursor + 0.3:
-            strecken.append((cursor, naechster, None))
+                        Overlay(st.png, a0, b0, 0.0, st.x, st.y,
+                                st.einflug if a0 == st.von else ""))
+            for fk in fokus_plan:
+                a0, b0 = max(a, fk.von), min(b, fk.bis)
+                if b0 - a0 <= 0.02:
+                    continue
+                # Aufblenden und Einflug nur im Stueck mit dem echten Beginn,
+                # fliegen nur im Stueck, das die ganze Flugzeit enthaelt.
+                # Abgeschnittene Stuecke blenden an der Naht nicht aus
+                # (weiter=True) - sonst verblasst die Karte dort und steht in
+                # der naechsten Szene wieder voll da, ein Flackern. Ohne
+                # weiter=True stand fruehere Fassungen deshalb entweder als
+                # Geisterschrift hinter dem naechsten Punkt oder verliessen
+                # die Bildmitte, bevor ihr Satz gesprochen war.
+                sz.overlays.append(Overlay(
+                    fk.png, a0, b0, 0.35, fk.x, fk.y,
+                    "unten" if a0 == fk.von else "",
+                    flug_ab=(fk.flug_ab if fk.flug_ab is not None
+                             and a0 <= fk.flug_ab + 0.001
+                             and b0 >= fk.bis - 0.001 else None),
+                    flug_x=fk.ziel_x, flug_y=fk.ziel_y,
+                    weiter=b0 < fk.bis - 0.02))
 
         erste_story = True
         for von, bis, sonder in strecken:
             if sonder is None:
-                teile: list[tuple[float, float]] = []
-                s0 = von
-                while bis - s0 > STORY_MAX:
-                    kand = [t for t, _ in tags if s0 + 8.0 <= t <= s0 + STORY_MAX]
-                    c = kand[-1] if kand else s0 + STORY_MAX
-                    teile.append((s0, c))
-                    s0 = c
-                teile.append((s0, bis))
-                for a, b in teile:
+                for a, b in story_teile(von, bis):
                     if erste_story:
                         sz, erste_story = kapitel_szene, False
                     else:
@@ -1727,7 +1895,22 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         s.overlays.append(ov(szenen.outro_tafel(), t + 0.3, ende,
                              einflug="unten"))
 
-    print(f"Szenen: {len(folge)}, Overlays: {ov_nr}")
+    # Je Fokus-Punkt ein eigenes PNG; ueber Naehte geteilte Stuecke teilen es,
+    # deshalb ueber die Pfade zaehlen und nicht ueber die Overlays.
+    fokus = len({o.png for s in folge for o in s.overlays if o.flug_x})
+    fluege = sum(1 for s in folge for o in s.overlays if o.flug_ab is not None)
+    print(f"Szenen: {len(folge)}, Overlays: {ov_nr}, "
+          f"Fokus-Punkte: {fokus} ({fluege} fliegen in die Karte)")
+    # Gegenprobe am Ergebnis: ein Flug muss ganz in seine Szene fallen, sonst
+    # schneidet der Renderer ihn ab (fade= kann Alpha nicht bei halber
+    # Deckkraft fortsetzen). Dafuer sorgt die Naht-Liste in der Planung - wenn
+    # eine kuenftige Aenderung sie umgeht, faellt es hier auf.
+    kanten = [s.start for s in folge[1:]] + [ende]
+    zerschnitten = sum(1 for s, bis in zip(folge, kanten) for o in s.overlays
+                       if o.flug_ab is not None
+                       and (o.start < s.start - 0.01 or o.ende > bis + 0.01))
+    if zerschnitten:
+        print(f"WARNUNG: {zerschnitten} Fluege ragen aus ihrer Szene")
     return folge
 
 
@@ -1749,32 +1932,56 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
 UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
 EINFLUG_DAUER = 0.40     # so lange rueckt eine Karte in ihre Endlage
 EINFLUG_WEG = 72         # aus so vielen Pixeln Versatz kommt sie
+FLUG_DAUER = 0.55        # so lange fliegt ein Fokus-Punkt in die Themen-Karte
+FOKUS_MIN = 1.1          # kuerzer steht kein Fokus-Punkt in der Bildmitte
+LETZT_HALT = 0.6         # so lange steht die vollstaendige Liste am Themenende
 
 
 def _lage(o: Overlay) -> tuple[str, str]:
     """x- und y-Angabe fuer overlay=, bei Bedarf als Bewegungs-Ausdruck.
 
-    Ohne Einflug sind es die festen Koordinaten aus dem Zuschnitt. Mit
-    Einflug startet die Karte um EINFLUG_WEG Pixel versetzt und rueckt mit
-    cubic ease-out an ihren Platz: schnell los, sanft ankommen. Bewusst nur
-    ein kurzer Versatz und nicht ein Anfahren von der Bildkante - sonst waere
+    Zwei Bewegungen sind moeglich, beide als Versatz zur Ruhelage aus dem
+    Zuschnitt. Sie liegen an entgegengesetzten Enden der Standzeit und
+    duerfen deshalb einfach summiert werden.
+
+    Einflug: die Karte startet um EINFLUG_WEG Pixel versetzt und rueckt mit
+    cubic ease-out an ihren Platz - schnell los, sanft ankommen. Bewusst nur
+    ein kurzer Versatz und nicht ein Anfahren von der Bildkante, sonst waere
     die Karte in den ersten Zehnteln teilweise ausserhalb des Bildes und die
     Regel "keine Sprechsekunde ohne Text" nur noch auf dem Papier erfuellt.
-    Zusammen mit dem Alpha-Fade ergibt der Versatz denselben Eindruck, bleibt
-    aber vom ersten Frame an lesbar.
-
     Nach Ablauf der Einflugzeit haelt der if-Zweig die Karte bitgenau auf
     ihrem Platz, damit der Anschluss an den naechsten Kartenstand (harter
-    Schnitt) nicht zittert. Standzeiten unter der doppelten Einflugdauer
-    bleiben statisch: was kaum steht, soll nicht auch noch fahren."""
-    if not o.einflug or o.ende - o.start < 2 * EINFLUG_DAUER:
-        return str(o.x), str(o.y)
-    rest = f"pow(1-(t-{o.start:.3f})/{EINFLUG_DAUER},3)"
-    fertig = f"gt(t,{o.start + EINFLUG_DAUER:.3f})"
-    weg = -EINFLUG_WEG if o.einflug == "links" else EINFLUG_WEG
-    if o.einflug in ("links", "rechts"):
-        return f"'if({fertig},{o.x},{o.x}+{weg}*{rest})'", str(o.y)
-    return str(o.x), f"'if({fertig},{o.y},{o.y}+{weg}*{rest})'"
+    Schnitt) nicht zittert.
+
+    Flug: der Fokus-Punkt wandert in FLUG_DAUER an seinen Platz in der
+    Themen-Karte, mit smoothstep - anfahren und abbremsen, damit das Auge
+    mitkommt. clip() haelt den Weg vor dem Start und nach der Ankunft fest;
+    ein negatives flug_ab (Flug begann in der Vorszene) rechnet dadurch
+    korrekt weiter.
+
+    Standzeiten unter der doppelten Einflugdauer bleiben statisch: was kaum
+    steht, soll nicht auch noch fahren. Bei Enge weicht der Einflug, nicht
+    der Flug - das Parken ist die eigentliche Aussage."""
+    dx: list[str] = []
+    dy: list[str] = []
+    steht = o.ende - o.start - (FLUG_DAUER if o.flug_ab is not None else 0.0)
+    if o.einflug and steht >= 2 * EINFLUG_DAUER:
+        weg = (f"if(gt(t,{o.start + EINFLUG_DAUER:.3f}),0,{EINFLUG_WEG}"
+               f"*pow(1-(t-{o.start:.3f})/{EINFLUG_DAUER},3))")
+        if o.einflug == "links":
+            dx.append(f"-({weg})")
+        elif o.einflug == "rechts":
+            dx.append(f"+({weg})")
+        else:
+            dy.append(f"+({weg})")
+    if o.flug_ab is not None:
+        p = f"clip((t-{o.flug_ab:.3f})/{FLUG_DAUER},0,1)"
+        s = f"(({p})*({p})*(3-2*({p})))"
+        dx.append(f"+({o.flug_x - o.x})*{s}")
+        dy.append(f"+({o.flug_y - o.y})*{s}")
+    xa = f"'{o.x}{''.join(dx)}'" if dx else str(o.x)
+    ya = f"'{o.y}{''.join(dy)}'" if dy else str(o.y)
+    return xa, ya
 
 
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
@@ -1805,8 +2012,13 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
             # Ein Frame Toleranz, weil die Szenengrenzen auf das Frame-Raster
             # gerundet werden und ein Kartenende sonst um Millisekunden
             # "hinausragt" und faelschlich als Fortsetzung gilt.
-            ovs.append(Overlay(o.png, a, b, o.fade, o.x, o.y, ein,
-                               ausblenden=o.ende - t0 <= dauer + 1.0 / FPS))
+            ovs.append(Overlay(
+                o.png, a, b, o.fade, o.x, o.y, ein,
+                ausblenden=(o.ende - t0 <= dauer + 1.0 / FPS
+                            and not o.weiter),
+                einblenden=o.start >= t0,
+                flug_ab=None if o.flug_ab is None else o.flug_ab - t0,
+                flug_x=o.flug_x, flug_y=o.flug_y))
     ovs.append(Overlay(bug.png, 0.0, dauer, 0.0, bug.x, bug.y))
 
     cmd = ["ffmpeg", "-y", "-loglevel", "error"]
@@ -1849,11 +2061,22 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
         kette = "[bgx]"
     for j, o in enumerate(ovs):
         filt = f"[{j + 1}:v]format=rgba"
-        if o.fade > 0:
+        # Aufblenden nur, wo das Overlay wirklich beginnt: ein aus der
+        # Vorszene weiterlaufendes Overlay wuerde sonst an jeder Naht neu
+        # einblenden (o.start ist hier die auf die Szene gekuerzte Zeit).
+        if o.fade > 0 and o.einblenden:
             filt += f",fade=t=in:st={o.start:.3f}:d={o.fade:.2f}:alpha=1"
-            if o.ausblenden:
-                filt += (f",fade=t=out:st={max(o.start, o.ende - o.fade):.3f}"
-                         f":d={o.fade:.2f}:alpha=1")
+        if o.flug_ab is not None:
+            # Waehrend des Flugs verblasst die Karte und der Karteneintrag
+            # erscheint an ihrer Landestelle. Die Grossschrift der Fokus-Karte
+            # und der kleine Eintrag sind nicht deckungsgleich; der
+            # Alpha-Uebergang deckt den Groessenwechsel ab.
+            fa = max(0.0, o.flug_ab + 0.45 * FLUG_DAUER)
+            filt += (f",fade=t=out:st={fa:.3f}"
+                     f":d={max(0.08, o.flug_ab + FLUG_DAUER - fa):.2f}:alpha=1")
+        elif o.fade > 0 and o.ausblenden:
+            filt += (f",fade=t=out:st={max(o.start, o.ende - o.fade):.3f}"
+                     f":d={o.fade:.2f}:alpha=1")
         filt += f"[o{j}]"
         teile.append(filt)
         xa, ya = _lage(o)
@@ -2206,7 +2429,7 @@ def main() -> None:
     text = "\n\n".join(b.text for b in bloecke_ton)
 
     print("erzeuge Vertonung mit Wort-Zeitstempeln ...")
-    worte = tts_mit_worten(text, audio_mp3, cfg)
+    worte = ton_holen(text, audio_mp3, cfg, args.nur_video)
     print(f"{len(worte)} Woerter erkannt")
     block_worte = worte_zu_bloecken(worte, bloecke_ton)
     ende = (worte[-1].end if worte else 0.0) + 3.0  # Puffer, -shortest kappt
