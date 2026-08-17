@@ -113,9 +113,11 @@ you know, do NOT turn a paraphrase into the canonical wording, do NOT put
 quotation marks around your own summary. If the attitude is in the thread
 but the fixed phrase is not, describe the attitude WITHOUT quotation
 marks. A quoted line that was never posted is a fabrication, and nothing
-downstream can tell the difference. This applies to PART 1 as well: an
-old bullet whose quote you cannot find in the posts loses its quotation
-marks, it does not get repaired.
+downstream can tell the difference. This applies to what you take from
+PART 2. Quotes already in PART 1 were checked against the full thread when
+they were made and are carried over character-exact per rule 6 - do not
+re-verify them against PART 2 (those posts are not in front of you), but
+never polish or complete one either.
 NO slurs, no insults aimed at people or groups - if a memorable line
 contains one, drop the line. Keep the best lines from the old extract as
 long as they still capture the thread; canon bullets in particular are
