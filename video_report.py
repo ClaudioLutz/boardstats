@@ -1366,6 +1366,12 @@ class Overlay:
     start: float          # Sekunden, global; wird beim Rendern relativiert
     ende: float
     fade: float = 0.35    # 0.0 = harter Schnitt (Count-up-Stufen)
+    x: int = 0            # Lage im 1280x720-Raster (szenen.speichern schneidet zu)
+    y: int = 0
+    einflug: str = ""     # "", "links", "rechts", "unten": Richtung, aus der
+                          # die Karte hereinfaehrt (nur beim ersten Erscheinen)
+    ausblenden: bool = False   # setzt nur der Renderer: Overlay endet in
+                               # dieser Szene und darf weich weggehen
 
 
 @dataclass
@@ -1431,14 +1437,16 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
     ov_nr = 0
 
-    def png(bild) -> Path:
+    def png(bild) -> tuple[Path, int, int]:
         nonlocal ov_nr
-        pfad = szenen.speichern(bild, arbeit / f"overlay_{ov_nr:03d}.png")
+        lage = szenen.speichern(bild, arbeit / f"overlay_{ov_nr:03d}.png")
         ov_nr += 1
-        return pfad
+        return lage
 
-    def ov(bild, start: float, bis: float, fade: float = 0.35) -> Overlay:
-        return Overlay(png(bild), start, bis, fade)
+    def ov(bild, start: float, bis: float, fade: float = 0.35,
+           einflug: str = "") -> Overlay:
+        pfad, x, y = png(bild)
+        return Overlay(pfad, start, bis, fade, x, y, einflug)
 
     folge: list[Szene] = []
 
@@ -1476,7 +1484,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     intro_bis = start_von(kopf_idx) if kopf_idx is not None else erster_kopf
     s = neu(tages_motiv or pool_bild(), 0.0)
     s.overlays.append(ov(szenen.titel_karte(hook, label="TODAY'S TOP STORY"),
-                         0.4, max(intro_bis, 1.0)))
+                         0.4, max(intro_bis, 1.0), einflug="unten"))
 
     # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
     # Motiv seines Kapitels als Vorschau.
@@ -1485,7 +1493,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         s = neu(pool_bild(nur_frisch=True) or tages_motiv, t0)
         s.overlays.append(ov(szenen.titel_karte("Coming up today",
                                                 label="AGENDA"),
-                             t0 + 0.2, start_von(agenda_idx[0])))
+                             t0 + 0.2, start_von(agenda_idx[0]),
+                             einflug="unten"))
         for k, i in enumerate(agenda_idx):
             t = start_von(i)
             bis = start_von(agenda_idx[k + 1]) if k + 1 < len(agenda_idx) \
@@ -1496,7 +1505,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 szenen.titel_karte(eintraege[k],
                                    label=f"COMING UP · {k + 1:02d}",
                                    gross=False),
-                t + 0.15, bis))
+                t + 0.15, bis, einflug="unten"))
 
     # Kapitel
     schluss = next((start_von(i) for i, b in enumerate(bloecke)
@@ -1553,7 +1562,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             szenen.titel_karte(titel,
                                label=f"CHAPTER {k + 1:02d} / {len(koepfe)}",
                                quelle=f"Source: {quelle}" if quelle else ""),
-            kopf_start + 0.2, opener_bis))
+            kopf_start + 0.2, opener_bis, einflug="unten"))
 
         # Sonderereignisse des Drehbuchs im Kapitelrumpf verorten
         ereignisse: list[tuple[float, str, dict]] = []
@@ -1604,26 +1613,43 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             if art == "zwischen":
                 segmente.append((tz, str(px["titel"]),
                                  str(px.get("lage") or lage)))
-        karten_plan: list[tuple[Path, float, float]] = []
+        karten_plan: list[tuple[Path, int, int, float, float, str]] = []
         for gi, (g0, gtitel, glage) in enumerate(segmente):
             g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
             texte = [str(p["text"]) for t, p in tags if g0 <= t < g1]
             marken = [g0] + [t for t, p in tags if g0 <= t < g1]
             beginn = g0
+            # Die Karte faehrt nur bei ihrem ersten Stand herein; jeder weitere
+            # Stand ist derselbe Kasten mit einem Stichpunkt mehr und muss
+            # deshalb hart an seinem Platz bleiben (sonst rutscht die Karte bei
+            # jedem Satz neu ins Bild). Nicht an stand == 0 haengen, denn ein
+            # zu kurzes erstes Fenster wird uebersprungen.
+            erster = True
             for stand in range(len(marken)):
                 bis_f = marken[stand + 1] if stand + 1 < len(marken) else g1
                 if bis_f - beginn <= 0.05 and stand + 1 < len(marken):
                     continue  # zu kurzes Fenster: der naechste Stand deckt es
+                pfad, kx, ky = png(
+                    szenen.themen_karte(gtitel, texte, stand, glage))
                 karten_plan.append(
-                    (png(szenen.themen_karte(gtitel, texte, stand, glage)),
-                     beginn, bis_f))
+                    (pfad, kx, ky, beginn, bis_f,
+                     ("rechts" if glage == "right" else "links") if erster
+                     else ""))
+                erster = False
                 beginn = bis_f
 
         def karte_auflegen(sz: Szene, a: float, b: float) -> None:
-            for pfad, m0, m1 in karten_plan:
+            for pfad, kx, ky, m0, m1, richtung in karten_plan:
                 a0, b0 = max(a, m0), min(b, m1)
                 if b0 - a0 > 0.02:
-                    sz.overlays.append(Overlay(pfad, a0, b0, 0.0))
+                    # Hereinfahren darf nur der Abschnitt, der den echten
+                    # Kartenbeginn enthaelt: laeuft dieselbe Karte in der
+                    # naechsten Szene weiter (Motivwechsel mitten im Thema),
+                    # muss sie dort stehen. max() gibt m0 bitgleich zurueck,
+                    # der Vergleich braucht also keine Toleranz.
+                    sz.overlays.append(
+                        Overlay(pfad, a0, b0, 0.0, kx, ky,
+                                richtung if a0 == m0 else ""))
 
         # Story-Strecken zwischen den Sonderszenen; lange Strecken werden am
         # naechsten Stichwort geteilt (= Motivwechsel gegen die Monotonie)
@@ -1664,11 +1690,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     sz.overlays.append(ov(
                         szenen.titel_karte(str(px["titel"]), label="NEXT UP",
                                            gross=False),
-                        von + 0.1, bis))
+                        von + 0.1, bis, einflug="unten"))
                 elif art == "zitat":
                     sz.overlays.append(ov(
                         szenen.zitat_post(str(px["text"]), _post_datum(datum)),
-                        von + 0.1, bis))
+                        von + 0.1, bis, einflug="unten"))
                 else:
                     _countup_overlays(sz, px, von + 0.2, bis, ov)
 
@@ -1685,7 +1711,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         s.overlays.append(ov(szenen.titel_karte("Numbers of the day",
                                                 label="THE NUMBERS"),
                              t0 + 0.2,
-                             start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0))
+                             start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
+                             einflug="unten"))
         genutzt = zahl_idx[:len(karten)]
         for j, i in enumerate(genutzt):
             t = start_von(i)
@@ -1697,7 +1724,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     if outro_idx is not None:
         t = start_von(outro_idx)
         s = neu(tages_motiv or pool_bild(), t)
-        s.overlays.append(ov(szenen.outro_tafel(), t + 0.3, ende))
+        s.overlays.append(ov(szenen.outro_tafel(), t + 0.3, ende,
+                             einflug="unten"))
 
     print(f"Szenen: {len(folge)}, Overlays: {ov_nr}")
     return folge
@@ -1718,22 +1746,68 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
                           ab + len(stufen) * COUNTUP_TAKT, bis, 0.0))
 
 
+UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
+EINFLUG_DAUER = 0.40     # so lange rueckt eine Karte in ihre Endlage
+EINFLUG_WEG = 72         # aus so vielen Pixeln Versatz kommt sie
+
+
+def _lage(o: Overlay) -> tuple[str, str]:
+    """x- und y-Angabe fuer overlay=, bei Bedarf als Bewegungs-Ausdruck.
+
+    Ohne Einflug sind es die festen Koordinaten aus dem Zuschnitt. Mit
+    Einflug startet die Karte um EINFLUG_WEG Pixel versetzt und rueckt mit
+    cubic ease-out an ihren Platz: schnell los, sanft ankommen. Bewusst nur
+    ein kurzer Versatz und nicht ein Anfahren von der Bildkante - sonst waere
+    die Karte in den ersten Zehnteln teilweise ausserhalb des Bildes und die
+    Regel "keine Sprechsekunde ohne Text" nur noch auf dem Papier erfuellt.
+    Zusammen mit dem Alpha-Fade ergibt der Versatz denselben Eindruck, bleibt
+    aber vom ersten Frame an lesbar.
+
+    Nach Ablauf der Einflugzeit haelt der if-Zweig die Karte bitgenau auf
+    ihrem Platz, damit der Anschluss an den naechsten Kartenstand (harter
+    Schnitt) nicht zittert. Standzeiten unter der doppelten Einflugdauer
+    bleiben statisch: was kaum steht, soll nicht auch noch fahren."""
+    if not o.einflug or o.ende - o.start < 2 * EINFLUG_DAUER:
+        return str(o.x), str(o.y)
+    rest = f"pow(1-(t-{o.start:.3f})/{EINFLUG_DAUER},3)"
+    fertig = f"gt(t,{o.start + EINFLUG_DAUER:.3f})"
+    weg = -EINFLUG_WEG if o.einflug == "links" else EINFLUG_WEG
+    if o.einflug in ("links", "rechts"):
+        return f"'if({fertig},{o.x},{o.x}+{weg}*{rest})'", str(o.y)
+    return str(o.x), f"'if({fertig},{o.y},{o.y}+{weg}*{rest})'"
+
+
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
-                suffix: str, bug_png: Path, vig_png: Path) -> Path:
+                suffix: str, bug: Overlay, vig: Overlay,
+                naechstes: Path | None, naechster_zoom_rein: bool) -> Path:
     """Eine Szene als eigenen kurzen Clip rendern: Motiv mit langsamem
     zoompan-Drift, darueber Vignette, die zeitgesteuerten Text-Overlays und
     zuoberst der Ecken-Bug. Bewusst je Szene ein kleiner, immer gleich
-    aufgebauter ffmpeg-Lauf statt einer grossen fragilen Filterkette."""
+    aufgebauter ffmpeg-Lauf statt einer grossen fragilen Filterkette.
+
+    Wechselt das Motiv zur naechsten Szene, blendet deren Bild in den letzten
+    Frames dieses Clips auf. Der Uebergang steckt damit im Clip selbst und der
+    Zusammenschnitt bleibt ein Streamcopy - kein Re-Encode der Nahtstellen."""
     n = max(f1 - f0, 1)
     dauer = n / FPS
     t0 = f0 / FPS
-    ovs: list[tuple[Path, float, float, float]] = [(vig_png, 0.0, dauer, 0.0)]
+    ovs: list[Overlay] = [Overlay(vig.png, 0.0, dauer, 0.0, vig.x, vig.y)]
     for o in s.overlays:
         a = max(0.0, o.start - t0)
         b = min(dauer, o.ende - t0)
         if b - a > 0.05:
-            ovs.append((o.png, a, b, o.fade))
-    ovs.append((bug_png, 0.0, dauer, 0.0))
+            # Einflug nur, wenn der Overlay in dieser Szene wirklich beginnt
+            ein = o.einflug if o.start >= t0 else ""
+            # Was hier endet, blendet weich weg - auch wenn das Ende genau auf
+            # die Szenengrenze faellt, denn dort blendet der Hintergrund
+            # ebenfalls. Nur was in der naechsten Szene weiterlaeuft, muss bis
+            # zum letzten Frame stehen bleiben, sonst blitzt es an der Naht.
+            # Ein Frame Toleranz, weil die Szenengrenzen auf das Frame-Raster
+            # gerundet werden und ein Kartenende sonst um Millisekunden
+            # "hinausragt" und faelschlich als Fortsetzung gilt.
+            ovs.append(Overlay(o.png, a, b, o.fade, o.x, o.y, ein,
+                               ausblenden=o.ende - t0 <= dauer + 1.0 / FPS))
+    ovs.append(Overlay(bug.png, 0.0, dauer, 0.0, bug.x, bug.y))
 
     cmd = ["ffmpeg", "-y", "-loglevel", "error"]
     if s.motiv is not None:
@@ -1751,20 +1825,40 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                 f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}:r={FPS}"
                 f":d={dauer + 0.3:.3f}"]
         teile = ["[0:v]null[bg]"]
-    for p, *_ in ovs:
+    for o in ovs:
         cmd += ["-loop", "1", "-framerate", str(FPS),
-                "-t", f"{dauer + 0.3:.3f}", "-i", str(p)]
+                "-t", f"{dauer + 0.3:.3f}", "-i", str(o.png)]
     kette = "[bg]"
-    for j, (p, a, b, fd) in enumerate(ovs):
+    uebergang = (s.motiv is not None and naechstes is not None
+                 and naechstes != s.motiv and dauer > 2 * UEBERGANG)
+    if uebergang:
+        cmd += ["-loop", "1", "-framerate", str(FPS),
+                "-t", f"{dauer + 0.3:.3f}", "-i", str(naechstes)]
+        # Das kommende Motiv wird in dem Zoomstand eingeblendet, mit dem die
+        # naechste Szene startet (die Zoomrichtung wechselt je Szene, deshalb
+        # ist der Anschluss stetig) - sonst springt es an der Naht.
+        z0 = 1.0 if naechster_zoom_rein else 1 + ZOOM_HUB
+        teile.append(
+            f"[{len(ovs) + 1}:v]scale={2 * CANVAS_W}:{2 * CANVAS_H}"
+            f":force_original_aspect_ratio=increase,"
+            f"crop={2 * CANVAS_W}:{2 * CANVAS_H},"
+            f"crop=iw/{z0:.3f}:ih/{z0:.3f},scale={CANVAS_W}:{CANVAS_H},"
+            f"format=rgba,fade=t=in:st={dauer - UEBERGANG:.3f}"
+            f":d={UEBERGANG}:alpha=1[nx]")
+        teile.append(f"{kette}[nx]overlay=0:0[bgx]")
+        kette = "[bgx]"
+    for j, o in enumerate(ovs):
         filt = f"[{j + 1}:v]format=rgba"
-        if fd > 0:
-            filt += f",fade=t=in:st={a:.3f}:d={fd:.2f}:alpha=1"
-            if b < dauer - 0.05:
-                filt += f",fade=t=out:st={max(a, b - fd):.3f}:d={fd:.2f}:alpha=1"
+        if o.fade > 0:
+            filt += f",fade=t=in:st={o.start:.3f}:d={o.fade:.2f}:alpha=1"
+            if o.ausblenden:
+                filt += (f",fade=t=out:st={max(o.start, o.ende - o.fade):.3f}"
+                         f":d={o.fade:.2f}:alpha=1")
         filt += f"[o{j}]"
         teile.append(filt)
-        teile.append(f"{kette}[o{j}]overlay=0:0"
-                     f":enable='between(t,{a:.3f},{b:.3f})'[v{j}]")
+        xa, ya = _lage(o)
+        teile.append(f"{kette}[o{j}]overlay=x={xa}:y={ya}"
+                     f":enable='between(t,{o.start:.3f},{o.ende:.3f})'[v{j}]")
         kette = f"[v{j}]"
     ziel = arbeit / f"szene{suffix}_{idx:03d}.mp4"
     cmd += ["-filter_complex", ";".join(teile), "-map", kette,
@@ -1781,16 +1875,20 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
     schneiden (kein Drift zur Tonspur) und mit dem Audio muxen."""
     if not folge:
         raise RuntimeError("keine Szenen")
-    bug_png = szenen.speichern(szenen.bug(datum),
-                               arbeit / f"overlay{suffix}_bug.png")
-    vig_png = szenen.speichern(szenen.vignette(),
-                               arbeit / f"overlay{suffix}_vignette.png")
+    bug_pfad, bx, by = szenen.speichern(
+        szenen.bug(datum), arbeit / f"overlay{suffix}_bug.png")
+    bug = Overlay(bug_pfad, 0.0, 0.0, 0.0, bx, by)
+    vig_pfad, vx, vy = szenen.speichern(
+        szenen.vignette(), arbeit / f"overlay{suffix}_vignette.png")
+    vig = Overlay(vig_pfad, 0.0, 0.0, 0.0, vx, vy)
     grenzen = [round(s.start * FPS) for s in folge]
     grenzen.append(max(int(ende * FPS + 0.5), grenzen[-1] + SZENE_MIN_FRAMES))
     for i in range(1, len(grenzen)):
         grenzen[i] = max(grenzen[i], grenzen[i - 1] + SZENE_MIN_FRAMES)
     clips = [_szene_clip(s, grenzen[i], grenzen[i + 1], i, arbeit, suffix,
-                         bug_png, vig_png)
+                         bug, vig,
+                         folge[i + 1].motiv if i + 1 < len(folge) else None,
+                         folge[i + 1].zoom_rein if i + 1 < len(folge) else True)
              for i, s in enumerate(folge)]
     liste = arbeit / f"szenen{suffix}.txt"
     liste.write_text(
