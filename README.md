@@ -76,7 +76,15 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
 
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
-   vertont `bericht.md` mit der Stimme `en-US-Studio-Q`. Der Lauf
+   vertont `bericht.md` mit der Stimme `en-US-Studio-Q`. Zuvor prüft der Lauf
+   den **Datenstand** des Berichts: dessen Kopfzeile nennt den Zeitpunkt des
+   Crawl-Snapshots, und liegt der mehr als 20 Stunden zurück, endet der Lauf
+   ohne Upload. Das ist der Fall, in dem das Board nicht erreichbar ist: die
+   Pipeline erzeugt dann weiterhin einen Bericht, in dem jeder Thread als
+   «unchanged since the last run» steht, und das Video wäre ein Aufguss mit
+   frischem Titel. Fehlt die Zeile oder ist sie unlesbar, läuft der Tag
+   bewusst ungeprüft weiter (sie wird vom Modell geschrieben); `--nur-video`
+   prüft nicht, `--trotz-altdaten` übersteuert. Der Lauf
    bereinigt den Bericht für die Vertonung (`bloecke_erzeugen()`:
    Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus), ergänzt
    knappe gesprochene Rahmen-Sätze (Aufhänger, drei angeteaserte Kapitel,
@@ -145,6 +153,17 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    `en-US-Neural2-J` über SSML-`<mark>`-Timepoints (absatzweise gestückelt
    wegen des 5000-Byte-API-Limits), und ohne Key mit `edge-tts`
    (`en-US-GuyNeural`) — abgebrochen wird nie.
+   Google gewährt das TTS-Gratiskontingent je Stimmklasse und Kalendermonat
+   (Studio und Neural2 je eine Million Zeichen) und rechnet darüber hinaus
+   automatisch ab. Deshalb führt der Lauf in `arbeit/tts_verbrauch.json`
+   selbst Buch über die abgerechneten Zeichen des Monats, getrennt nach
+   Stimmklasse, und warnt im Log ab 70 Prozent. Ein Kostenbudget auf dem
+   Rechnungskonto kann das nicht leisten: im Gratisbereich sind die Kosten
+   null, ein Budget schlägt also erst an, wenn die Grenze schon gerissen ist.
+   Beides zusammen ergibt die Absicherung — der Zähler warnt davor, das
+   Budget («TTS über Gratiskontingent», 5 CHF, Schwellen 20/50/100 Prozent,
+   gefiltert auf den Dienst Cloud Text-to-Speech) fängt danach und erfasst
+   auch Verbrauch anderer Projekte am selben Rechnungskonto.
    Unter der Stimme läuft ein **selbst synthetisiertes Musikbett**
    (`--bett-bauen`, Puls im 80er-Takt mit Arpeggio, 12 Minuten, Datei
    ausserhalb des Repos unter `~/.config/boardstats/bett.opus`) 20 LU unter

@@ -103,8 +103,9 @@ import subprocess
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape as xml_escape
 
 from PIL import ImageFont
@@ -121,6 +122,41 @@ THUMBNAIL = BASE / "assets" / "thumbnail.jpg"   # Serienbild, wenn der Tag keins
 MOTIV_DIR = BASE / "arbeit" / "thumbs"          # Board-Bild des Tages (Report-Lauf)
 HINTERGRUND_DIR = BASE / "arbeit" / "motive"    # Hintergrundbilder je Thread
 THUMB_MAX_ZEICHEN = 20
+
+# Dieser Lauf haengt selbst nicht an 4chan (einziger Netzzugriff ist Google
+# TTS), wohl aber am Bericht - und der entsteht auch dann, wenn der Crawl
+# seit Tagen nichts Neues holt: dann stehen alle Threads auf "unchanged
+# since the last run", und das Video waere ein frisch betitelter Aufguss auf
+# altem Datenstand. Der Bericht nennt seinen Datenstand in der Kopfzeile,
+# also wird er hier gegen die Uhr geprueft.
+#
+# 20 Stunden als Grenze: der Bericht um 07:35 nutzt den 07:20-Snapshot (rund
+# eine Stunde alt). Faellt nur der Morgencrawl aus, ist es der 20:20 vom
+# Vorabend, um 08:10 also knapp 12 Stunden - das soll durchgehen. Faellt
+# zusaetzlich der Vorabend aus, bleibt 13:20 vom Vortag mit knapp 19
+# Stunden, was gerade noch passiert; ein ganzer ausgefallener Tag (07:20
+# vom Vortag, knapp 25 Stunden) blockt.
+DATENSTAND_MAX_H = 20.0
+ZURICH = ZoneInfo("Europe/Zurich")
+DATENSTAND_RE = re.compile(
+    r"Data as of:\s*(\d{1,2})\.(\d{1,2})\.(\d{4})[\s,]+(\d{1,2}):(\d{2})", re.I)
+
+
+def datenstand_alter_h(markdown: str) -> float | None:
+    """Alter des Datenstands in Stunden aus der Kopfzeile des Berichts.
+
+    None, wenn die Zeile fehlt oder unlesbar ist: sie wird vom Modell
+    geschrieben, und ein Formatwechsel dort darf die Serie nicht anhalten -
+    dann laeuft der Tag wie vorher ungeprueft durch (mit Warnung)."""
+    m = DATENSTAND_RE.search(markdown)
+    if not m:
+        return None
+    tag, monat, jahr, stunde, minute = (int(g) for g in m.groups())
+    try:
+        stand = datetime(jahr, monat, tag, stunde, minute, tzinfo=ZURICH)
+    except ValueError:
+        return None
+    return (datetime.now(ZURICH) - stand).total_seconds() / 3600
 
 SPRACHEN: dict[str, dict[str, str]] = {
     "en": {
@@ -401,6 +437,72 @@ GOOGLE_ABSATZ_PAUSE = "600ms"   # edge-tts pausierte an Absatzgrenzen von selbst
 # Kreuzblende bekommt Luft, statt auf dem letzten Wort zu passieren.
 GOOGLE_KAPITEL_PAUSE = "2500ms"
 
+# Google gewaehrt das Gratiskontingent je Stimmklasse und Kalendermonat
+# (Studio 1 Mio. Zeichen, Neural2 und Chirp 3 je 1 Mio., Wavenet/Standard
+# 4 Mio.). Ueberschritten wird nicht gesperrt, sondern abgerechnet.
+#
+# Das Cloud-Budget des Rechnungskontos ("TTS ueber Gratiskontingent", 5 CHF,
+# Schwellen 20/50/100 %) kann erst anschlagen, wenn schon Kosten entstanden
+# sind - im Gratisbereich sind sie null. Diese Buchhaltung ist die Warnung
+# DAVOR: sie kennt nur den eigenen Verbrauch, sieht ihn aber vollstaendig
+# und bevor er etwas kostet. Ablage unter arbeit/, also ausserhalb des
+# oeffentlichen Repos.
+TTS_VERBRAUCH = BASE / "arbeit" / "tts_verbrauch.json"
+TTS_FREI_PRO_MONAT = 1_000_000
+TTS_WARN_ANTEIL = 0.7     # ab hier warnt der Lauf im Log
+TTS_MONATE_BEHALTEN = 6
+
+
+def _ch(n: int) -> str:
+    """Zahl mit Apostroph als Tausendertrenner - nur fuer Log-Ausgaben an
+    den Betreiber, das oeffentliche Produkt bleibt bei englischen Kommas."""
+    return f"{n:,}".replace(",", "'")
+
+
+def _stimm_klasse(stimme: str) -> str:
+    """Kontingent-Klasse einer Stimme - die Gratismengen gelten je Klasse,
+    nicht je Stimme (en-US-Studio-Q und en-US-Studio-O teilen also eine)."""
+    for klasse in ("Studio", "Chirp3", "Chirp", "Neural2", "Wavenet",
+                   "Polyglot", "News", "Casual"):
+        if klasse in stimme:
+            return klasse
+    return "Standard"
+
+
+def verbrauch_buchen(stimme: str, zeichen: int) -> None:
+    """Abgerechnete Zeichen des Monats fortschreiben und bei Annaeherung an
+    das Gratiskontingent warnen.
+
+    Buchhaltung ist Beiwerk: jeder Fehler hier wird gemeldet und
+    verschluckt, denn die Vertonung ist zu diesem Zeitpunkt schon bezahlt
+    und das Video soll trotzdem entstehen."""
+    klasse = _stimm_klasse(stimme)
+    monat = date.today().strftime("%Y-%m")
+    try:
+        try:
+            daten = json.loads(TTS_VERBRAUCH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            daten = {}
+        if not isinstance(daten, dict):
+            daten = {}
+        stand = daten.setdefault(monat, {})
+        stand[klasse] = int(stand.get(klasse, 0)) + zeichen
+        # Nur die letzten Monate behalten - aeltere sind abgerechnet und
+        # interessieren niemanden mehr.
+        daten = {m: daten[m] for m in sorted(daten, reverse=True)[:TTS_MONATE_BEHALTEN]}
+        TTS_VERBRAUCH.parent.mkdir(parents=True, exist_ok=True)
+        TTS_VERBRAUCH.write_text(
+            json.dumps(daten, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        anteil = stand[klasse] / TTS_FREI_PRO_MONAT
+        print(f"  {klasse}-Kontingent {monat}: {_ch(stand[klasse])} von "
+              f"{_ch(TTS_FREI_PRO_MONAT)} Zeichen ({anteil:.1%})")
+        if anteil >= TTS_WARN_ANTEIL:
+            print(f"  WARNUNG: Gratiskontingent {klasse} zu {anteil:.0%} "
+                  f"aufgebraucht, noch "
+                  f"{_ch(TTS_FREI_PRO_MONAT - stand[klasse])} Zeichen frei")
+    except Exception as e:  # noqa: BLE001
+        print(f"  Verbrauchsbuchhaltung fehlgeschlagen ({e})")
+
 
 def _mp3_dauer(pfad: Path) -> float:
     aus = subprocess.run(
@@ -494,6 +596,9 @@ def google_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
     ziel_mp3.write_bytes(b"")
     versatz = 0.0
     gruppen = _ssml_gruppen(text)
+    # Abgerechnet wird hier die SSML-Laenge, nicht die Textlaenge: die Marks
+    # zaehlen mit und verdreifachen sie (gemessen 32'242 statt 7'878).
+    zeichen = 0
     for nr, (ssml, tokens) in enumerate(gruppen, 1):
         body = json.dumps({
             "input": {"ssml": ssml},
@@ -517,8 +622,10 @@ def google_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
             worte.append(Wort(tok, versatz + starts[i],
                               versatz + max(ende, starts[i])))
         versatz = gesamt
+        zeichen += len(ssml)
         print(f"  Google TTS {nr}/{len(gruppen)}: {len(tokens)} Tokens, "
               f"{gesamt:.1f}s gesamt")
+    verbrauch_buchen(stimme, zeichen)
     return worte
 
 
@@ -723,6 +830,7 @@ def studio_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
             print(f"  Studio TTS {nr}/{len(stuecke)} Saetze, {ende:.1f}s, "
                   f"{zeichen} abgerechnete Zeichen")
     _pcm_zu_mp3(bytes(puffer), ziel_mp3)
+    verbrauch_buchen(stimme, zeichen)
     return worte
 
 
@@ -2872,6 +2980,9 @@ def main() -> None:
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="en")
     ap.add_argument("--nur-video", action="store_true",
                     help="Video nur bauen, ohne Upload und ohne Marker (Test)")
+    ap.add_argument("--trotz-altdaten", action="store_true",
+                    help=f"auch hochladen, wenn der Datenstand des Berichts "
+                         f"aelter als {DATENSTAND_MAX_H:.0f} h ist")
     ap.add_argument("--bett-bauen", action="store_true",
                     help=f"Musikbett neu synthetisieren ({BETT}) und beenden")
     args = ap.parse_args()
@@ -2896,6 +3007,24 @@ def main() -> None:
         return
 
     markdown = bericht_pfad.read_text(encoding="utf-8")
+
+    # Frische des Datenstands, bevor irgendetwas Geld oder Rechenzeit kostet.
+    # Der Testpfad (--nur-video) prueft nicht: er laedt ohnehin nichts hoch
+    # und muss auch an alten Berichten arbeiten koennen.
+    alter = datenstand_alter_h(markdown)
+    if alter is None:
+        print("WARNUNG: keine lesbare Datenstand-Zeile im Bericht - "
+              "Frischepruefung uebersprungen")
+    else:
+        print(f"Datenstand des Berichts: {alter:.1f} h alt")
+        if alter > DATENSTAND_MAX_H and not (args.nur_video or args.trotz_altdaten):
+            print(f"Datenstand aelter als {DATENSTAND_MAX_H:.0f} h - kein "
+                  f"Upload. Das Board liefert offenbar keine neuen Posts "
+                  f"(4chan nicht erreichbar oder Crawl ausgefallen); der "
+                  f"Bericht waere ein Aufguss mit frischem Titel. Mit "
+                  f"--trotz-altdaten trotzdem hochladen.")
+            return
+
     bloecke, abschnitte = abschnitte_erzeugen(markdown)
 
     arbeit = VIDEO_DIR / datum
