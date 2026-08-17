@@ -2382,9 +2382,13 @@ def ton_argumente(audio_mp3: Path, ende: float) -> tuple[list[str], list[str]]:
     # loudnorm gerade gesetzt hat. So greift er nur noch als Notbremse.
     norm = _loudnorm_gemessen(audio_mp3, ende)
     teile.append(f"{quelle}{norm},alimiter=limit=0.95:level=false[ton]")
+    # Stereo und 48 kHz fest: die Sprachdatei ist Mono mit 24 kHz und wuerde
+    # das Ausgabeformat sonst vorgeben (gemessen: Mono bei 96 kHz). Das Bett
+    # traegt eine leichte Breite aus seinen versetzten Echos - in Mono
+    # summiert die weg, und die Stimme bleibt ohnehin in der Mitte.
     return (["-i", str(audio_mp3), *bett_ein],
             ["-filter_complex", ";".join(teile), "-map", "0:v", "-map", "[ton]",
-             "-c:a", "aac", "-b:a", "192k"])
+             "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"])
 
 
 def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
