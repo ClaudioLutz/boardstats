@@ -88,15 +88,21 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    `edge-tts` mit `en-US-GuyNeural` zurück) und baut mit `ffmpeg` ein
    **Szenen-Video** (Overlays aus `szenen.py`, Design-Vokabular wie das
    Vorschaubild): jede Szene zeigt ein Board-Bild vollflächig mit langsamem
-   Zoom-Drift (`zoompan`), darüber liegen transparente Text-Overlays, die
+   Zoom-Drift (`zoompan`), mild weichgezeichnet und leicht abgedunkelt,
+   damit die Feinstruktur der Board-Bilder nicht mit der Schrift
+   konkurriert; darüber liegen transparente Text-Overlays, die
    zeitgesteuert ein- und ausblenden — Kapitel-Opener als Lower Third,
-   eine persistente Themen-Karte, die stehen bleibt, bis das Thema oder
-   Zwischenthema wechselt, und daneben der Stichpunkt, über den gerade
-   gesprochen wird: er erscheint synchron zum Gesprochenen groß in der
-   freien Bildhälfte, steht dort, bis der nächste ihn ablöst, und fliegt
-   dann in die Karte, wo er als Listeneintrag parkt (damit läuft keine
+   der Titel des laufenden Themas oben, darunter die persistente Liste
+   der bereits geparkten Stichpunkte, die stehen bleibt, bis das Thema
+   oder Zwischenthema wechselt, und daneben der Stichpunkt, über den
+   gerade gesprochen wird: er erscheint synchron zum Gesprochenen groß in
+   der freien Bildhälfte, steht dort, bis der nächste ihn ablöst, und
+   fliegt dann in die Liste, wo er parkt (damit läuft keine
    Sprechsekunde ohne Text im Bild und die freie Bildhälfte bleibt
-   belebt), Zwischenthemen als eigene Mini-Opener, Board-Zitate als
+   belebt); nach dem letzten Stichpunkt eines Themas hält das Bild rund
+   zweieinhalb Sekunden auf der vollständigen Liste, wofür die
+   Vertonung an Kapitelgrenzen eine entsprechend lange Pause setzt.
+   Dazu Zwischenthemen als eigene Mini-Opener, Board-Zitate als
    4chan-Post-Karte und Kennzahlen als bildschirmfüllende Zahl mit
    Count-up. Das Drehbuch dazu stammt aus dem
    Report-Lauf (`folien.json`, Version 2); wann ein Element erscheint,

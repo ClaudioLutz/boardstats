@@ -77,14 +77,15 @@ Anker-Phrasen im Berichtstext. Das Video besteht dann aus Szenen mit
 vollflaechigem, langsam zoomendem Board-Bild (ffmpeg zoompan, je Szene ein
 eigener kleiner ffmpeg-Lauf, am Ende per concat zusammengefuegt); aller
 Text liegt als transparente PNG-Overlays (szenen.py) darueber und blendet
-zeitgesteuert ein und aus: Kapitel-Opener als Lower Third, eine persistente
-Themen-Karte (Titel + Liste der geparkten Stichpunkte, Bildseite bestimmt
-das Drehbuch), die steht, bis das Thema oder Zwischenthema wechselt, dazu
-der Stichpunkt, ueber den gerade gesprochen wird, gross in der freien
-Bildhaelfte: er steht dort, bis der naechste ihn abloest, und fliegt dann in
-die Karte, wo er als Listeneintrag parkt (Nutzerwunsch 17.08. abends, "damit
-haben wir den toten Platz lebendig gemacht") - keine Sprechsekunde ohne Text
-im Bild (Nutzeranforderung 17.08.) -, Zitate als 4chan-Post-Karte,
+zeitgesteuert ein und aus: Kapitel-Opener als Lower Third, der Titel des
+laufenden Themas oben, darunter eine persistente Karte mit den geparkten
+Stichpunkten (Bildseite bestimmt das Drehbuch), die steht, bis das Thema
+oder Zwischenthema wechselt, dazu der Stichpunkt, ueber den gerade
+gesprochen wird, gross in der freien Bildhaelfte: er steht dort, bis der
+naechste ihn abloest, und fliegt dann in die Karte, wo er als Listeneintrag
+parkt (Nutzerwunsch 17.08. abends, "damit haben wir den toten Platz lebendig
+gemacht") - keine Sprechsekunde ohne Text im Bild (Nutzeranforderung
+17.08.) -, Zitate als 4chan-Post-Karte,
 Kennzahlen als Gross-Zahl mit Count-up. Gesprochen wird
 unveraendert der ganze Berichtstext samt Rahmen-Saetzen. Scheitert der
 Szenen-Aufbau, greift v5; folien.json ohne Version faellt auf die
@@ -106,7 +107,7 @@ from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-from PIL import ImageFont
+from PIL import Image, ImageEnhance, ImageFilter, ImageFont
 
 import folien
 import szenen
@@ -322,8 +323,24 @@ def bloecke_erzeugen(markdown: str) -> list[Block]:
     return abschnitte_erzeugen(markdown)[0]
 
 
+def ton_text(bloecke: list[Block]) -> str:
+    """Blocktext fuer die Vertonung; der Trenner kodiert die Pausenlaenge.
+
+    Vor jeder Kapitel-Ueberschrift stehen drei Zeilenumbrueche statt zwei,
+    was _ssml_gruppen zur langen Pause macht (GOOGLE_KAPITEL_PAUSE). Ueber
+    die Blockstruktur laeuft nur diese eine Entscheidung, damit die Blocktexte
+    selbst unberuehrt bleiben: worte_zu_bloecken teilt sie wieder per split()
+    auf und darf die Trenner nie sehen."""
+    teile: list[str] = []
+    for i, b in enumerate(bloecke):
+        if i:
+            teile.append("\n\n\n" if b.art == "ueberschrift" else "\n\n")
+        teile.append(b.text)
+    return "".join(teile)
+
+
 def text_fuer_tts(markdown: str) -> str:
-    return "\n\n".join(b.text for b in bloecke_erzeugen(markdown))
+    return ton_text(bloecke_erzeugen(markdown))
 
 
 # ----------------------------------------------------------- TTS mit Wort-Zeitstempeln
@@ -370,6 +387,13 @@ GOOGLE_SSML_MAX_BYTES = 4000    # API-Limit 5000 Bytes je Aufruf, Marks zaehlen 
 GOOGLE_SPRECHRATE = 1.15        # schneller wirkt draengender; die <break>-
                                 # Pausen sind Festzeiten und skalieren NICHT mit
 GOOGLE_ABSATZ_PAUSE = "600ms"   # edge-tts pausierte an Absatzgrenzen von selbst
+# Lange Pause vor jeder Kapitel-Ueberschrift. Sie ist nicht Kosmetik: das
+# Szenen-Layout laesst den letzten Stichpunkt eines Themas in die Karte
+# fliegen und die vollstaendige Liste danach stehen (LETZT_HALT). Dieser Halt
+# braucht Stille in der Tonspur - ohne sie muesste der Punkt mitten im
+# letzten gesprochenen Satz wegfliegen. Zweitnutzen: der Themenwechsel mit
+# Kreuzblende bekommt Luft, statt auf dem letzten Wort zu passieren.
+GOOGLE_KAPITEL_PAUSE = "2500ms"
 
 
 def _mp3_dauer(pfad: Path) -> float:
@@ -385,10 +409,16 @@ def _ssml_gruppen(text: str) -> list[tuple[str, list[str]]]:
 
     Jedes Quell-Token bekommt ein <mark> davor; Absatzgrenzen werden zu
     <break>-Pausen. Gruppen brechen bevorzugt an Absatzgrenzen, notfalls
-    mitten im Absatz (die Mark-Nummern zaehlen je Gruppe ab 0)."""
+    mitten im Absatz (die Mark-Nummern zaehlen je Gruppe ab 0).
+
+    Die Pausenlaenge steht im Trenner: zwei Zeilenumbrueche sind eine
+    Absatzgrenze, drei oder mehr eine Kapitelgrenze mit langer Pause
+    (ton_text setzt sie). Eine Pause an Index 0 ist erlaubt und gewollt -
+    faellt eine Gruppengrenze mit einer Kapitelgrenze zusammen, bliebe der
+    Halt sonst genau dort aus, wo das Layout mit ihm rechnet."""
     gruppen: list[tuple[str, list[str]]] = []
     tokens: list[str] = []
-    pausen: set[int] = set()
+    pausen: dict[int, str] = {}
     bytes_offen = 0
 
     def abschliessen() -> None:
@@ -398,20 +428,31 @@ def _ssml_gruppen(text: str) -> list[tuple[str, list[str]]]:
         teile = []
         for i, tok in enumerate(tokens):
             if i in pausen:
-                teile.append(f'<break time="{GOOGLE_ABSATZ_PAUSE}"/>')
+                teile.append(f'<break time="{pausen[i]}"/>')
             teile.append(f'<mark name="w{i}"/>{xml_escape(tok)}')
         gruppen.append(("<speak>" + " ".join(teile) + "</speak>", tokens.copy()))
         tokens.clear()
         pausen.clear()
         bytes_offen = 0
 
-    for absatz in text.split("\n\n"):
-        if tokens:
-            pausen.add(len(tokens))
+    # re.split mit Gruppe behaelt die Trenner: [Absatz, Trenner, Absatz, ...]
+    stuecke = re.split(r"(\n{2,})", text)
+    absaetze = [(stuecke[0], "")] + [
+        (stuecke[i + 1],
+         GOOGLE_KAPITEL_PAUSE if len(stuecke[i]) > 2 else GOOGLE_ABSATZ_PAUSE)
+        for i in range(1, len(stuecke) - 1, 2)]
+    for absatz, pause in absaetze:
+        offen = pause
         for tok in absatz.split():
             kosten = len(xml_escape(tok).encode()) + 22  # Token + Mark-Tag
             if tokens and bytes_offen + kosten > GOOGLE_SSML_MAX_BYTES:
                 abschliessen()
+            # Erst hier, nach einem moeglichen Gruppenbruch: sonst haengt die
+            # Pause am Ende der alten Gruppe, wo ihr Index kein Token mehr
+            # trifft, und faellt still aus.
+            if offen:
+                pausen[len(tokens)] = offen
+                offen = ""
             tokens.append(tok)
             bytes_offen += kosten
     abschliessen()
@@ -1386,6 +1427,48 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
 
 # ------------------------------------------------- Szenen-Praesentation (v7)
 
+MOTIV_BLUR = 2.4         # Gauss-Radius, bezogen auf 1280 px Bildbreite
+MOTIV_HELL = 0.90        # Helligkeit der Kulisse (1.0 = unveraendert)
+
+
+def motiv_weich(pfad: Path | None, arbeit: Path) -> Path | None:
+    """Board-Motiv als Kulisse aufbereiten: mild unscharf, leicht abgedunkelt.
+
+    Der Text liegt in Kaesten direkt auf dem Motiv, und /biz/-Bilder sind oft
+    Screenshots - deren Feinstruktur konkurriert Strich fuer Strich mit der
+    Schrift. Ein milder Weichzeichner nimmt genau diese Konkurrenz weg und
+    laesst Motiv, Formen und Farben erkennbar (Nutzervorgabe 17.08.: nicht zu
+    dunkel und nicht zu unscharf).
+
+    Gebacken in eine Kopie statt als ffmpeg-Filter, aus drei Gruenden: der
+    Filter muesste zweimal in jede Szenenkette (Motiv und Kreuzblende auf das
+    naechste Motiv), er liefe pro Frame auf dem 2x-Supersampling (2560x1440),
+    und der Radius haengt hier an der Bildbreite statt an der Zoomstufe. Der
+    Zuschnitt bleibt ffmpeg ueberlassen - skaliert wird nicht, sonst wuerde
+    das Supersampling gegen das Zittern von zoompan wirkungslos.
+
+    Scheitert die Aufbereitung, wird das Original benutzt: eine Kulisse ist
+    kein Grund, den Cron-Lauf abzubrechen."""
+    if pfad is None:
+        return None
+    ziel = (arbeit / "weich"
+            / f"{hashlib.sha1(str(pfad).encode()).hexdigest()[:12]}.png")
+    if ziel.exists():
+        return ziel
+    try:
+        with Image.open(pfad) as roh:
+            bild = roh.convert("RGB")
+        radius = MOTIV_BLUR * bild.width / CANVAS_W
+        bild = bild.filter(ImageFilter.GaussianBlur(radius))
+        bild = ImageEnhance.Brightness(bild).enhance(MOTIV_HELL)
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        bild.save(ziel, "PNG")
+    except (OSError, ValueError) as e:
+        print(f"Motiv {pfad.name} nicht aufbereitet ({e}) - nehme das Original")
+        return pfad
+    return ziel
+
+
 ZOOM_HUB = 0.10          # Zoomweg je Szene: 10 % rein oder raus, kaum merklich
 STORY_MAX = 20.0         # spaetestens dann wechselt die Story-Szene das Motiv
 OPENER_MIN = 4.0         # Mindest-Standzeit des Kapitel-Openers: kurze
@@ -1433,9 +1516,11 @@ class Szene:
 
 @dataclass
 class KartenStand:
-    """Ein Stand der Themen-Karte: derselbe Kasten mit einem geparkten
-    Stichpunkt mehr. Bewusst eine Dataclass und kein Tupel - beim Entpacken
-    eines Tupels ist in dieser Funktion schon einmal ein Name kollidiert."""
+    """Ein stehendes Overlay mit Zeitfenster: ein Stand der Themen-Karte
+    (derselbe Kasten mit einem geparkten Stichpunkt mehr) oder der
+    Themen-Titel oben, der ein ganzes Segment lang steht. Bewusst eine
+    Dataclass und kein Tupel - beim Entpacken eines Tupels ist in dieser
+    Funktion schon einmal ein Name kollidiert."""
     png: Path
     x: int
     y: int
@@ -1470,8 +1555,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float) -> list[Szene]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
-    Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, die
-    persistente Themen-Karte (Titel + geparkte Stichpunkte, steht bis zum
+    Jede Szene traegt ein vollflaechiges, mild weichgezeichnetes Motiv
+    (motiv_weich); Kapitel-Opener, der Themen-Titel oben, die persistente
+    Karte mit den geparkten Stichpunkten darunter (beide stehen bis zum
     Themen- oder Zwischenthemen-Wechsel), der gerade besprochene Stichpunkt
     als Fokus-Karte in der freien Bildhaelfte, Zitat-Karten und Kennzahlen
     liegen als zeitlich verankerte Overlays darauf - keine Sprechsekunde
@@ -1529,7 +1615,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     folge: list[Szene] = []
 
     def neu(motiv: Path | None, start: float) -> Szene:
-        s = Szene(motiv, start, zoom_rein=len(folge) % 2 == 0)
+        s = Szene(motiv_weich(motiv, arbeit), start,
+                  zoom_rein=len(folge) % 2 == 0)
         folge.append(s)
         return s
 
@@ -1727,32 +1814,43 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             return next((n for n in naehte if n > t + 0.05), naechster)
 
         karten_plan: list[KartenStand] = []
+        titel_plan: list[KartenStand] = []
         fokus_plan: list[FokusKarte] = []
         for gi, (g0, gtitel, glage) in enumerate(segmente):
             g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
             texte = [str(p["text"]) for t, p in tags if g0 <= t < g1]
             zeit = [t for t, p in tags if g0 <= t < g1]
+            # Der Themen-Titel steht oben und damit ausserhalb der Karte; sein
+            # Kasten gibt vor, wo die Stichpunktliste beginnen darf.
+            tpfad, tx0, ty0 = png(szenen.themen_titel(gtitel))
+            titel_plan.append(KartenStand(tpfad, tx0, ty0, g0, g1, "oben"))
+            karte_oben = szenen.titel_unterkante(gtitel) + 14
             # Landezeit je Punkt: er steht als Fokus-Karte in der freien
             # Bildhaelfte, bis der naechste ihn abloest, und fliegt dann in
-            # die Themen-Karte. Der letzte Punkt parkt vor dem Segmentende,
-            # damit die vollstaendige Liste am Themenende kurz steht. Zu kurze
-            # Fenster bekommen gar keine Fokus-Karte; ihr Punkt erscheint
-            # sofort in der Liste, wie vor der Bewegung.
+            # die Themen-Karte. Der letzte Punkt parkt LETZT_HALT vor dem
+            # Segmentende, damit die vollstaendige Liste am Themenende steht.
+            # Zu kurze Fenster bekommen gar keine Fokus-Karte; ihr Punkt
+            # erscheint sofort in der Liste, wie vor der Bewegung.
             land: list[float] = []
             fliegt: list[bool] = []
             zeigt: list[bool] = []
             for n in range(len(zeit)):
-                wechsel = zeit[n + 1] if n + 1 < len(zeit) \
-                    else g1 - FLUG_DAUER - LETZT_HALT
-                # Der Punkt steht bis zum Wechsel - auch ueber Szenengrenzen
+                if n + 1 < len(zeit):
+                    # Der Flug setzt vor dem Wechsel ein, damit der abgeloeste
+                    # Punkt die Mitte verlassen hat, wenn der neue dort
+                    # ankommt; ohne Flug bleibt er bis zum Wechsel stehen.
+                    ab, halt = zeit[n + 1] - FLUG_VORLAUF, zeit[n + 1]
+                else:
+                    ab, halt = g1 - LETZT_HALT - FLUG_DAUER, g1 - LETZT_HALT
+                # Der Punkt steht bis dahin - auch ueber Szenengrenzen
                 # hinweg, dort laeuft er ohne Blende weiter wie die
                 # Themen-Karte. Nur der Flug selbst darf keine Grenze
                 # ueberqueren, weil fade= das Alpha nicht bei halber
                 # Deckkraft fortsetzen kann; faellt eine Grenze in die
                 # Flugzeit, parkt der Punkt beim Wechsel mit hartem Schnitt.
-                f = (wechsel - zeit[n] >= FOKUS_MIN
-                     and naht_nach(wechsel) >= wechsel + FLUG_DAUER)
-                z = wechsel + FLUG_DAUER if f else wechsel
+                f = (ab - zeit[n] >= FOKUS_MIN
+                     and naht_nach(ab) >= ab + FLUG_DAUER)
+                z = ab + FLUG_DAUER if f else halt
                 steht = z - zeit[n] >= FOKUS_MIN
                 if not steht:
                     # Zu kurz fuer eine Fokus-Karte: der Punkt erscheint
@@ -1777,10 +1875,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             erster = True
             for stand in range(len(marken)):
                 bis_f = marken[stand + 1] if stand + 1 < len(marken) else g1
+                if stand == 0:
+                    # Noch kein Punkt geparkt: die Karte waere ein leerer
+                    # Kasten. Solange traegt der Themen-Titel oben allein.
+                    beginn = bis_f
+                    continue
                 if bis_f - beginn <= 0.05 and stand + 1 < len(marken):
                     continue  # zu kurzes Fenster: der naechste Stand deckt es
                 pfad, kx, ky = png(
-                    szenen.themen_karte(gtitel, texte, stand, glage))
+                    szenen.themen_karte(texte, stand, glage, karte_oben))
                 karten_plan.append(KartenStand(
                     pfad, kx, ky, beginn, bis_f,
                     ("rechts" if glage == "right" else "links") if erster
@@ -1791,7 +1894,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 if not zeigt[n]:
                     continue
                 # Flugziel ist die Textecke im Kartenstand nach der Landung.
-                ziel = szenen.karte_punkt_ziel(gtitel, texte, n + 1, glage)
+                ziel = szenen.karte_punkt_ziel(texte, n + 1, glage, karte_oben)
                 if ziel is None:
                     continue
                 # Derselbe Textinhalt wie in der Karte, sonst verliert der
@@ -1807,7 +1910,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     ziel[0] - (tx - fx), ziel[1] - (ty - fy)))
 
         def karte_auflegen(sz: Szene, a: float, b: float) -> None:
-            for st in karten_plan:
+            for st in titel_plan + karten_plan:
                 a0, b0 = max(a, st.von), min(b, st.bis)
                 if b0 - a0 > 0.02:
                     # Hereinfahren darf nur der Abschnitt, der den echten
@@ -1932,9 +2035,16 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
 UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
 EINFLUG_DAUER = 0.40     # so lange rueckt eine Karte in ihre Endlage
 EINFLUG_WEG = 72         # aus so vielen Pixeln Versatz kommt sie
-FLUG_DAUER = 0.55        # so lange fliegt ein Fokus-Punkt in die Themen-Karte
+FLUG_DAUER = 0.35        # so lange fliegt ein Fokus-Punkt in die Themen-Karte
+FLUG_VORLAUF = 0.25      # so viel vor dem Wechsel setzt er sich in Bewegung:
+                         # der abgeloeste Punkt ist damit rund 0.1 s nach dem
+                         # Wechsel gelandet, waehrend der neue noch einfliegt
+                         # (EINFLUG_DAUER). Vorher starteten beide gleichzeitig
+                         # und begegneten sich 0.55 s lang in der Bildmitte.
 FOKUS_MIN = 1.1          # kuerzer steht kein Fokus-Punkt in der Bildmitte
-LETZT_HALT = 0.6         # so lange steht die vollstaendige Liste am Themenende
+LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
+                         # gedeckt durch GOOGLE_KAPITEL_PAUSE, sonst muesste
+                         # der letzte Punkt im laufenden Satz wegfliegen
 
 
 def _lage(o: Overlay) -> tuple[str, str]:
@@ -1972,6 +2082,8 @@ def _lage(o: Overlay) -> tuple[str, str]:
             dx.append(f"-({weg})")
         elif o.einflug == "rechts":
             dx.append(f"+({weg})")
+        elif o.einflug == "oben":
+            dy.append(f"-({weg})")
         else:
             dy.append(f"+({weg})")
     if o.flug_ab is not None:
@@ -2426,7 +2538,7 @@ def main() -> None:
                                              hook_ton)
     else:
         bloecke_ton = bloecke
-    text = "\n\n".join(b.text for b in bloecke_ton)
+    text = ton_text(bloecke_ton)
 
     print("erzeuge Vertonung mit Wort-Zeitstempeln ...")
     worte = ton_holen(text, audio_mp3, cfg, args.nur_video)

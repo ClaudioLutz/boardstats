@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 import folien
 import thumbnail
@@ -113,93 +113,138 @@ def titel_karte(text: str, label: str = "", quelle: str = "",
 
 
 KARTE_BREITE = 470
-KARTE_OBEN = 104        # unter dem Ecken-Bug
-KARTE_UNTEN_MAX = 560   # Lower Thirds laufen nie gleichzeitig mit der Karte
+KARTE_OBEN = 104        # unter dem Ecken-Bug; mit Themen-Titel oben tiefer
+KARTE_UNTEN_MAX = 600   # Lower Thirds laufen nie gleichzeitig mit der Karte
 KARTE_ALT = (198, 203, 216)
 KARTE_INNEN = KARTE_BREITE - 34 - 24   # Textbreite im Kasten
 KARTE_TEXT_X = 56       # Einzug des Punkt-Textes (neben dem Quadrat)
 KARTE_PUNKT_FONT = 25
+# Deckkraft der Text-Kaesten. Hoeher als die frueheren 160/170: der Text
+# liegt auf rohem Board-Motiv, und dessen Feinstruktur (oft Screenshots mit
+# Text) frisst Kontrast. Zusammen mit der milden Unschaerfe des Motivs
+# (video_report.motiv_weich) ist das Bild noch klar erkennbar, der Text aber
+# nicht mehr in Konkurrenz dazu.
+KARTE_ALPHA = 198
+
+TITEL_OBEN = 74         # unter dem Bug, dessen Text bei y=30 sitzt
+TITEL_RAND = 28
+TITEL_ZEILE = 48
 
 
-def _karte_layout(d: ImageDraw.ImageDraw, titel: str, punkte: list[str],
-                  sichtbar: int, lage: str
-                  ) -> tuple[int, list[str], list[list[str]], list[int], int]:
+def _titel_zeilen(d: ImageDraw.ImageDraw, titel: str
+                  ) -> tuple[list[str], ImageFont.FreeTypeFont]:
+    """Titelzeilen und Schriftgrad fuer den Themen-Titel oben.
+
+    Oben ist die volle Bildbreite frei, deshalb bleibt fast jeder Titel
+    einzeilig; zwei Stufen kleiner Schrift kaufen die Einzeiligkeit auch bei
+    langen Titeln, bevor auf zwei Zeilen umbrochen wird."""
+    breite = B - 2 * MARGIN - 2 * TITEL_RAND - 34
+    for gr in (40, 34, 30):
+        f = folien._font(True, gr)
+        zeilen = folien._umbrechen(d, titel.upper(), f, breite)
+        if len(zeilen) == 1:
+            return zeilen, f
+    return zeilen[:2], f
+
+
+def titel_unterkante(titel: str) -> int:
+    """Unterkante des Themen-Titel-Kastens - darunter beginnt die Karte."""
+    zeilen, _ = _titel_zeilen(ImageDraw.Draw(_leer()), titel)
+    return TITEL_OBEN + 16 + len(zeilen) * TITEL_ZEILE + 16
+
+
+def themen_titel(titel: str) -> Image.Image:
+    """Titel des laufenden (Zwischen-)Themas als eigener Kasten oben links.
+
+    Stand vorher in der Themen-Karte, wo er zwei Nachteile hatte: er nahm
+    der Stichpunktliste Hoehe, und auf Kartenbreite umbrochen brauchte er
+    fast immer zwei Zeilen. Oben traegt er den Platz, den ein laufendes
+    Thema verdient, und darf dafuer kleiner sein als ein Lower Third (40
+    statt 48-56). Kein Kapitel-Label: die Nummer sagt dem Zuschauer
+    nichts, die Kapitelmarken in der Beschreibung tun es."""
+    bild = _leer()
+    d = ImageDraw.Draw(bild)
+    zeilen, f = _titel_zeilen(d, titel)
+    tb = max(d.textlength(z, font=f) for z in zeilen)
+    kb = min(int(tb) + 34 + 2 * TITEL_RAND, B - 2 * MARGIN)
+    unten = titel_unterkante(titel)
+    d.rounded_rectangle([MARGIN, TITEL_OBEN, MARGIN + kb, unten],
+                        radius=12, fill=(0, 0, 0, KARTE_ALPHA))
+    d.rectangle([MARGIN, TITEL_OBEN + 12, MARGIN + 8, unten - 12], fill=AKZENT)
+    for i, z in enumerate(zeilen):
+        d.text((MARGIN + 34, TITEL_OBEN + 16 + i * TITEL_ZEILE), z, font=f,
+               fill=HELL, stroke_width=2, stroke_fill=(0, 0, 0))
+    return bild
+
+
+def _karte_layout(d: ImageDraw.ImageDraw, punkte: list[str], sichtbar: int,
+                  lage: str, oben: int
+                  ) -> tuple[int, list[list[str]], list[int], int]:
     """Layoutrechnung der Themen-Karte, getrennt vom Zeichnen.
 
-    Zurueck kommen die linke Kante, die Titelzeilen, die tatsaechlich
-    angezeigten Punkt-Bloecke, deren y-Positionen und die Unterkante des
-    Kastens. Getrennt, weil zwei Aufrufer dieselbe Rechnung brauchen:
-    themen_karte zum Zeichnen und karte_punkt_ziel fuer das Flugziel der
-    Fokus-Karte. Die Position darf nicht aus dem vorigen Stand
-    hochgerechnet werden - greift die Verdraengung, rutscht der juengste
-    Punkt nach oben statt eine Zeile nach unten."""
+    Zurueck kommen die linke Kante, die tatsaechlich angezeigten
+    Punkt-Bloecke, deren y-Positionen und die Unterkante des Kastens.
+    Getrennt, weil zwei Aufrufer dieselbe Rechnung brauchen: themen_karte
+    zum Zeichnen und karte_punkt_ziel fuer das Flugziel der Fokus-Karte.
+    Die Position darf nicht aus dem vorigen Stand hochgerechnet werden -
+    greift die Verdraengung, rutscht der juengste Punkt nach oben statt
+    eine Zeile nach unten."""
     x = B - MARGIN - KARTE_BREITE if lage == "right" else MARGIN
-    tf = folien._font(True, 30)
-    tzeilen = folien._umbrechen(d, titel.upper(), tf, KARTE_INNEN)[:2]
     pf = folien._font(True, KARTE_PUNKT_FONT)
     bloecke = [folien._umbrechen(d, p.upper(), pf, KARTE_INNEN)[:2]
                for p in punkte[:max(sichtbar, 0)]]
     # von hinten so viele Punkte aufnehmen wie reinpassen (der juengste zuerst)
-    h = 20 + len(tzeilen) * 38 + (18 if bloecke else 0) + 20
+    h = 20 + 20
     anzeige: list[list[str]] = []
     for zeilen in reversed(bloecke):
         dh = len(zeilen) * 32 + 10
-        if anzeige and h + dh > KARTE_UNTEN_MAX - KARTE_OBEN:
+        if anzeige and h + dh > KARTE_UNTEN_MAX - oben:
             break
         anzeige.insert(0, zeilen)
         h += dh
-    y = KARTE_OBEN + 20 + len(tzeilen) * 38 + (18 if anzeige else 0)
+    y = oben + 20
     punkt_y: list[int] = []
     for zeilen in anzeige:
         y += 10
         punkt_y.append(y)
         y += len(zeilen) * 32
-    return x, tzeilen, anzeige, punkt_y, KARTE_OBEN + h
+    return x, anzeige, punkt_y, oben + h
 
 
-def themen_karte(titel: str, punkte: list[str], sichtbar: int,
-                 lage: str = "left") -> Image.Image:
-    """Persistente Themen-Karte: Kapitel- oder Zwischenthemen-Titel mit
-    den bereits geparkten Stichpunkten - sie steht, bis das (Sub-)Thema
-    wechselt. Der Punkt, ueber den gerade gesprochen wird, steht nicht
-    hier, sondern als fokus_punkt in der freien Bildhaelfte; er landet
-    hier erst, wenn der naechste ihn ersetzt. Der juengste gelandete
-    Punkt bleibt hervorgehoben, damit die Liste eine Leserichtung hat.
-    Passt der Verlauf nicht mehr in die Hoehe, werden die aeltesten
-    Punkte verdraengt. Die Bildseite (lage: left/right) bestimmt das
-    Drehbuch."""
+def themen_karte(punkte: list[str], sichtbar: int, lage: str = "left",
+                 oben: int = KARTE_OBEN) -> Image.Image:
+    """Persistente Liste der bereits geparkten Stichpunkte - sie steht, bis
+    das (Sub-)Thema wechselt. Der Punkt, ueber den gerade gesprochen wird,
+    steht nicht hier, sondern als fokus_punkt in der freien Bildhaelfte; er
+    landet hier erst, wenn der naechste ihn ersetzt. Alle geparkten Punkte
+    sind gleich gedimmt: hervorgehoben ist, was in der Mitte steht, und
+    zwei gleichzeitige Hervorhebungen wuerden sich widersprechen. Passt der
+    Verlauf nicht mehr in die Hoehe, werden die aeltesten Punkte
+    verdraengt. Die Bildseite (lage: left/right) bestimmt das Drehbuch, den
+    oberen Rand der Themen-Titel darueber."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
-    x, tzeilen, anzeige, punkt_y, unten = _karte_layout(
-        d, titel, punkte, sichtbar, lage)
-    d.rounded_rectangle([x, KARTE_OBEN, x + KARTE_BREITE, unten],
-                        radius=12, fill=(0, 0, 0, 160))
-    d.rectangle([x, KARTE_OBEN + 12, x + 8, unten - 12], fill=AKZENT)
-    y = KARTE_OBEN + 20
-    for z in tzeilen:
-        d.text((x + 34, y), z, font=folien._font(True, 30), fill=HELL,
-               stroke_width=2, stroke_fill=(0, 0, 0))
-        y += 38
-    if anzeige:
-        d.rectangle([x + 34, y + 4, x + 34 + 56, y + 8], fill=AKZENT)
+    x, anzeige, punkt_y, unten = _karte_layout(d, punkte, sichtbar, lage, oben)
+    if not anzeige:
+        return bild
+    d.rounded_rectangle([x, oben, x + KARTE_BREITE, unten],
+                        radius=12, fill=(0, 0, 0, KARTE_ALPHA))
+    d.rectangle([x, oben + 12, x + 8, unten - 12], fill=AKZENT)
     pf = folien._font(True, KARTE_PUNKT_FONT)
-    for i, (zeilen, py) in enumerate(zip(anzeige, punkt_y)):
-        aktiv = i == len(anzeige) - 1
-        d.rectangle([x + 34, py + 9, x + 44, py + 19],
-                    fill=AKZENT if aktiv else GEDIMMT)
+    for zeilen, py in zip(anzeige, punkt_y):
+        d.rectangle([x + 34, py + 9, x + 44, py + 19], fill=GEDIMMT)
         for j, z in enumerate(zeilen):
-            d.text((x + KARTE_TEXT_X, py + j * 32), z, font=pf,
-                   fill=HELL if aktiv else KARTE_ALT)
+            d.text((x + KARTE_TEXT_X, py + j * 32), z, font=pf, fill=KARTE_ALT)
     return bild
 
 
-def karte_punkt_ziel(titel: str, punkte: list[str], sichtbar: int,
-                     lage: str = "left") -> tuple[int, int] | None:
+def karte_punkt_ziel(punkte: list[str], sichtbar: int, lage: str = "left",
+                     oben: int = KARTE_OBEN) -> tuple[int, int] | None:
     """Wo der Text des juengsten Punkts im Kartenstand `sichtbar` steht -
     das Flugziel der Fokus-Karte. Gerechnet wird mit genau dem Stand, der
     nach der Landung geschnitten wird."""
-    x, _, anzeige, punkt_y, _ = _karte_layout(
-        ImageDraw.Draw(_leer()), titel, punkte, sichtbar, lage)
+    x, anzeige, punkt_y, _ = _karte_layout(
+        ImageDraw.Draw(_leer()), punkte, sichtbar, lage, oben)
     if not anzeige or not punkt_y:
         return None
     return x + KARTE_TEXT_X, punkt_y[-1]
@@ -253,7 +298,7 @@ def fokus_punkt(text: str, lage: str = "left") -> tuple[Image.Image, int, int]:
     h = 24 + len(zeilen) * FOKUS_ZEILE + 24
     oben = FOKUS_MITTE - h // 2
     d.rounded_rectangle([x, oben, x + FOKUS_BREITE, oben + h],
-                        radius=14, fill=(0, 0, 0, 170))
+                        radius=14, fill=(0, 0, 0, KARTE_ALPHA))
     d.rectangle([x, oben + 14, x + 6, oben + h - 14], fill=AKZENT)
     for i, z in enumerate(zeilen):
         d.text((x + FOKUS_RAND, oben + 24 + i * FOKUS_ZEILE), z, font=f,
