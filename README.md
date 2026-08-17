@@ -91,9 +91,7 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    `edge-tts` mit `en-US-GuyNeural` zurück) und baut mit `ffmpeg` ein
    **Szenen-Video** (Overlays aus `szenen.py`, Design-Vokabular wie das
    Vorschaubild): jede Szene zeigt ein Board-Bild vollflächig mit langsamem
-   Zoom-Drift (`zoompan`), mild weichgezeichnet und leicht abgedunkelt,
-   damit die Feinstruktur der Board-Bilder nicht mit der Schrift
-   konkurriert; darüber liegen transparente Text-Overlays, die
+   Zoom-Drift (`zoompan`); darüber liegen transparente Text-Overlays, die
    zeitgesteuert ein- und ausblenden — Kapitel-Opener als Lower Third,
    der Titel des laufenden Themas oben, darunter die persistente Liste
    der bereits geparkten Stichpunkte, die stehen bleibt, bis das Thema

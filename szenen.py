@@ -119,12 +119,12 @@ KARTE_ALT = (198, 203, 216)
 KARTE_INNEN = KARTE_BREITE - 34 - 24   # Textbreite im Kasten
 KARTE_TEXT_X = 56       # Einzug des Punkt-Textes (neben dem Quadrat)
 KARTE_PUNKT_FONT = 25
-# Deckkraft der Text-Kaesten. Hoeher als die frueheren 160/170: der Text
-# liegt auf rohem Board-Motiv, und dessen Feinstruktur (oft Screenshots mit
-# Text) frisst Kontrast. Zusammen mit der milden Unschaerfe des Motivs
-# (video_report.motiv_weich) ist das Bild noch klar erkennbar, der Text aber
-# nicht mehr in Konkurrenz dazu.
-KARTE_ALPHA = 198
+# Deckkraft der Text-Kaesten, deutlich hoeher als die frueheren 160/170: der
+# Text liegt auf rohem Board-Motiv, und dessen Feinstruktur (oft Screenshots
+# mit Text) frisst Kontrast. Der Kasten traegt die Lesbarkeit deshalb allein -
+# das Motiv selbst bleibt unangetastet scharf (Nutzervorgabe 17.08.: der
+# Hintergrund sollte nur hinter den Karten ruhig werden, nicht im ganzen Bild).
+KARTE_ALPHA = 228
 
 TITEL_OBEN = 74         # unter dem Bug, dessen Text bei y=30 sitzt
 TITEL_RAND = 28

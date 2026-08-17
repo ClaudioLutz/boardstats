@@ -107,7 +107,7 @@ from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-from PIL import Image, ImageEnhance, ImageFilter, ImageFont
+from PIL import ImageFont
 
 import folien
 import szenen
@@ -1459,51 +1459,6 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
 
 # ------------------------------------------------- Szenen-Praesentation (v7)
 
-MOTIV_BLUR = 3.6         # Gauss-Radius, bezogen auf 1280 px Bildbreite
-MOTIV_HELL = 0.86        # Helligkeit der Kulisse (1.0 = unveraendert)
-
-
-def motiv_weich(pfad: Path | None, arbeit: Path) -> Path | None:
-    """Board-Motiv als Kulisse aufbereiten: mild unscharf, leicht abgedunkelt.
-
-    Der Text liegt in Kaesten direkt auf dem Motiv, und /biz/-Bilder sind oft
-    Screenshots - deren Feinstruktur konkurriert Strich fuer Strich mit der
-    Schrift. Ein milder Weichzeichner nimmt genau diese Konkurrenz weg und
-    laesst Motiv, Formen und Farben erkennbar (Nutzervorgabe 17.08.: nicht zu
-    dunkel und nicht zu unscharf).
-
-    Gebacken in eine Kopie statt als ffmpeg-Filter, aus drei Gruenden: der
-    Filter muesste zweimal in jede Szenenkette (Motiv und Kreuzblende auf das
-    naechste Motiv), er liefe pro Frame auf dem 2x-Supersampling (2560x1440),
-    und der Radius haengt hier an der Bildbreite statt an der Zoomstufe. Der
-    Zuschnitt bleibt ffmpeg ueberlassen - skaliert wird nicht, sonst wuerde
-    das Supersampling gegen das Zittern von zoompan wirkungslos.
-
-    Scheitert die Aufbereitung, wird das Original benutzt: eine Kulisse ist
-    kein Grund, den Cron-Lauf abzubrechen."""
-    if pfad is None:
-        return None
-    # Die Stufe steckt im Cache-Namen: sonst liefert der Cache nach einer
-    # Aenderung von Radius oder Helligkeit weiter die alten Bilder.
-    stufe = f"{pfad}|{MOTIV_BLUR}|{MOTIV_HELL}"
-    ziel = (arbeit / "weich"
-            / f"{hashlib.sha1(stufe.encode()).hexdigest()[:12]}.png")
-    if ziel.exists():
-        return ziel
-    try:
-        with Image.open(pfad) as roh:
-            bild = roh.convert("RGB")
-        radius = MOTIV_BLUR * bild.width / CANVAS_W
-        bild = bild.filter(ImageFilter.GaussianBlur(radius))
-        bild = ImageEnhance.Brightness(bild).enhance(MOTIV_HELL)
-        ziel.parent.mkdir(parents=True, exist_ok=True)
-        bild.save(ziel, "PNG")
-    except (OSError, ValueError) as e:
-        print(f"Motiv {pfad.name} nicht aufbereitet ({e}) - nehme das Original")
-        return pfad
-    return ziel
-
-
 ZOOM_HUB = 0.10          # Zoomweg je Szene: 10 % rein oder raus, kaum merklich
 STORY_MAX = 20.0         # spaetestens dann wechselt die Story-Szene das Motiv
 OPENER_MIN = 4.0         # Mindest-Standzeit des Kapitel-Openers: kurze
@@ -1590,8 +1545,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float, thumb: str = "") -> list[Szene]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
-    Jede Szene traegt ein vollflaechiges, mild weichgezeichnetes Motiv
-    (motiv_weich); Kapitel-Opener, der Themen-Titel oben, die persistente
+    Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, der Themen-Titel oben, die persistente
     Karte mit den geparkten Stichpunkten darunter (beide stehen bis zum
     Themen- oder Zwischenthemen-Wechsel), der gerade besprochene Stichpunkt
     als Fokus-Karte in der freien Bildhaelfte, Zitat-Karten und Kennzahlen
@@ -1650,8 +1604,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     folge: list[Szene] = []
 
     def neu(motiv: Path | None, start: float) -> Szene:
-        s = Szene(motiv_weich(motiv, arbeit), start,
-                  zoom_rein=len(folge) % 2 == 0)
+        s = Szene(motiv, start, zoom_rein=len(folge) % 2 == 0)
         folge.append(s)
         return s
 
