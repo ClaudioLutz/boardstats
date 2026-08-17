@@ -284,13 +284,57 @@ _INLINE_URL = re.compile(r"\(\s*(?:https?://|www\.)[^)]*\)"
                          r"|(?:https?://|www\.)\S+")
 
 
+# Das Board flucht, das Video nicht: die f-Wort-Familie wird ueberall ersetzt,
+# wo Text ins Video geht - Sprechtext, Bildtext, Fusszeile, Titel, Beschreibung
+# und Vorschaubild (Nutzerauftrag 17.08.2026). Der Bericht selbst sollte dank
+# der Zitat-Regel im Synthese-Prompt (run_report.py) schon sauber sein; das
+# hier ist das Netz darunter, denn ein Prompt garantiert nichts.
+#
+# Ton und Bild bekommen bewusst DASSELBE Ersatzwort mit derselben Wortzahl:
+# worte_zu_bloecken ordnet die TTS-Zeitfenster per Teilstring-Vergleich den
+# Quell-Tokens zu, eine im Bild anders zensierte Form (geschriebenes "f***ed"
+# gegen gesprochenes "screwed") wuerde diese Zuordnung verschieben.
+_ERSATZ = {
+    "motherfucker": "jerk", "motherfuckers": "jerks",
+    "clusterfuck": "mess", "clusterfucks": "messes",
+    "fuckery": "nonsense", "fucker": "idiot", "fuckers": "idiots",
+    "fucking": "freaking", "fuckin": "freakin",
+    # "fucks" wird zu "effs" ("zero effs given"): das ist die aussprechbare
+    # Form des geschriebenen "fs" - als "fs" wuerde die Stimme Buchstaben
+    # aufzaehlen (Nutzervorgabe 17.08.2026).
+    "fucked": "screwed", "fucks": "effs", "fuck": "hell",
+    "cunt": "jerk", "cunts": "jerks",
+}
+# Laengste Alternative zuerst, sonst nimmt "fuck" den abgeleiteten Formen den
+# Treffer weg. "shit" fehlt absichtlich: "shitcoin" ist auf /biz/ ein
+# Fachbegriff, und das Wort ist auf YouTube unschaedlich.
+_DERB = re.compile(r"\b(" + "|".join(sorted(_ERSATZ, key=len, reverse=True))
+                   + r")\b", re.I)
+
+
+def entschaerft(text: str) -> str:
+    """Derbe Woerter durch harmlose gleicher Wortzahl ersetzen.
+
+    Die Schreibweise des Originals bleibt erhalten (FUCKS -> SCREWS,
+    Fucking -> Freaking), damit CAPS-Zuspitzungen in Titeln nicht auffallen."""
+    def ersetze(m: re.Match[str]) -> str:
+        roh = m.group(0)
+        neu = _ERSATZ[roh.lower()]
+        if roh.isupper() and len(roh) > 1:
+            return neu.upper()
+        return neu.capitalize() if roh[0].isupper() else neu
+    return _DERB.sub(ersetze, text)
+
+
 def _ohne_links(text: str) -> str:
     """Blocktext ohne Links: Markdown-Links auf ihren Linktext reduziert,
-    URLs entfernt, danach Leerraum vor Satzzeichen geglaettet."""
+    URLs entfernt, danach Leerraum vor Satzzeichen geglaettet. Hier greift
+    auch entschaerft(): jeder gesprochene und im v5-Layout gezeigte Text
+    laeuft durch diese Funktion."""
     t = _MD_LINK.sub(r"\1", text)
     t = _INLINE_URL.sub("", t)
     t = re.sub(r"\s{2,}", " ", t)
-    return re.sub(r"\s+([.,;:!?])", r"\1", t).strip()
+    return entschaerft(re.sub(r"\s+([.,;:!?])", r"\1", t).strip())
 
 
 @dataclass
@@ -1272,7 +1316,7 @@ def thread_titel(datum: str) -> dict[str, str]:
         if kopf.startswith("# "):
             # Betreffzeilen enthalten gern URLs - fuer die Folie wertlos.
             text = re.sub(r"https?://\S+", "", kopf[2:])
-            text = re.sub(r"\s+", " ", text).strip(" -·|")
+            text = entschaerft(re.sub(r"\s+", " ", text).strip(" -·|"))
             if text:
                 titel[pfad.stem] = text
     return titel
@@ -1407,7 +1451,11 @@ def folien_laden(tag_dir: Path) -> dict | None:
     v5-Text-Layout zurueck."""
     pfad = tag_dir / "folien.json"
     try:
-        daten = json.loads(pfad.read_text(encoding="utf-8"))
+        # entschaerft() laeuft ueber den Rohtext, damit es jeden Textwert der
+        # verschachtelten Struktur trifft (Folientitel, Stichpunkte, Zitate)
+        # ohne sie durchlaufen zu muessen; die Feldnamen sind englische
+        # Bezeichner und von der Wortliste nicht betroffen.
+        daten = json.loads(entschaerft(pfad.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError) as e:
         print(f"keine brauchbare folien.json ({e}) - Text-Layout")
         return None
@@ -2762,7 +2810,7 @@ def titel_laden(tag_dir: Path, sprache: str, fallback: str) -> str:
     # Zeichen - defensiv nochmals bereinigen, auch wenn run_report.py das
     # schon getan hat.
     titel = re.sub(r"\s+", " ", wert.replace("<", "").replace(">", "")).strip()
-    return titel[:100].rstrip()
+    return entschaerft(titel[:100].rstrip())
 
 
 def _thumb_aus_titel(titel: str) -> str:
@@ -2790,7 +2838,7 @@ def thumb_text_laden(tag_dir: Path, sprache: str, titel: str) -> str:
     except (OSError, json.JSONDecodeError, AttributeError):
         wert = None
     if isinstance(wert, str) and wert.strip():
-        return wert.strip()[:THUMB_MAX_ZEICHEN].strip().upper()
+        return entschaerft(wert.strip())[:THUMB_MAX_ZEICHEN].strip().upper()
     return _thumb_aus_titel(titel)
 
 
@@ -2912,7 +2960,7 @@ def _fuer_beschreibung(zeile: str) -> str:
     # der lange Gedankenstrich gilt in oeffentlichen Texten als KI-Marker und
     # weicht dem neutralen Bindestrich (Komma waere nicht immer grammatisch).
     zeile = zeile.replace("<", "").replace(">", "").replace("—", "-")
-    return re.sub(r"[ \t]+", " ", zeile).rstrip()
+    return entschaerft(re.sub(r"[ \t]+", " ", zeile).rstrip())
 
 
 def _abschnitte(markdown: str) -> list[str]:

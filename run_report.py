@@ -1544,6 +1544,13 @@ Rules:
    aimed at people or groups, and who-fought-whom drama - a fight is not a
    finding. If a fight thread contains an investment-relevant statement,
    report only that. Everything must stay publishable on YouTube.
+   ALSO OUT, inside quotes as well: the f-word in every form (fuck,
+   fucking, fucked, motherfucker, ...) and comparably hard profanity. Do
+   not mask it with asterisks either - the report is read aloud in the
+   video. This one point overrides the character-exact rule above: pick a
+   quote that carries the finding without the word, and if none exists,
+   report the statement indirectly instead of quoting it. Never a softened
+   quote - rather no quote.
 8. Each thread states whether its extract was read in full or only
    incrementally updated since the last run. Use that to separate NEWS from
    standing situations: what arrived since yesterday goes to the front.
