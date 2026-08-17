@@ -2239,6 +2239,15 @@ def main() -> None:
         except RuntimeError as e:
             print(f"Playlist-Eintrag nicht gesetzt: {e}")
 
+    # Kanal-Trailer: das Video, das die Kanalseite Besuchern ohne Abo oben
+    # zeigt. Bei einer Tagesreihe soll dort der neueste Bericht stehen, nicht
+    # der vom Tag der Einrichtung. Auch das darf den Upload nicht entwerten.
+    try:
+        if youtube_auth.kanal_trailer_setzen(video_id):
+            print("als Kanal-Trailer gesetzt")
+    except RuntimeError as e:
+        print(f"Kanal-Trailer nicht gesetzt: {e}")
+
 
 if __name__ == "__main__":
     main()

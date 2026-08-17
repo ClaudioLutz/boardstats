@@ -185,6 +185,65 @@ def playlist_eintragen(video_id: str, playlist_id: str,
             f"Playlist-Eintrag fehlgeschlagen ({e.code}): {detail}") from e
 
 
+def kanal_trailer_setzen(video_id: str) -> bool:
+    """Macht das Video zum Kanal-Trailer (brandingSettings.unsubscribedTrailer).
+
+    Das ist das Video, das YouTube nicht abonnierten Besuchern oben auf der
+    Kanalseite zeigt und automatisch startet - bei einer Tagesreihe soll dort
+    immer der neueste Bericht stehen. Rueckgabe True, wenn geschrieben wurde,
+    False, wenn schon dasselbe Video drinstand (dann kein Schreibcall).
+
+    Braucht den force-ssl-Scope. channels.update loescht jedes Feld des
+    gesendeten Teilbaums, das nicht mitkommt, deshalb wird der komplette
+    channel-Teilbaum gelesen und samt title, description und keywords
+    zurueckgeschickt. Ein Fehler hier ist kein Upload-Fehler, der Aufrufer
+    soll ihn abfangen.
+
+    Fuer Abonnenten zeigt YouTube ein eigenes "empfohlenes Video" - das gibt
+    die Data API nicht her und bleibt Handarbeit im Studio."""
+    token = access_token()
+    kopf = {"Authorization": f"Bearer {token}"}
+    req = urllib.request.Request(
+        "https://www.googleapis.com/youtube/v3/channels"
+        "?part=brandingSettings&mine=true", headers=kopf)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            antwort = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(
+            f"Kanal-Abfrage fehlgeschlagen ({e.code}): {detail}") from e
+    items = antwort.get("items") or []
+    if not items:
+        raise RuntimeError("channels.list hat keinen eigenen Kanal geliefert")
+    kanal_id = items[0]["id"]
+    teil = dict((items[0].get("brandingSettings") or {}).get("channel") or {})
+    if teil.get("unsubscribedTrailer") == video_id:
+        return False
+    teil["unsubscribedTrailer"] = video_id
+    daten = json.dumps({"id": kanal_id,
+                        "brandingSettings": {"channel": teil}}).encode("utf-8")
+    put = urllib.request.Request(
+        "https://www.googleapis.com/youtube/v3/channels?part=brandingSettings",
+        data=daten, method="PUT",
+        headers={**kopf, "Content-Type": "application/json; charset=UTF-8"})
+    try:
+        with urllib.request.urlopen(put, timeout=30) as r:
+            zurueck = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(
+            f"Kanal-Trailer setzen fehlgeschlagen ({e.code}): {detail}") from e
+    # Geprueft wird an der Antwort des PUT, nicht an einem GET danach: ein
+    # sofortiger GET liefert teils noch den alten Wert (17.08.2026 erlebt).
+    gesetzt = ((zurueck.get("brandingSettings") or {}).get("channel")
+               or {}).get("unsubscribedTrailer")
+    if gesetzt != video_id:
+        raise RuntimeError(
+            f"Kanal-Trailer nicht uebernommen, steht auf {gesetzt!r}")
+    return True
+
+
 def untertitel_setzen(video_id: str, srt_pfad: Path, sprache: str,
                       name: str = "") -> None:
     """Laedt eine eigene Untertitel-Spur (SRT) zu einem Video hoch.

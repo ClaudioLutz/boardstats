@@ -140,7 +140,9 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Datum und Inhaltsverzeichnis zu beginnen; beim statischen Serientitel
    bleibt die Eröffnung wie bisher. Nach dem Upload hängt der Lauf das Video
    in die Serien-Playlist des Kanals (`playlistItems.insert`, Playlist-ID in
-   `SPRACHEN`); scheitert das, bleibt der Upload gültig. Die
+   `SPRACHEN`) und macht es zum Kanal-Trailer, den die Kanalseite Besuchern
+   ohne Abo oben zeigt (`channels.update`, `brandingSettings.unsubscribedTrailer`);
+   scheitert eines von beidem, bleibt der Upload gültig. Die
    Videobeschreibung enthält den
    Berichtstext selbst (Markdown-Auszeichnung entfernt) und darunter die
    Quell-Threads; da YouTube nur 5000 Zeichen zulässt, wird an einer
