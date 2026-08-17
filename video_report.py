@@ -808,6 +808,31 @@ def _bild_wert(werte: dict[str, dict], name: str, schluessel: str) -> int:
         return 3
 
 
+def _bild_rang(werte: dict[str, dict], name: str) -> int:
+    """Sortierwert eines Hintergrundbildes: die Bildlichkeit (echtes Motiv
+    statt Text-Screenshot) zaehlt doppelt, dazu der Unterhaltungswert.
+
+    Die Themennaehe fliesst absichtlich NICHT ein - sie hat am 17.08.2026
+    Kurstabellen und Suchergebnis-Screenshots vor Memes gesetzt, weil solche
+    Textwaende thematisch perfekt passen und als Kulisse trotzdem nichts
+    hergeben."""
+    return (2 * _bild_wert(werte, name, "bildlich")
+            + _bild_wert(werte, name, "unterhaltung"))
+
+
+def _ist_textwand(werte: dict[str, dict], name: str) -> bool:
+    """Bild ist ueberwiegend Text - Screenshot einer Artikel- oder
+    Suchergebnisseite, Chatverlauf, Kurstabelle. Als Kulisse nur die letzte
+    Wahl (Nutzerwunsch 17.08.2026: Hintergruende, die nicht nur Text sind).
+
+    Der Unterhaltungswert allein genuegt als Nachweis, wenn er auf 1 steht -
+    so greift die Regel auch an Tagen, deren Sichtpruefung noch keine
+    Bildlichkeit kennt."""
+    bildlich = _bild_wert(werte, name, "bildlich")
+    unterhaltung = _bild_wert(werte, name, "unterhaltung")
+    return unterhaltung <= 1 or (bildlich <= 2 and unterhaltung <= 2)
+
+
 def thread_titel(datum: str) -> dict[str, str]:
     """Thread-Titel je Thread-ID aus den Extrakt-Seiten des Tages: deren H1
     traegt den Original-Betreff. Fuer die Fusszeile der Themen-Folien -
@@ -833,8 +858,8 @@ def thread_titel(datum: str) -> dict[str, str]:
 
 def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
     """Freigegebene Hintergrundbilder je Thread (Report-Lauf,
-    arbeit/motive/<datum>/), je Thread absteigend nach Unterhaltungswert
-    plus Themennaehe sortiert. Leer, wenn der Tag keine hat."""
+    arbeit/motive/<datum>/), je Thread absteigend nach Bildrang sortiert
+    (Motive vor Textwaenden). Leer, wenn der Tag keine hat."""
     ordner = HINTERGRUND_DIR / datum
     try:
         threads = json.loads((ordner / "motive.json")
@@ -844,8 +869,7 @@ def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
     werte = motiv_werte(datum)
     aus: dict[str, list[Path]] = {}
     for tid, namen in threads.items():
-        namen = sorted(namen, key=lambda n: _bild_wert(werte, n, "unterhaltung")
-                       + _bild_wert(werte, n, "themen"), reverse=True)
+        namen = sorted(namen, key=lambda n: (-_bild_rang(werte, n), n))
         pfade = [ordner / n for n in namen if (ordner / n).exists()]
         if pfade:
             aus[str(tid)] = pfade
@@ -1084,12 +1108,12 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
     werte = motiv_werte(datum)
     motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
     tages_motiv = motive[0] if motive else None
-    # Pool = alle freigegebenen Tagesbilder, die unterhaltsamsten zuerst.
+    # Pool = alle freigegebenen Tagesbilder, die staerksten Motive zuerst.
     # `verwendet` haelt fest, was schon eine Folie traegt - jede Folie soll
     # ein frisches Bild bekommen, solange der Tag welche hergibt.
     pool: list[Path] = sorted(
         {p for pfade in zuteilung.values() for p in pfade},
-        key=lambda p: (-_bild_wert(werte, p.name, "unterhaltung"), p.name))
+        key=lambda p: (-_bild_rang(werte, p.name), p.name))
     pool_i = 0
     verwendet: set[Path] = set()
 
@@ -1111,8 +1135,12 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
         return pool[(pool_i - 1) % len(pool)]
 
     def eigenes_bild(eigene: list[Path]) -> Path | None:
-        """Erstes noch nicht gezeigtes eigenes Bild des Abschnitts."""
+        """Erstes noch nicht gezeigtes eigenes Bild des Abschnitts. Reine
+        Textwaende bekommen diesen Heimvorteil nicht - sie kommen erst zum
+        Zug, wenn der Tagespool kein frisches Motiv mehr hergibt."""
         for p in eigene:
+            if _ist_textwand(werte, p.name):
+                continue
             if p not in verwendet:
                 verwendet.add(p)
                 return p
@@ -1207,19 +1235,25 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
 
         def punkt_motiv(aktuell: Path | None) -> Path | None:
             """Motivwechsel beim Aufleuchten eines Stichpunkts: frisches
-            eigenes Thread-Bild vor Rotation durch die eigenen vor frischem
-            Pool-Bild; gibt es nichts anderes, bleibt das aktuelle stehen."""
+            eigenes Thread-Bild vor frischem Pool-Bild vor Rotation durch die
+            eigenen; gibt es nichts anderes, bleibt das aktuelle stehen. Die
+            Rotation kommt erst nach dem Pool, weil in ihr auch die
+            zurueckgestellten Textwaende des Threads stecken."""
             nonlocal eigen_i
-            p = eigenes_bild(eigene)
+            p = eigenes_bild(eigene) or pool_bild(nur_frisch=True)
             if p is not None:
                 return p
-            if len(eigene) >= 2:
-                for _ in range(len(eigene)):
-                    kandidat = eigene[eigen_i % len(eigene)]
+            # Ist der Tagespool durch, wird wiederholt - dann lieber ein
+            # Motiv zweimal als eine Textwand einmal.
+            wieder = [p for p in eigene
+                      if not _ist_textwand(werte, p.name)] or eigene
+            if len(wieder) >= 2:
+                for _ in range(len(wieder)):
+                    kandidat = wieder[eigen_i % len(wieder)]
                     eigen_i += 1
                     if kandidat != aktuell:
                         return kandidat
-            return pool_bild(nur_frisch=True) or aktuell
+            return aktuell
 
         if motiv is not None:
             reveal_bild = folien.reveal(titel, datum, motiv)
@@ -1327,7 +1361,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     tages_motiv = motive[0] if motive else None
     pool: list[Path] = sorted(
         {p for pfade in zuteilung.values() for p in pfade},
-        key=lambda p: (-_bild_wert(werte, p.name, "unterhaltung"), p.name))
+        key=lambda p: (-_bild_rang(werte, p.name), p.name))
     pool_i = 0
     verwendet: set[Path] = set()
 
@@ -1347,7 +1381,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         return pool[(pool_i - 1) % len(pool)]
 
     def eigenes_bild(eigene: list[Path]) -> Path | None:
+        """Erstes noch nicht gezeigtes eigenes Bild des Abschnitts; reine
+        Textwaende verlieren diesen Heimvorteil (siehe _ist_textwand)."""
         for p in eigene:
+            if _ist_textwand(werte, p.name):
+                continue
             if p not in verwendet:
                 verwendet.add(p)
                 return p
@@ -1448,17 +1486,24 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         eigen_i = 0
 
         def naechstes_motiv(aktuell: Path | None) -> Path | None:
+            """Frisches eigenes Thread-Bild vor frischem Pool-Bild vor
+            Rotation durch die eigenen (in ihr stecken auch die
+            zurueckgestellten Textwaende)."""
             nonlocal eigen_i
-            p = eigenes_bild(eigene)
+            p = eigenes_bild(eigene) or pool_bild(nur_frisch=True)
             if p is not None:
                 return p
-            if len(eigene) >= 2:
-                for _ in range(len(eigene)):
-                    kandidat = eigene[eigen_i % len(eigene)]
+            # Ist der Tagespool durch, wird wiederholt - dann lieber ein
+            # Motiv zweimal als eine Textwand einmal.
+            wieder = [p for p in eigene
+                      if not _ist_textwand(werte, p.name)] or eigene
+            if len(wieder) >= 2:
+                for _ in range(len(wieder)):
+                    kandidat = wieder[eigen_i % len(wieder)]
                     eigen_i += 1
                     if kandidat != aktuell:
                         return kandidat
-            return pool_bild(nur_frisch=True) or aktuell
+            return aktuell
 
         # Opener: Kapiteltitel als Lower Third, solange die Ueberschrift
         # gesprochen wird; die Szene laeuft danach als erste Story weiter.

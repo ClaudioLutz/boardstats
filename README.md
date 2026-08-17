@@ -95,8 +95,13 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    jedem Berichtsabschnitt, je Thread die bestbewerteten zuerst); jede
    Szene bekommt ein frisches, noch nicht gezeigtes Bild — zuerst aus dem
    eigenen Thread, dann aus dem Pool der übrigen Tagesbilder (die
-   unterhaltsamsten zuerst), erst wenn alle durch sind wiederholt sich
-   eines. Lange Sprechstrecken wechseln spätestens alle zwanzig Sekunden
+   stärksten Motive zuerst), erst wenn alle durch sind wiederholt sich
+   eines. Die Reihenfolge richtet sich nach der Sichtprüfung des
+   Report-Laufs, die jedes Bild danach bewertet, wie viel echtes Motiv
+   statt Text darauf zu sehen ist: Bilder, die praktisch nur eine Textwand
+   sind (Screenshot einer Artikel- oder Suchergebnisseite, Chatverlauf,
+   Kurstabelle), verlieren auch den Vorrang im eigenen Thread und kommen
+   nur dran, wenn der Tag kein frisches Motiv mehr hergibt. Lange Sprechstrecken wechseln spätestens alle zwanzig Sekunden
    die Szene, das «Coming up» zeigt zu jedem Kapitel das Motiv als
    Vorschau, und der Kapitel-Opener nennt den Original-Betreff des
    Quell-Threads (aus dem H1 der Extrakt-Seite). Ein Tag ganz ohne Bilder

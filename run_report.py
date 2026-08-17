@@ -1215,8 +1215,15 @@ Wojaks, Fotos, auch Bilder ohne jeden Finanzbezug. Lehne nichts wegen
 Qualität, Stil, Kleinteiligkeit oder fehlendem Themenbezug ab - erwartet
 wird, dass die grosse Mehrheit der Kandidaten durchgeht.
 
-Bewerte zusätzlich JEDES Bild mit zwei ganzen Zahlen von 1 bis 5 (das
+Bewerte zusätzlich JEDES Bild mit drei ganzen Zahlen von 1 bis 5 (das
 beeinflusst nur die Reihenfolge im Video, nicht die Freigabe):
+- "bildlich": Wie viel echtes Bildmotiv statt Text ist zu sehen? Schätze den
+  Flächenanteil, den geschriebener Text einnimmt. 5 = Foto, Zeichnung, Meme,
+  Frosch, Wojak, Comic, Symbolbild - Text höchstens als Bildunterschrift.
+  3 = Kurs-Chart oder Grafik mit vielen Beschriftungen, aber erkennbarer
+  Bildwirkung. 1 = fast nur Text, also Screenshot einer Artikel- oder
+  Suchergebnisseite, Chatverlauf, Kurstabelle, Zahlenliste, Textwand.
+  Nimmt Text mehr als die Hälfte der Fläche ein, ist die Antwort 1 oder 2.
 - "unterhaltung": Wie viel macht das Bild als Kulisse her? Memes, Wojaks,
   Frösche, ausdrucksstarke Fotos und markante Motive hoch; kleinteilige
   Screenshots, Textwände und triste Tabellen niedrig.
@@ -1228,7 +1235,7 @@ Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
 Code-Zaun. Die Beschreibung ist Pflicht und benennt sachlich, was auf genau
 diesem Bild zu sehen ist:
 {"bilder": [{"datei": "...", "beschreibung": "...", "ok": true,
-"grund": "...", "unterhaltung": 3, "themen": 3}]}
+"grund": "...", "bildlich": 3, "unterhaltung": 3, "themen": 3}]}
 """
 
 
@@ -1309,11 +1316,19 @@ def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
         name = str(urteil.get("datei") or "")
         if urteil.get("ok") and name in nach_name:
             frei[nach_name[name]] = {
+                "bildlich": _wert_1_5(urteil.get("bildlich")),
                 "unterhaltung": _wert_1_5(urteil.get("unterhaltung")),
                 "themen": _wert_1_5(urteil.get("themen")),
             }
         elif name in nach_name:
             log.info("Hintergrund %s abgelehnt: %s", name, urteil.get("grund"))
+    # Fehlt die Bildlichkeit ganz, hat das Modell das Feld verschluckt: dann
+    # bekommt jedes Bild die neutrale 3 und der Video-Lauf erkennt Textwaende
+    # nur noch am Unterhaltungswert - das gehoert ins Log.
+    if frei and not any("bildlich" in u for u in daten["bilder"]
+                        if isinstance(u, dict)):
+        log.warning("Sichtpruefung ohne bildlich-Bewertung - Textwaende "
+                    "werden nur ueber den Unterhaltungswert erkannt")
     return frei
 
 
