@@ -825,12 +825,17 @@ def _ist_textwand(werte: dict[str, dict], name: str) -> bool:
     Suchergebnisseite, Chatverlauf, Kurstabelle. Als Kulisse nur die letzte
     Wahl (Nutzerwunsch 17.08.2026: Hintergruende, die nicht nur Text sind).
 
-    Der Unterhaltungswert allein genuegt als Nachweis, wenn er auf 1 steht -
-    so greift die Regel auch an Tagen, deren Sichtpruefung noch keine
-    Bildlichkeit kennt."""
-    bildlich = _bild_wert(werte, name, "bildlich")
+    Kennt die Sichtpruefung des Tages die Bildlichkeit noch nicht (Tage vor
+    dem 18.08.2026), bleibt der Unterhaltungswert 1 das einzige Signal.
+    Geprueft wird die Anwesenheit des Rohschluessels, nicht sein Wert: ein
+    fehlendes Feld liest _bild_wert als neutrale 3, und ein starkes Motiv mit
+    unterhaltung=1 (schoenes, aber langweiliges Foto) darf keine Textwand
+    sein."""
     unterhaltung = _bild_wert(werte, name, "unterhaltung")
-    return unterhaltung <= 1 or (bildlich <= 2 and unterhaltung <= 2)
+    roh = werte.get(name)
+    if not isinstance(roh, dict) or "bildlich" not in roh:
+        return unterhaltung <= 1
+    return _bild_wert(werte, name, "bildlich") <= 2 and unterhaltung <= 2
 
 
 def thread_titel(datum: str) -> dict[str, str]:
