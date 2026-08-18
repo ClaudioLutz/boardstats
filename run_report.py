@@ -1274,6 +1274,17 @@ def _wert_1_5(roh: object) -> int:
         return 3
 
 
+def _grund_slug(text: str, laenge: int = 44) -> str:
+    """Ablehnungsgrund als Teil eines Dateinamens: ASCII, klein, Bindestriche.
+    Damit steht der Grund im Ordner `abgelehnt/` direkt am Bild und laesst
+    sich ohne Log durchsehen."""
+    roh = (text or "kein grund").lower()
+    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        roh = roh.replace(a, b)
+    roh = re.sub(r"[^a-z0-9]+", "-", roh).strip("-")
+    return roh[:laenge].rstrip("-") or "kein-grund"
+
+
 def hintergrund_kandidaten(manifest: dict,
                            gesperrt: set[str] | None = None) -> list[dict]:
     """Bild-Anhaenge ALLER ausgewerteten Threads, je Thread bis zu
@@ -1324,7 +1335,9 @@ def hintergrund_kandidaten(manifest: dict,
     return aus[:HG_MAX]
 
 
-def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
+def hintergrund_pruefen(
+        bilder: list[Path]
+) -> tuple[dict[Path, dict[str, int]], dict[Path, str]]:
     """Lockere Sichtpruefung fuer Videohintergruende: einzige Frage ist der
     Richtlinienverstoss, alles andere geht durch. Liefert je freigegebenem
     Bild die Bewertungen (bildlich/unterhaltung/themen, 1-5) - der Video-Lauf
@@ -1340,8 +1353,14 @@ def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
 
     Ueberlebt kein Stapel, ist das ein Fehler und kein leeres Ergebnis: der
     Aufrufer darf dann kein motive.json schreiben, sonst gilt der Tag als
-    versorgt und der Rueckgriff im Video-Lauf greift nicht."""
+    versorgt und der Rueckgriff im Video-Lauf greift nicht.
+
+    Zurueck kommen zwei Zuordnungen: die freigegebenen Bilder mit ihren
+    Bewertungen und je abgelehntem Bild der Grund. Der Grund ist die einzige
+    Chance, eine zu strenge oder zu lasche Sichtpruefung zu bemerken - er
+    gehoert deshalb ans Bild und nicht nur ins Log."""
     frei: dict[Path, dict[str, int]] = {}
+    gruende: dict[Path, str] = {}
     stapel = [bilder[i:i + HG_STAPEL]
               for i in range(0, len(bilder), HG_STAPEL)]
     for nr, teil in enumerate(stapel, 1):
@@ -1354,13 +1373,17 @@ def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
         except Exception as e:
             log.warning("Hintergrund-Stapel %d/%d verworfen: %s",
                         nr, len(stapel), e)
+            for p in teil:
+                gruende[p] = f"Stapel verworfen: {e}"
             continue
         for urteil in daten["bilder"]:
             name = str(urteil.get("datei") or "")
             if name not in nach_name:
                 continue
             if urteil.get("_verdacht"):
-                continue  # ein ungesehenes Urteil ist nie eine Freigabe
+                # ein ungesehenes Urteil ist nie eine Freigabe
+                gruende[nach_name[name]] = str(urteil["_verdacht"])
+                continue
             if urteil.get("ok"):
                 frei[nach_name[name]] = {
                     "bildlich": _wert_1_5(urteil.get("bildlich")),
@@ -1368,8 +1391,9 @@ def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
                     "themen": _wert_1_5(urteil.get("themen")),
                 }
             else:
-                log.info("Hintergrund %s abgelehnt: %s", name,
-                         urteil.get("grund"))
+                grund = str(urteil.get("grund") or "kein Grund genannt")
+                gruende[nach_name[name]] = grund
+                log.info("Hintergrund %s abgelehnt: %s", name, grund)
         # Fehlt die Bildlichkeit ganz, hat das Modell das Feld verschluckt:
         # dann bekommt jedes Bild die neutrale 3 und der Video-Lauf erkennt
         # Textwaende nur noch am Unterhaltungswert - das gehoert ins Log.
@@ -1379,14 +1403,24 @@ def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
     if not frei:
         raise RuntimeError(f"kein brauchbares Urteil aus {len(stapel)} "
                            f"Stapeln ({len(bilder)} Bilder)")
-    return frei
+    for p in bilder:                     # nie stumm verschwinden lassen
+        if p not in frei:
+            gruende.setdefault(p, "kein Urteil in der Antwort")
+    return frei, gruende
 
 
 def hintergruende_waehlen(manifest: dict, datum: str) -> int:
     """Freigegebene Hintergrundbilder je Thread unter arbeit/motive/<datum>/
-    bereitlegen (ausserhalb des Repos, wie das Thumbnail-Motiv). Nicht
-    freigegebene Downloads werden geloescht; motive.json haelt die Zuordnung
-    Thread -> Dateien fuer den Video-Lauf fest."""
+    bereitlegen (ausserhalb des Repos, wie das Thumbnail-Motiv). motive.json
+    haelt die Zuordnung Thread -> Dateien fuer den Video-Lauf fest.
+
+    Abgelehnte Bilder werden nicht mehr geloescht, sondern nach
+    arbeit/motive/<datum>/abgelehnt/ verschoben, mit dem Grund im Dateinamen
+    (Nutzerwunsch 18.08.2026: die Ablehnungen gegenpruefen koennen). Der
+    Ordner liegt wie alles unter arbeit/ ausserhalb des Repos und wird vom
+    naechsten Lauf desselben Tages mit ueberschrieben; der Video-Lauf sieht
+    ihn nie, weil er nur Namen aus motive.json anfasst. Dieselben Gruende
+    stehen zusaetzlich in motive.json unter "abgelehnt"."""
     ziel_dir = ARBEIT / "motive" / datum
     gesperrt = set(verwendete_bilder(datum))
     kandidaten = hintergrund_kandidaten(manifest, gesperrt)
@@ -1394,22 +1428,31 @@ def hintergruende_waehlen(manifest: dict, datum: str) -> int:
         log.info("keine Hintergrund-Kandidaten im Snapshot")
         return 0
     geladen = motiv_laden(kandidaten, ziel_dir)
-    frei = hintergrund_pruefen(geladen)
+    frei, gruende = hintergrund_pruefen(geladen)
     md5_nach_datei = {k["datei"]: k["md5"] for k in kandidaten}
     threads: dict[str, list[str]] = {}
     werte: dict[str, dict[str, int]] = {}
+    abgelehnt: dict[str, str] = {}
     gezeigt: list[str] = []
+    ablage = ziel_dir / "abgelehnt"
     for p in geladen:
         if p not in frei:
-            p.unlink()
+            grund = gruende.get(p, "kein Urteil in der Antwort")
+            abgelehnt[p.name] = grund
+            ablage.mkdir(parents=True, exist_ok=True)
+            p.replace(ablage / f"{p.stem}__{_grund_slug(grund)}{p.suffix}")
             continue
         threads.setdefault(p.name.split("-", 1)[0], []).append(p.name)
         werte[p.name] = frei[p]
         if p.name in md5_nach_datei:
             gezeigt.append(md5_nach_datei[p.name])
     (ziel_dir / "motive.json").write_text(
-        json.dumps({"threads": threads, "werte": werte}, indent=2) + "\n",
+        json.dumps({"threads": threads, "werte": werte,
+                    "abgelehnt": abgelehnt}, indent=2) + "\n",
         encoding="utf-8")
+    if abgelehnt:
+        log.info("%d abgelehnte Bilder liegen mit Grund im Dateinamen unter "
+                 "%s", len(abgelehnt), ablage)
     verwendete_merken(gezeigt, datum)
     return len(frei)
 

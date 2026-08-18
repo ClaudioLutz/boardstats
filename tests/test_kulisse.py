@@ -115,7 +115,7 @@ class HintergrundPruefen(unittest.TestCase):
     def test_stapelgroesse(self):
         with mock.patch.object(run_report, "claude_ruf",
                                side_effect=self._antworten()):
-            frei = run_report.hintergrund_pruefen(self.bilder)
+            frei, gruende = run_report.hintergrund_pruefen(self.bilder)
         self.assertEqual(self.aufrufe, 3)       # 12 + 12 + 1
         self.assertEqual(len(frei), 25)
 
@@ -124,10 +124,14 @@ class HintergrundPruefen(unittest.TestCase):
         jetzt ueberleben die anderen Stapel."""
         with mock.patch.object(run_report, "claude_ruf",
                                side_effect=self._antworten(kaputter_stapel=1)):
-            frei = run_report.hintergrund_pruefen(self.bilder)
+            frei, gruende = run_report.hintergrund_pruefen(self.bilder)
         self.assertEqual(len(frei), 13)
         self.assertNotIn(self.bilder[0], frei)
         self.assertIn(self.bilder[12], frei)
+        # Auch ein verworfener Stapel muss einen Grund je Bild hinterlassen,
+        # sonst stehen zwoelf Bilder ohne Erklaerung im Ablehnungsordner.
+        self.assertEqual(len(gruende), 12)
+        self.assertIn("Stapel verworfen", gruende[self.bilder[0]])
 
     def test_verdaechtiges_urteil_wird_nie_freigegeben(self):
         """Sicherheitseigenschaft: ohne Beleg fuers Hinsehen keine Freigabe -
@@ -138,8 +142,10 @@ class HintergrundPruefen(unittest.TestCase):
         urteile[0]["beschreibung"] = urteile[1]["beschreibung"]
         with mock.patch.object(run_report, "claude_ruf",
                                return_value=_antwort(urteile)):
-            frei = run_report.hintergrund_pruefen(bilder)
+            frei, gruende = run_report.hintergrund_pruefen(bilder)
         self.assertEqual(set(frei), set(bilder[2:]))
+        self.assertEqual(set(gruende), {bilder[0], bilder[1]})
+        self.assertIn("doppelt", gruende[bilder[0]])
 
     def test_alle_stapel_tot_ist_ein_fehler(self):
         """Kein leeres Ergebnis zurueckgeben: hintergruende_waehlen wuerde
@@ -158,8 +164,82 @@ class HintergrundPruefen(unittest.TestCase):
         urteile[1]["grund"] = "Slur im Bildtext"
         with mock.patch.object(run_report, "claude_ruf",
                                return_value=_antwort(urteile)):
-            frei = run_report.hintergrund_pruefen(bilder)
+            frei, gruende = run_report.hintergrund_pruefen(bilder)
         self.assertEqual(set(frei), {bilder[0], bilder[2]})
+        self.assertEqual(gruende[bilder[1]], "Slur im Bildtext")
+
+
+class AblehnungAblegen(unittest.TestCase):
+    """Abgelehnte Bilder bleiben mit Grund im Dateinamen liegen, damit die
+    Sichtpruefung gegengeprueft werden kann (Nutzerwunsch 18.08.2026)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.arbeit = Path(self.tmp.name)
+        self.patches = [
+            mock.patch.object(run_report, "ARBEIT", self.arbeit),
+            mock.patch.object(run_report, "VERWENDET_DATEI",
+                              self.arbeit / "motive" / "verwendet.json"),
+        ]
+        for pa in self.patches:
+            pa.start()
+
+    def tearDown(self):
+        for pa in self.patches:
+            pa.stop()
+        self.tmp.cleanup()
+
+    def _lauf(self, urteile_bauen):
+        """hintergruende_waehlen mit erfundenen Kandidaten laufen lassen:
+        der Download wird ersetzt, die Sichtpruefung antwortet gemockt."""
+        namen = ["11-a.jpg", "11-b.png", "22-c.jpg"]
+        kandidaten = [{"thread": n.split("-")[0], "datei": n,
+                       "url": f"http://x/{n}", "md5": f"md5{i}"}
+                      for i, n in enumerate(namen)]
+
+        def laden(kand, ziel_dir):
+            ziel_dir.mkdir(parents=True, exist_ok=True)
+            pfade = []
+            for k in kand:
+                ziel = ziel_dir / k["datei"]
+                ziel.write_bytes(b"bild")
+                pfade.append(ziel)
+            return pfade
+
+        with mock.patch.object(run_report, "hintergrund_kandidaten",
+                              return_value=kandidaten),              mock.patch.object(run_report, "motiv_laden", side_effect=laden),              mock.patch.object(run_report, "claude_ruf",
+                               return_value=_antwort(urteile_bauen(namen))):
+            frei = run_report.hintergruende_waehlen({}, "2026-08-18")
+        ordner = self.arbeit / "motive" / "2026-08-18"
+        daten = json.loads((ordner / "motive.json").read_text(encoding="utf-8"))
+        return frei, ordner, daten
+
+    def test_abgelehntes_bild_liegt_mit_grund_im_ordner(self):
+        def bauen(namen):
+            urteile = [_urteil(n, f"Bild {n} zeigt einen Frosch am Chart")
+                       for n in namen]
+            urteile[1]["ok"] = False
+            urteile[1]["grund"] = "Slur im Bildtext gross sichtbar"
+            return urteile
+        frei, ordner, daten = self._lauf(bauen)
+        self.assertEqual(frei, 2)
+        self.assertEqual(list((ordner / "abgelehnt").iterdir()),
+                         [ordner / "abgelehnt"
+                          / "11-b__slur-im-bildtext-gross-sichtbar.png"])
+        self.assertEqual(daten["abgelehnt"],
+                         {"11-b.png": "Slur im Bildtext gross sichtbar"})
+        # Das freigegebene Bild bleibt, wo der Video-Lauf es erwartet.
+        self.assertTrue((ordner / "11-a.jpg").exists())
+        self.assertEqual(sorted(daten["threads"]), ["11", "22"])
+
+    def test_kein_ablehnungsordner_wenn_alles_durchgeht(self):
+        def bauen(namen):
+            return [_urteil(n, f"Bild {n} zeigt einen Frosch am Chart")
+                    for n in namen]
+        frei, ordner, daten = self._lauf(bauen)
+        self.assertEqual(frei, 3)
+        self.assertFalse((ordner / "abgelehnt").exists())
+        self.assertEqual(daten["abgelehnt"], {})
 
 
 class MotivQuelle(unittest.TestCase):

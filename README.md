@@ -250,5 +250,7 @@ offenen Fragen je Thread.
 | `hg_nachzug.py` | Hintergrund-Sichtprüfung eines Tages nachziehen (Reparatur) |
 | `tests/` | Tests der Kulisse: `python -m unittest discover -s tests` |
 
+Abgelehnte Hintergrundbilder bleiben zum Gegenprüfen liegen: `arbeit/motive/<datum>/abgelehnt/` mit dem Grund im Dateinamen, dieselben Gründe zusätzlich in `motive.json` unter `abgelehnt`.
+
 Laufzeitdaten (`arbeit/`, `berichte/`, `cache/`, `logs/`) sind bewusst
 nicht versioniert — sie enthalten Board-Rohinhalte.
