@@ -2609,7 +2609,28 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     if outro_idx is not None:
         t = start_von(outro_idx)
         s = neu(tages_motiv or pool_bild(), t)
-        s.overlays.append(ov(szenen.outro_tafel(), t + 0.3, ende,
+        outro_start = t + 0.3
+        # Board-Aktivitaets-Chart (aktivitaet.py, 18.08.2026): eigener Beat
+        # vor der Abschluss-Tafel im selben Outro-Fenster, nur wenn genug
+        # Zeit fuer beide bleibt - die Tafel behaelt dabei immer ihr
+        # OUTRO_TAFEL_MIN_SEC, die Grafik bekommt nur den Rest. matplotlib
+        # ist damit eine optionale, nicht harte Abhaengigkeit: schlaegt der
+        # Import oder das Rendern fehl (z.B. auf einem venv ohne
+        # matplotlib), faellt nur dieser eine Beat weg, nicht das ganze
+        # Szenen-Layout - deshalb der eigene try/except statt eines
+        # Modul-weiten `import aktivitaet` oben in der Datei.
+        try:
+            import aktivitaet
+            reihe = aktivitaet.taegliche_extrakt_zahlen(EXTRAKTE)
+            chart_dauer = (ende - outro_start) - OUTRO_TAFEL_MIN_SEC
+            if len(reihe) >= 2 and chart_dauer >= AKTIVITAET_MIN_SEC:
+                s.overlays.append(ov(aktivitaet.aktivitaets_chart(reihe),
+                                     outro_start, outro_start + chart_dauer,
+                                     einflug="unten"))
+                outro_start += chart_dauer
+        except Exception as e:
+            print(f"Aktivitaets-Chart uebersprungen ({e})")
+        s.overlays.append(ov(szenen.outro_tafel(), outro_start, ende,
                              einflug="unten"))
 
     # Je Fokus-Punkt ein eigenes PNG; ueber Naehte geteilte Stuecke teilen es,
@@ -2664,6 +2685,10 @@ FLUG_VORLAUF = 0.25      # so viel vor dem Wechsel setzt er sich in Bewegung:
                          # und begegneten sich 0.55 s lang in der Bildmitte.
 KALTSTART = 2.0          # so lange steht das Schlagwort des Tages allein im
                          # Bild, bevor die Hook-Karte uebernimmt
+AKTIVITAET_MIN_SEC = 3.5  # kuerzer lohnt sich die Balkengrafik im Outro nicht
+                         # (Balken + Titel brauchen einen Moment zum Lesen)
+OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
+                           # die Aktivitaets-Grafik bekommt nur den Rest
 FOKUS_MIN = 1.1          # kuerzer steht kein Fokus-Punkt in der Bildmitte
 LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
                          # gedeckt durch GOOGLE_KAPITEL_PAUSE, sonst muesste

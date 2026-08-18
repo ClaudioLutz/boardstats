@@ -15,6 +15,11 @@
 #       Python-Bibliothek direkt nutzt (Wort-Zeitstempel fuer Karaoke-Scroll)
 #       und Pillow fuer Textmetriken braucht; beides via pip statt apt/pipx,
 #       da es Bibliotheken und keine CLI-Tools sind.
+#    1b. optional: zusaetzlich `pip install matplotlib` im selben venv fuer
+#        die Board-Aktivitaets-Balkengrafik im Outro (aktivitaet.py, seit
+#        18.08.2026). Ohne matplotlib ueberspringt szenen_bauen() diesen
+#        einen Beat automatisch (eigenes try/except) - der Rest des Videos
+#        laeuft unveraendert, es fehlt nur die Grafik.
 #    2. ffmpeg ist installiert (mit libass)  -> ffmpeg -version
 #    3. ~/.config/boardstats/youtube_client.json (OAuth-Client aus Google
 #       Cloud Console) und youtube_token.json (per youtube_auth_setup.py
