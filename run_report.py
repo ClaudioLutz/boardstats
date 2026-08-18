@@ -867,17 +867,23 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
 - "lage": "left" or "right" - the screen side of the bullet card. Place it
   deliberately and switch sides between chapters so the frame stays fresh.
 - "stichworte": the running commentary. One bullet for roughly EVERY
-  sentence of the section - 8 to 14 for a normal section; never let two
-  consecutive sentences pass without one. "text" is the on-screen bullet:
-  2 to 6 punchy words, max 34 characters, tickers and figures welcome
-  (e.g. "$120B CUT", "BTC BACK AT 61K", "SHORTS WIPED"). Each bullet
-  paraphrases the sentence its anker sits in; together they must let a
-  muted viewer follow the whole story.
+  sentence of the WHOLE section, no matter how long it is or how many
+  storylines it holds - never let two consecutive sentences pass without
+  one, and do not cap the count at some target per section; a section with
+  25 sentences needs roughly 25 bullets, not 14. If a "zwischenthemen"
+  switch splits the section into sub-stories, budget bullets for EACH
+  sub-story separately (its own one-per-sentence coverage after the
+  switch) - the bullets used before the switch never count against it.
+  "text" is the on-screen bullet: 2 to 6 punchy words, max 34 characters,
+  tickers and figures welcome (e.g. "$120B CUT", "BTC BACK AT 61K",
+  "SHORTS WIPED"). Each bullet paraphrases the sentence its anker sits in;
+  together they must let a muted viewer follow the whole story, including
+  every single name or claim mentioned, not just the first couple.
 - "zwischenthemen": 0 to 2 entries, ONLY when the section clearly switches
   to a second storyline. "titel" (max 40 characters) names the new
   sub-story; its anker sits where the switch happens. The bullet card
-  restarts there ("lage" optional), so at least one stichwort must follow
-  each switch.
+  restarts there ("lage" optional); cover the rest of the section's
+  sentences with stichworte exactly as densely as before the switch.
 - "zitat" (optional): the single best board one-liner quoted in the
   section, COPIED VERBATIM, max 130 characters, no slurs. Omit if the
   section has no quotable line.
@@ -925,7 +931,7 @@ def folien_generieren(bericht_md: str) -> dict:
             {"text": str(p["text"]).strip()[:38],
              "anker": str(p.get("anker") or "").strip()}
             for p in (stich if isinstance(stich, list) else [])
-            if isinstance(p, dict) and str(p.get("text") or "").strip()][:16]
+            if isinstance(p, dict) and str(p.get("text") or "").strip()][:28]
         zwischen = a.get("zwischenthemen")
         a["zwischenthemen"] = [
             {"titel": str(z["titel"]).strip()[:44],
