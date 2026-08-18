@@ -2750,17 +2750,30 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
     eingabe = ("Abschnitte:\n" + "\n".join(zeilen) + "\n\nClips:\n"
               + "\n".join(f"- {md5}: {e['beschreibung']}"
                           for md5, e in frei.items()))
-    try:
-        out = rr.claude_ruf(KLIP_PROMPT_ZUORDNUNG, eingabe, "sonnet",
-                            180, effort="low").strip()
-        daten = json.loads(rr._json_schneiden(out))
-    except Exception as e:
-        print(f"WARNUNG: Clip-Zuordnung fehlgeschlagen ({e}) - Kulisse "
-             f"laeuft ohne Clips")
-        return {}
+    daten: dict = {}
+    for versuch in (1, 2):
+        try:
+            out = rr.claude_ruf(KLIP_PROMPT_ZUORDNUNG, eingabe, "sonnet",
+                                180, effort="low").strip()
+            daten = json.loads(rr._json_schneiden(out))
+        except Exception as e:
+            print(f"WARNUNG: Clip-Zuordnung fehlgeschlagen ({e}) - Kulisse "
+                 f"laeuft ohne Clips")
+            return {}
+        roh = daten.get("zuordnung")
+        # Leere Zuordnung trotz freier, beschriebener Clips ist plausibel
+        # (kein Clip passt), aber bei effort="low" auch schon mal ein
+        # inkonsistenter Ausreisser - ein zweiter Versuch ist billiger als
+        # ein Video ganz ohne Clips (Nutzer-Feedback 18.08.2026).
+        if (isinstance(roh, dict) and roh) or isinstance(daten.get("intro"),
+                                                          str):
+            break
+        print(f"Clip-Zuordnung: Versuch {versuch} ordnete nichts zu "
+             f"({len(frei)} Clips verfuegbar)"
+             + (" - zweiter Versuch" if versuch == 1 else ""))
     roh = daten.get("zuordnung")
     if not isinstance(roh, dict):
-        return {}
+        roh = {}
     ziel_dir = klip_katalog.KLIP_DIR / datum
     aus: dict[int, Path] = {}
     vergeben: set[str] = set()
