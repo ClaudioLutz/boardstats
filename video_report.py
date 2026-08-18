@@ -2897,6 +2897,8 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
 
 
 BETT = Path.home() / ".config" / "boardstats" / "bett.opus"
+BETT_QUELLE = Path.home() / ".config" / "boardstats" / "bett_quelle.mp3"
+BETT_LOOP_UEBERGANG = 4.0  # Sekunden Crossfade an der Loop-Naht eines echten Tracks
 BETT_DB = -20.0          # so viel leiser als die Sprache laeuft das Bett
 BETT_AUSBLENDE = 4.0     # Sekunden Ausblende am Videoende
 BETT_SEKUNDEN = 720      # Bettlaenge; alle Perioden gehen glatt darin auf
@@ -2929,19 +2931,62 @@ BETT_STIMMEN = [
 ]
 
 
-def bett_bauen(ziel: Path = BETT) -> Path:
-    """Das Musikbett synthetisieren und normalisiert ablegen.
+def bett_bauen(ziel: Path = BETT, quelle: Path = BETT_QUELLE) -> Path:
+    """Das Musikbett bauen und normalisiert ablegen.
 
-    Selbst erzeugt statt lizenziert, weil der Upload taeglich unbeaufsichtigt
-    laeuft und dieselbe Musik in jedem Video der Serie steckt: ein
-    Content-ID-Treffer waere nicht ein Video, sondern der Kanal. Synthese hat
-    keinen Rechteinhaber, keinen Fingerprint und braucht keine Credit-Zeile in
-    der Beschreibung (das Beschreibungsbudget ist ohnehin knapp).
+    Liegt eine Quelldatei vor (echter, Content-ID-freier Track, manuell auf
+    dem Render-Rechner platziert - siehe [[video-bett-echter-track]]), wird
+    daraus ein loopfaehiges Bett geschnitten (`_bett_aus_track`). Sonst wie
+    bisher synthetisch aus BETT_STIMMEN (`_bett_synthetisch`) - Synthese hat
+    keinen Rechteinhaber, keinen Fingerprint und keinen Content-ID-Eintrag,
+    was fuer den taeglich unbeaufsichtigten Upload sicherer ist. Beide Wege
+    normalisieren vorab auf einen festen Wert, damit BETT_DB im Lauf eine
+    Konstante ist und jeder Tag gleich klingt. Die Datei(en) liegen ausserhalb
+    des Repos - das Repo ist oeffentlich, und Audio gehoert dort so wenig hin
+    wie Board-Bilder."""
+    if quelle.exists():
+        return _bett_aus_track(quelle, ziel)
+    return _bett_synthetisch(ziel)
 
-    Die Datei liegt ausserhalb des Repos - das Repo ist oeffentlich, und
-    Audio gehoert dort so wenig hin wie Board-Bilder. Vorab auf einen festen
-    Wert normalisiert, damit BETT_DB im Lauf eine Konstante ist und jeder Tag
-    gleich klingt."""
+
+def _bett_aus_track(quelle: Path, ziel: Path) -> Path:
+    """Loopfaehiges Bett aus einem echten Track schneiden.
+
+    Ein realer Track loopt nicht von selbst - beim Zusammenstoss von Ende
+    und Anfang wuerde `-stream_loop -1` einen hoerbaren Bruch erzeugen. Statt
+    den ganzen Track zu wiederholen, wird daher eine Loop-Naht gebaut: die
+    ersten und letzten BETT_LOOP_UEBERGANG Sekunden werden abgetrennt, gegeneinander
+    ueberblendet (Tail faded raus, Head faded rein, gemischt) und ans Ende
+    der uebrig bleibenden Mitte gehaengt. Die Schleife endet damit exakt an
+    der Stelle, an der der Track (ohne die abgeschnittenen Raender) ohnehin
+    weiterginge - dieselbe Crossfade-Idee wie an den Segmentgrenzen in
+    `_ton_kette()`, nur als Loop-Naht statt als Ein-/Ausblende."""
+    dauer = _mp3_dauer(quelle)
+    fade = min(BETT_LOOP_UEBERGANG, dauer / 4)
+    mitte_ende = dauer - fade
+    kette = (
+        f"[0:a]atrim=start={fade:.3f}:end={mitte_ende:.3f},"
+        f"asetpts=PTS-STARTPTS[body];"
+        f"[0:a]atrim=start={mitte_ende:.3f}:end={dauer:.3f},"
+        f"asetpts=PTS-STARTPTS,afade=t=out:st=0:d={fade:.3f}[tail];"
+        f"[0:a]atrim=start=0:end={fade:.3f},"
+        f"asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade:.3f}[head];"
+        f"[tail][head]amix=inputs=2:duration=first:normalize=0[naht];"
+        f"[body][naht]concat=n=2:v=0:a=1,"
+        f"loudnorm=I=-20:TP=-2:LRA=6[out]")
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-nostdin", "-loglevel", "error", "-i", str(quelle),
+         "-filter_complex", kette, "-map", "[out]",
+         "-ac", "2", "-c:a", "libopus", "-b:a", "96k", str(ziel)],
+        check=True, timeout=900, capture_output=True)
+    print(f"Bett aus Track gebaut: {ziel} ({ziel.stat().st_size // 1024} KiB, "
+          f"{dauer - fade:.0f} s Loop, Quelle {quelle.name})")
+    return ziel
+
+
+def _bett_synthetisch(ziel: Path) -> Path:
+    """Das Musikbett synthetisieren und normalisiert ablegen."""
     ein: list[str] = []
     teile: list[str] = []
     for i, (f, a, p, v, abfall) in enumerate(BETT_STIMMEN):
