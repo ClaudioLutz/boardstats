@@ -2451,6 +2451,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     fluege = sum(1 for s in folge for o in s.overlays if o.flug_ab is not None)
     print(f"Szenen: {len(folge)}, Overlays: {ov_nr}, "
           f"Fokus-Punkte: {fokus} ({fluege} fliegen in die Karte)")
+    # Die Zahl, die am 18.08.2026 gefehlt hat: das Video lief mit einem
+    # einzigen Motiv durch alle 70 Szenen, und im Log stand nichts davon.
+    kulisse = len({s.motiv for s in folge if s.motiv})
+    print(f"Kulisse: {kulisse} verschiedene Motive auf {len(folge)} Szenen")
+    if kulisse < 2:
+        print("WARNUNG: das ganze Video laeuft mit einem einzigen Bild - "
+              "Sichtpruefung des Tages und motiv_quelle() pruefen")
     # Gegenprobe am Ergebnis: ein Flug muss ganz in seine Szene fallen, sonst
     # schneidet der Renderer ihn ab (fade= kann Alpha nicht bei halber
     # Deckkraft fortsetzen). Dafuer sorgt die Naht-Liste in der Planung - wenn
