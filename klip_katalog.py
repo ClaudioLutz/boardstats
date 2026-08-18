@@ -195,7 +195,12 @@ def _klip_frames_fuer_pruefung(pfad: Path, dauer: float, ziel_dir: Path,
     if n <= 1 or dauer <= 0:
         punkte = [0.0]
     else:
-        punkte = sorted({round(dauer * i / (n - 1), 2) for i in range(n)})
+        # Der letzte Punkt liegt sonst exakt auf der von ffprobe gemeldeten
+        # Dauer - dort liefert ffmpeg -ss haeufig Exit-Code 0, aber gar
+        # keine Datei (EOF-Randfall, kein decodierbares Frame mehr). Ein
+        # kleiner Sicherheitsabstand vor dem Ende umgeht das.
+        ende = max(0.0, dauer - min(0.1, dauer * 0.02))
+        punkte = sorted({round(ende * i / (n - 1), 2) for i in range(n)})
     aus: list[Path] = []
     for i, t in enumerate(punkte):
         ziel = ziel_dir / f"{stem}__f{i}.png"
@@ -204,6 +209,9 @@ def _klip_frames_fuer_pruefung(pfad: Path, dauer: float, ziel_dir: Path,
                 ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t:.2f}",
                  "-i", str(pfad), "-frames:v", "1", "-q:v", "2", str(ziel)],
                 check=True, timeout=30, capture_output=True)
+            if not ziel.exists() or ziel.stat().st_size == 0:
+                raise RuntimeError("ffmpeg lieferte Exit 0, aber keine Datei "
+                                   "(EOF-Randfall)")
             aus.append(ziel)
         except Exception as e:
             rr.log.info("Clip %s: Frame bei %.2fs fehlgeschlagen: %s",
