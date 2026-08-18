@@ -102,7 +102,7 @@ import re
 import subprocess
 import time
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -1323,6 +1323,32 @@ def motiv_werte(datum: str) -> dict[str, dict]:
     return werte if isinstance(werte, dict) else {}
 
 
+def motiv_typen(datum: str) -> dict[str, str]:
+    """Dateiname -> "animiert"/"standbild" aus motive.json (siehe
+    motiv_werte). Leer bei alten Tagen ohne das Feld - dann gilt jedes Bild
+    implizit als Standbild, der Video-Lauf rendert es wie bisher."""
+    quelle = motiv_quelle(datum)
+    if quelle is None:
+        return {}
+    typ = quelle[1].get("typ")
+    return typ if isinstance(typ, dict) else {}
+
+
+def motiv_poster_pfade(datum: str) -> dict[str, Path]:
+    """Dateiname -> Posterframe-Pfad fuer animierte Motive (siehe
+    motiv_werte, Feld "poster"); leer bei Standbildern und bei alten Tagen
+    ohne das Feld."""
+    quelle = motiv_quelle(datum)
+    if quelle is None:
+        return {}
+    ordner, daten = quelle
+    poster = daten.get("poster")
+    if not isinstance(poster, dict):
+        return {}
+    return {name: ordner / str(datei) for name, datei in poster.items()
+            if (ordner / str(datei)).exists()}
+
+
 def _bild_wert(werte: dict[str, dict], name: str, schluessel: str) -> int:
     try:
         roh = (werte.get(name) or {}).get(schluessel)
@@ -1417,8 +1443,18 @@ def hintergrund_plan(bloecke: list[Block], block_worte: list[list[Wort]],
     ungezeigte) - NICHT aus dem Vorschaubild, dessen Tages-Schlagwort passt
     dort inhaltlich nicht. Hat der Tag gar keine freigegebenen Bilder, tut
     es das rohe Tagesmotiv bzw. das statische Serienbild (beide textlos);
-    None steht fuer die einfarbige Flaeche."""
-    zuordnung = motiv_zuordnung(datum)
+    None steht fuer die einfarbige Flaeche.
+
+    Dieser v6-Fallback rendert Motive per PIL als reine Standbild-Pipeline
+    (folien.py) - ein animiertes Motiv (GIF/WebM/MP4) wird deshalb hier
+    immer durch sein Posterframe ersetzt, nie roh durchgereicht."""
+    typen = motiv_typen(datum)
+    poster_pfade = motiv_poster_pfade(datum)
+    zuordnung = {
+        tid: [poster_pfade.get(p.name, p) if typen.get(p.name) == "animiert"
+              else p for p in pfade]
+        for tid, pfade in motiv_zuordnung(datum).items()
+    }
     start_von: dict[int, float] = {}
     for block, worte in zip(bloecke, block_worte):
         if worte and block.abschnitt not in start_von:
@@ -1951,6 +1987,12 @@ class Szene:
     start: float          # globaler Start; das Ende ist der Start der naechsten
     zoom_rein: bool = True
     overlays: list[Overlay] = field(default_factory=list)
+    motiv_animiert: bool = False   # motiv ist eine echte bewegte Kulisse
+                                    # (GIF/WebM/MP4), kein Standbild
+    motiv_poster: Path | None = None   # Standbild dazu - fuer den Crossfade
+                                        # der Folgeszene und als Fallback,
+                                        # falls der animierte Renderpfad
+                                        # scheitert
 
 
 @dataclass
@@ -2003,6 +2045,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung."""
     zuteilung = motiv_zuordnung(datum)
     werte = motiv_werte(datum)
+    typen = motiv_typen(datum)
+    poster_pfade = motiv_poster_pfade(datum)
     motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
     tages_motiv = motive[0] if motive else None
     pool: list[Path] = sorted(
@@ -2053,7 +2097,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     folge: list[Szene] = []
 
     def neu(motiv: Path | None, start: float) -> Szene:
-        s = Szene(motiv, start, zoom_rein=len(folge) % 2 == 0)
+        animiert = motiv is not None and typen.get(motiv.name) == "animiert"
+        poster = poster_pfade.get(motiv.name) if motiv is not None else None
+        s = Szene(motiv, start, zoom_rein=len(folge) % 2 == 0,
+                  motiv_animiert=animiert, motiv_poster=poster)
         folge.append(s)
         return s
 
@@ -2552,6 +2599,27 @@ def _lage(o: Overlay) -> tuple[str, str]:
     return xa, ya
 
 
+def _motiv_normalisiert(motiv: Path, arbeit: Path) -> Path:
+    """Normalisierte Arbeitskopie eines animierten Motivs (GIF/WebM/MP4):
+    feste Framerate, gedeckelte Aufloesung, yuv420p, ohne Ton. Das gibt GIF
+    und Video-Clips in _szene_clip() denselben Renderpfad (kein GIF-
+    Demuxer-Sonderfall) und wird pro Motiv gecacht, weil derselbe Motiv-Pfad
+    innerhalb eines Laufs mehrfach gerendert werden kann (das einlaufende
+    Motiv der naechsten Szene im Crossfade nutzt zwar den Poster, nicht
+    diese Kopie - aber ein Rueckgriff auf denselben Tag kann dieselbe Datei
+    mehrfach als Szenen-Kulisse ziehen)."""
+    ziel = arbeit / "normalisiert" / f"{motiv.stem}.mp4"
+    if ziel.exists():
+        return ziel
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(motiv),
+         "-vf", f"scale='min(1920,iw)':-2,fps={FPS}",
+         "-pix_fmt", "yuv420p", "-an", str(ziel)],
+        check=True, timeout=120, capture_output=True)
+    return ziel
+
+
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                 suffix: str, bug: Overlay, vig: Overlay,
                 naechstes: Path | None, naechster_zoom_rein: bool) -> Path:
@@ -2589,9 +2657,33 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                 flug_x=o.flug_x, flug_y=o.flug_y))
     ovs.append(Overlay(bug.png, 0.0, dauer, 0.0, bug.x, bug.y))
 
+    animiert = bool(s.motiv is not None and s.motiv_animiert)
     cmd = ["ffmpeg", "-y", "-loglevel", "error"]
-    if s.motiv is not None:
+    if s.motiv is not None and animiert:
+        try:
+            quelle = _motiv_normalisiert(s.motiv, arbeit)
+        except Exception as e:
+            if s.motiv_poster is None:
+                raise
+            print(f"WARNUNG: animiertes Motiv {s.motiv.name} nicht "
+                  f"normalisiert ({e}) - Standbild-Fallback")
+            ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
+            return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
+                               naechstes, naechster_zoom_rein)
+        # -stream_loop -1 laesst das Motiv seine eigene, meist kuerzere
+        # Laufzeit fuellend wiederholen; -t deckelt sie auf die von der TTS
+        # vorgegebene Szenendauer (Analogie zu den geloopten Overlay-PNGs
+        # unten). d=1 haelt zoompan pro Ausgabeframe bei genau einem
+        # Eingabeframe statt ein Standbild d-mal zu vervielfachen - die
+        # Zoomformel zaehlt ueber `on` ohnehin Ausgabeframes, der Ken-Burns-
+        # Effekt bleibt also unveraendert, nur die Animation bleibt erhalten.
+        cmd += ["-stream_loop", "-1", "-t", f"{dauer + 0.3:.3f}",
+               "-i", str(quelle)]
+        d = "1"
+    elif s.motiv is not None:
         cmd += ["-i", str(s.motiv)]
+        d = str(n)
+    if s.motiv is not None:
         z = f"1+{ZOOM_HUB}*on/{n}" if s.zoom_rein \
             else f"1+{ZOOM_HUB}*({n}-on)/{n}"
         # 2x-Supersampling vor zoompan gegen das bekannte Zittern des Filters
@@ -2599,7 +2691,7 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                  f":force_original_aspect_ratio=increase,"
                  f"crop={2 * CANVAS_W}:{2 * CANVAS_H},"
                  f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                 f":d={n}:s={CANVAS_W}x{CANVAS_H}:fps={FPS}[bg]"]
+                 f":d={d}:s={CANVAS_W}x{CANVAS_H}:fps={FPS}[bg]"]
     else:
         cmd += ["-f", "lavfi", "-i",
                 f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}:r={FPS}"
@@ -2656,7 +2748,17 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
             "-frames:v", str(n), "-r", str(FPS),
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-pix_fmt", "yuv420p", str(ziel)]
-    subprocess.run(cmd, check=True, timeout=600, capture_output=True)
+    try:
+        subprocess.run(cmd, check=True, timeout=600, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        if not animiert or s.motiv_poster is None:
+            raise
+        print(f"WARNUNG: Render mit animiertem Motiv "
+              f"{s.motiv.name if s.motiv else '?'} fehlgeschlagen ({e}) - "
+              f"Retry mit Standbild")
+        ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
+        return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
+                           naechstes, naechster_zoom_rein)
     return ziel
 
 
@@ -2816,9 +2918,22 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
     grenzen.append(max(int(ende * FPS + 0.5), grenzen[-1] + SZENE_MIN_FRAMES))
     for i in range(1, len(grenzen)):
         grenzen[i] = max(grenzen[i], grenzen[i - 1] + SZENE_MIN_FRAMES)
+    def crossfade_motiv(aktuell: Szene, naechste: Szene) -> Path | None:
+        # Der Crossfade blendet nur 0.3s lang ein - dafuer reicht immer ein
+        # Standbild, auch wenn die Folgeszene animiert ist. Erspart eine
+        # zweite -stream_loop-Eingabe fuer eine kaum wahrnehmbare Naht. Der
+        # Gleichheits-Check MUSS auf dem rohen Motiv liegen, nicht auf dem
+        # Poster: zwei Szenen mit demselben animierten Motiv (Pool-
+        # Wiederholung an bildarmen Tagen) sollen wie bisher gar keinen
+        # Crossfade zeigen, nicht faelschlich auf das eigene Standbild
+        # ueberblenden.
+        if naechste.motiv is None or naechste.motiv == aktuell.motiv:
+            return None
+        return naechste.motiv_poster if naechste.motiv_animiert else naechste.motiv
+
     clips = [_szene_clip(s, grenzen[i], grenzen[i + 1], i, arbeit, suffix,
                          bug, vig,
-                         folge[i + 1].motiv if i + 1 < len(folge) else None,
+                         crossfade_motiv(s, folge[i + 1]) if i + 1 < len(folge) else None,
                          folge[i + 1].zoom_rein if i + 1 < len(folge) else True)
              for i, s in enumerate(folge)]
     liste = arbeit / f"szenen{suffix}.txt"

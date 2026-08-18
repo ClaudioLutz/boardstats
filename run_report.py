@@ -1105,16 +1105,49 @@ def _gif_erstes_bild(daten: bytes) -> bytes:
         return aus.getvalue()
 
 
-def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
+def _gif_frames_fuer_pruefung(daten: bytes, ziel_dir: Path, stem: str,
+                              anzahl: int = 3) -> list[Path]:
+    """Bis zu `anzahl` Pruefframes (Start/Mitte/Ende) eines animierten GIF als
+    PNG ablegen. Ein einzelnes Posterframe deckt spaeteren Inhalt eines GIFs
+    nicht ab - die Sichtpruefung eines echten animierten Motivs muss deshalb
+    mehr als nur das erste Bild sehen."""
+    ziel_dir.mkdir(parents=True, exist_ok=True)
+    aus: list[Path] = []
+    with io.BytesIO(daten) as puffer, Image.open(puffer) as bild:
+        n = getattr(bild, "n_frames", 1)
+        indizes = sorted({0, n // 2, n - 1})[:anzahl]
+        for i in indizes:
+            bild.seek(i)
+            ziel = ziel_dir / f"{stem}__f{i}.png"
+            bild.convert("RGB").save(ziel, "PNG")
+            aus.append(ziel)
+    return aus
+
+
+def motiv_laden(
+        kandidaten: list[dict], ziel_dir: Path,
+        animiert_erlauben: bool = False,
+) -> tuple[list[Path], dict[Path, list[Path]]]:
     """Kandidaten herunterladen, mit dem Rate-Limit des Crawlers (1 req/s).
-    Was kein Bild ist, fliegt sofort raus. GIFs werden auf ihr erstes Frame
-    reduziert (siehe _gif_erstes_bild) - dabei aendert sich die Endung im
-    kandidaten-Dict selbst auf .png, damit spaetere Zuordnungen ueber
-    k["datei"] (z. B. die md5-Merkliste) den tatsaechlichen Dateinamen sehen."""
+    Was kein Bild ist, fliegt sofort raus.
+
+    Ohne animiert_erlauben (Thumbnail-Pfad) werden GIFs weiterhin auf ihr
+    erstes Frame reduziert (siehe _gif_erstes_bild) - dabei aendert sich die
+    Endung im kandidaten-Dict selbst auf .png, damit spaetere Zuordnungen
+    ueber k["datei"] (z. B. die md5-Merkliste) den tatsaechlichen Dateinamen
+    sehen.
+
+    Mit animiert_erlauben=True (Video-Hintergrund-Pfad) bleibt ein GIF als
+    echtes animiertes Motiv erhalten (Endung .gif), und die Funktion legt
+    zusaetzlich ein paar Pruefframes (Start/Mitte/Ende) dafuer an - die
+    liefert das zweite Rueckgabeelement, ein Motiv-Pfad -> Pruefframe-Liste.
+    Motive ohne Eintrag darin sind Standbilder, deren Pruefframe sie selbst
+    sind."""
     if ziel_dir.exists():
         shutil.rmtree(ziel_dir)  # Kandidaten des Vortags nicht mitschleppen
     ziel_dir.mkdir(parents=True, exist_ok=True)
     geladen: list[Path] = []
+    pruefframes: dict[Path, list[Path]] = {}
     for k in kandidaten:
         try:
             req = urllib.request.Request(k["url"], headers=BILD_HEADERS)
@@ -1127,7 +1160,18 @@ def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
             time.sleep(1.0)
         if len(daten) > MOTIV_MAX_BYTES or not daten.startswith(MOTIV_MAGIC):
             continue
-        if daten.startswith((b"GIF87a", b"GIF89a")):
+        ist_gif = daten.startswith((b"GIF87a", b"GIF89a"))
+        mehrframe = False
+        if ist_gif and animiert_erlauben:
+            try:
+                with io.BytesIO(daten) as puffer, Image.open(puffer) as bild:
+                    mehrframe = getattr(bild, "n_frames", 1) > 1
+            except Exception:
+                mehrframe = False  # kaputtes GIF faellt unten wie gehabt raus
+        if ist_gif and (not animiert_erlauben or not mehrframe):
+            # Ohne echte Mehrbildigkeit (oder ohne animiert_erlauben) bringt
+            # der animierte Renderpfad nichts - dann gilt der alte Weg: auf
+            # das erste Frame reduzieren wie bisher.
             try:
                 daten = _gif_erstes_bild(daten)
             except Exception as e:
@@ -1137,7 +1181,17 @@ def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
         ziel = ziel_dir / k["datei"]
         ziel.write_bytes(daten)
         geladen.append(ziel)
-    return geladen
+        if ist_gif and animiert_erlauben and mehrframe:
+            try:
+                pruefframes[ziel] = _gif_frames_fuer_pruefung(
+                    daten, ziel_dir / "vorschau", ziel.stem)
+            except Exception as e:
+                log.info("GIF %s: Pruefframes fehlgeschlagen: %s",
+                         k["datei"], e)
+                # Ohne Pruefframes bleibt das Motiv ungeprueft pruefbar -
+                # hintergrund_pruefen() lehnt es dann mangels Urteil ab,
+                # statt es ungesehen freizugeben.
+    return geladen, pruefframes
 
 
 def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
@@ -1160,7 +1214,15 @@ def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
     Oberhalb der Duldung bleibt es beim Fehler - viele gleiche Beschreibungen
     sind kein Ausrutscher, sondern eine Antwort, die nichts gesehen hat. Die
     Richtung bleibt in jedem Fall sicher: Verdaechtige werden ausgeschlossen,
-    nie freigegeben."""
+    nie freigegeben.
+
+    Ausnahme seit der GIF-Animation (18.08.2026): mehrere Pruefframes
+    desselben Motivs heissen "<stem>__f0.png", "<stem>__f1.png" usw. und
+    duerfen sich sehr aehnlich sehen (langsame GIFs) oder sogar wortgleich
+    beschrieben werden, ohne dass das ein Zeichen fuer ein ungesehenes
+    Urteil ist. Nur eine wortgleiche Beschreibung ueber verschiedene Motive
+    (unterschiedliche Stems) hinweg bleibt verdaechtig - genau das war der
+    Ausfall vom 16./18.08.2026."""
     out = claude_ruf(prompt, eingabe, "sonnet", timeout,
                      tools="Read", cwd=BASE, effort="low").strip()
     out = _json_schneiden(out)
@@ -1178,7 +1240,14 @@ def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
             continue
         nach_text.setdefault(text.lower(), []).append(urteil)
     for gleiche in nach_text.values():
-        if len(gleiche) > 1:
+        if len(gleiche) <= 1:
+            continue
+        # Frames desselben animierten Motivs (gleicher Stem vor "__f")
+        # duerfen sich gleich lesen - nur eine Wortgleichheit ueber
+        # verschiedene Motive hinweg ist der eigentliche Verdachtsfall.
+        stems = {re.sub(r"__f\d+(?=\.[^.]*$)", "",
+                        str(u.get("datei") or "")) for u in gleiche}
+        if len(stems) > 1:
             for urteil in gleiche:
                 urteil["_verdacht"] = "Beschreibung doppelt"
     verdacht = [u for u in urteile if u.get("_verdacht")]
@@ -1235,7 +1304,8 @@ def motiv_waehlen(manifest: dict, datum: str, thema: str) -> Path | None:
     if not kandidaten:
         log.info("keine Bild-Kandidaten im Snapshot")
         return None
-    gewaehlt = motiv_pruefen(motiv_laden(kandidaten, thumbs / "kandidaten"), thema)
+    geladen, _ = motiv_laden(kandidaten, thumbs / "kandidaten")
+    gewaehlt = motiv_pruefen(geladen, thema)
     if gewaehlt is None:
         return None
     md5 = next((k["md5"] for k in kandidaten if k["datei"] == gewaehlt.name), "")
@@ -1265,6 +1335,15 @@ schön ist oder zum Thema passt.
 
 Sieh dir JEDES unten genannte Bild mit dem Read-Werkzeug an. Urteile nur
 nach dem, was du wirklich siehst, und rate nichts.
+
+Dateien mit demselben Namen vor "__f" (z. B. "123-456__f0.png",
+"123-456__f12.png") sind mehrere Frames DESSELBEN animierten Motivs (Start/
+Mitte/Ende eines GIF) - kein eigenstaendiges Bild je Frame. Benenne in der
+Beschreibung, was diesen Frame von den anderen Frames desselben Motivs
+unterscheidet (Bewegung, Textwechsel, neue Figur im Bild), auch wenn die
+Frames sich stark aehneln - eine wortgleiche Beschreibung mehrerer Frames
+desselben Motivs ist in Ordnung, wortgleiche Beschreibungen ueber
+VERSCHIEDENE Motive hinweg sind es nicht.
 
 Ein Bild ist NUR dann ungeeignet, wenn es gegen die YouTube-Richtlinien
 verstösst: Nacktheit oder Sexualisiertes, Gewalt oder Blut, Hass- oder
@@ -1372,20 +1451,30 @@ def hintergrund_kandidaten(manifest: dict,
 
 
 def hintergrund_pruefen(
-        bilder: list[Path]
+        bilder: list[Path],
+        pruefframes: dict[Path, list[Path]] | None = None,
 ) -> tuple[dict[Path, dict[str, int]], dict[Path, str]]:
     """Lockere Sichtpruefung fuer Videohintergruende: einzige Frage ist der
     Richtlinienverstoss, alles andere geht durch. Liefert je freigegebenem
     Bild die Bewertungen (bildlich/unterhaltung/themen, 1-5) - der Video-Lauf
     sortiert die Bildauswahl danach.
 
-    Geprueft wird in Stapeln von HG_STAPEL Bildern, und ein misslungener
-    Stapel kostet nur seine eigenen Bilder. Grund ist der Ausfall am 16. und
-    18.08.2026: ein einziger Aufruf ueber alle 36 Bilder lieferte zweimal
-    dieselbe Beschreibung, das Netz gegen ungesehene Urteile verwarf darauf
-    die ganze Freigabe, es entstand kein motive.json - und das Video lief mit
-    einem einzigen Bild. Zwoelf Bilder je Aufruf bekommen zudem mehr
-    Aufmerksamkeit als 36, doppelte Beschreibungen werden also seltener.
+    Geprueft wird in Stapeln von hoechstens HG_STAPEL Pruefframes, und ein
+    misslungener Stapel kostet nur seine eigenen Bilder. Grund ist der
+    Ausfall am 16. und 18.08.2026: ein einziger Aufruf ueber alle 36 Bilder
+    lieferte zweimal dieselbe Beschreibung, das Netz gegen ungesehene
+    Urteile verwarf darauf die ganze Freigabe, es entstand kein motive.json -
+    und das Video lief mit einem einzigen Bild. Zwoelf Bilder je Aufruf
+    bekommen zudem mehr Aufmerksamkeit als 36, doppelte Beschreibungen
+    werden also seltener.
+
+    Ein animiertes Motiv (Eintrag in pruefframes) bringt mehrere Pruefframes
+    statt einem mit - Start/Mitte/Ende, weil spaetere GIF-Frames anderen
+    Inhalt zeigen koennen als das erste. Diese Frames werden nie ueber zwei
+    Stapel verteilt (sonst zerreisst die Alle-Frames-ok-Regel unten), und
+    ein Motiv gilt nur als frei, wenn ALLE seine Frames ok sind - strenger
+    als bei einem Standbild, das nur ein einziges Urteil braucht. Die
+    Bewertungen (bildlich/unterhaltung/themen) stammen vom ersten Frame.
 
     Ueberlebt kein Stapel, ist das ein Fehler und kein leeres Ergebnis: der
     Aufrufer darf dann kein motive.json schreiben, sonst gilt der Tag als
@@ -1395,41 +1484,65 @@ def hintergrund_pruefen(
     Bewertungen und je abgelehntem Bild der Grund. Der Grund ist die einzige
     Chance, eine zu strenge oder zu lasche Sichtpruefung zu bemerken - er
     gehoert deshalb ans Bild und nicht nur ins Log."""
+    pruefframes = pruefframes or {}
+    gruppen = [(p, pruefframes.get(p) or [p]) for p in bilder]
+    stapel: list[list[tuple[Path, list[Path]]]] = []
+    aktuell: list[tuple[Path, list[Path]]] = []
+    aktuell_n = 0
+    for gruppe in gruppen:
+        n = len(gruppe[1])
+        if aktuell and aktuell_n + n > HG_STAPEL:
+            stapel.append(aktuell)
+            aktuell, aktuell_n = [], 0
+        aktuell.append(gruppe)
+        aktuell_n += n
+    if aktuell:
+        stapel.append(aktuell)
+
     frei: dict[Path, dict[str, int]] = {}
     gruende: dict[Path, str] = {}
-    stapel = [bilder[i:i + HG_STAPEL]
-              for i in range(0, len(bilder), HG_STAPEL)]
     for nr, teil in enumerate(stapel, 1):
-        nach_name = {p.name: p for p in teil}
+        alle_frames = [f for _, frames in teil for f in frames]
+        nach_name = {f.name: f for f in alle_frames}
         eingabe = ("Kandidaten (Dateiname: Pfad):\n"
-                   + "\n".join(f"- {p.name}: {p}" for p in teil))
+                   + "\n".join(f"- {f.name}: {f}" for f in alle_frames))
         try:
-            daten = _sicht_antwort(HINTERGRUND_PROMPT, teil, eingabe,
+            daten = _sicht_antwort(HINTERGRUND_PROMPT, alle_frames, eingabe,
                                    TIMEOUT_HINTERGRUND, HG_DULDUNG)
         except Exception as e:
             log.warning("Hintergrund-Stapel %d/%d verworfen: %s",
                         nr, len(stapel), e)
-            for p in teil:
+            for p, _ in teil:
                 gruende[p] = f"Stapel verworfen: {e}"
             continue
+        urteil_nach_name = {}
         for urteil in daten["bilder"]:
             name = str(urteil.get("datei") or "")
-            if name not in nach_name:
+            if name in nach_name:
+                urteil_nach_name[name] = urteil
+        for p, frames in teil:
+            roh_urteile = [urteil_nach_name.get(f.name) for f in frames]
+            if any(u is None for u in roh_urteile):
+                gruende[p] = "kein Urteil in der Antwort"
                 continue
-            if urteil.get("_verdacht"):
+            frame_urteile = [u for u in roh_urteile if u is not None]
+            verdaechtig = [u for u in frame_urteile if u.get("_verdacht")]
+            if verdaechtig:
                 # ein ungesehenes Urteil ist nie eine Freigabe
-                gruende[nach_name[name]] = str(urteil["_verdacht"])
+                gruende[p] = str(verdaechtig[0]["_verdacht"])
                 continue
-            if urteil.get("ok"):
-                frei[nach_name[name]] = {
-                    "bildlich": _wert_1_5(urteil.get("bildlich")),
-                    "unterhaltung": _wert_1_5(urteil.get("unterhaltung")),
-                    "themen": _wert_1_5(urteil.get("themen")),
-                }
-            else:
-                grund = str(urteil.get("grund") or "kein Grund genannt")
-                gruende[nach_name[name]] = grund
-                log.info("Hintergrund %s abgelehnt: %s", name, grund)
+            abgelehnte = [u for u in frame_urteile if not u.get("ok")]
+            if abgelehnte:
+                grund = str(abgelehnte[0].get("grund") or "kein Grund genannt")
+                gruende[p] = grund
+                log.info("Hintergrund %s abgelehnt: %s", p.name, grund)
+                continue
+            poster = frame_urteile[0]
+            frei[p] = {
+                "bildlich": _wert_1_5(poster.get("bildlich")),
+                "unterhaltung": _wert_1_5(poster.get("unterhaltung")),
+                "themen": _wert_1_5(poster.get("themen")),
+            }
         # Fehlt die Bildlichkeit ganz, hat das Modell das Feld verschluckt:
         # dann bekommt jedes Bild die neutrale 3 und der Video-Lauf erkennt
         # Textwaende nur noch am Unterhaltungswert - das gehoert ins Log.
@@ -1456,18 +1569,28 @@ def hintergruende_waehlen(manifest: dict, datum: str) -> int:
     Ordner liegt wie alles unter arbeit/ ausserhalb des Repos und wird vom
     naechsten Lauf desselben Tages mit ueberschrieben; der Video-Lauf sieht
     ihn nie, weil er nur Namen aus motive.json anfasst. Dieselben Gruende
-    stehen zusaetzlich in motive.json unter "abgelehnt"."""
+    stehen zusaetzlich in motive.json unter "abgelehnt".
+
+    GIFs bleiben hier animiert (animiert_erlauben=True) - motive.json haelt
+    zusaetzlich unter "typ" fest, welche Dateien ein echtes animiertes Motiv
+    sind, und unter "poster" ein Standbild dazu (erstes Pruefframe, dauerhaft
+    unter dem Hauptordner statt im geloeschten vorschau/-Zwischenordner),
+    damit der Video-Lauf ueber den zoompan-d=1-Renderpfad rendert und bei
+    Bedarf (Crossfade, Fallback bei Renderfehler) ein Standbild zur Hand hat."""
     ziel_dir = ARBEIT / "motive" / datum
     gesperrt = set(verwendete_bilder(datum))
     kandidaten = hintergrund_kandidaten(manifest, gesperrt)
     if not kandidaten:
         log.info("keine Hintergrund-Kandidaten im Snapshot")
         return 0
-    geladen = motiv_laden(kandidaten, ziel_dir)
-    frei, gruende = hintergrund_pruefen(geladen)
+    geladen, pruefframes = motiv_laden(kandidaten, ziel_dir,
+                                       animiert_erlauben=True)
+    frei, gruende = hintergrund_pruefen(geladen, pruefframes)
     md5_nach_datei = {k["datei"]: k["md5"] for k in kandidaten}
     threads: dict[str, list[str]] = {}
     werte: dict[str, dict[str, int]] = {}
+    typ: dict[str, str] = {}
+    poster: dict[str, str] = {}
     abgelehnt: dict[str, str] = {}
     gezeigt: list[str] = []
     ablage = ziel_dir / "abgelehnt"
@@ -1480,15 +1603,27 @@ def hintergruende_waehlen(manifest: dict, datum: str) -> int:
             continue
         threads.setdefault(p.name.split("-", 1)[0], []).append(p.name)
         werte[p.name] = frei[p]
+        if p in pruefframes:
+            typ[p.name] = "animiert"
+            poster_ziel = ziel_dir / f"{p.stem}__poster.png"
+            try:
+                shutil.copy2(pruefframes[p][0], poster_ziel)
+                poster[p.name] = poster_ziel.name
+            except OSError as e:
+                log.info("Posterframe fuer %s nicht kopiert: %s", p.name, e)
+        else:
+            typ[p.name] = "standbild"
         if p.name in md5_nach_datei:
             gezeigt.append(md5_nach_datei[p.name])
     (ziel_dir / "motive.json").write_text(
-        json.dumps({"threads": threads, "werte": werte,
-                    "abgelehnt": abgelehnt}, indent=2) + "\n",
-        encoding="utf-8")
+        json.dumps({"threads": threads, "werte": werte, "typ": typ,
+                    "poster": poster, "abgelehnt": abgelehnt}, indent=2)
+        + "\n", encoding="utf-8")
     if abgelehnt:
         log.info("%d abgelehnte Bilder liegen mit Grund im Dateinamen unter "
                  "%s", len(abgelehnt), ablage)
+    shutil.rmtree(ziel_dir / "vorschau", ignore_errors=True)  # Posterframes
+    # sind schon herauskopiert, der Rest ist reiner Platzverbrauch
     verwendete_merken(gezeigt, datum)
     return len(frei)
 
