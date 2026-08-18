@@ -125,16 +125,26 @@ def claude_pfad() -> str:
 
 
 def claude_ruf(prompt: str, eingabe: str, modell: str, timeout: int,
-               tools: str | None = None, cwd: Path | None = None) -> str:
+               tools: str | None = None, cwd: Path | None = None,
+               effort: str | None = None) -> str:
     """Ein headless-Aufruf. Die Eingabe geht ueber stdin, nicht ueber die
     Kommandozeile: Windows kappt Kommandozeilen bei ~32767 Zeichen, und die
     Buendel sind groesser.
 
     cwd wird nur dort gesetzt, wo der Aufruf Dateien lesen soll (Sichtpruefung
     der Bildkandidaten) - Werkzeuge duerfen nur unterhalb des Arbeitsordners
-    zugreifen. Die uebrigen Aufrufe bleiben bewusst ohne."""
+    zugreifen. Die uebrigen Aufrufe bleiben bewusst ohne.
+
+    effort bleibt fuer Titel/Folien/Synthese auf None (CLI-Default "high"):
+    dort kostet ein Fehlurteil (falscher Anker, luecklige Synthese) mehr als
+    das Thinking-Budget einspart. Extraktion und Sichtpruefung laufen mit
+    "low" - reines Format-Ausfuellen bzw. Klassifikation nach festen
+    Kriterien, ohne Mehrwert durch tieferes Nachdenken, dafuer mit hohem
+    Aufrufvolumen (20.08.2026)."""
     cmd = [claude_pfad(), "-p", prompt, "--model", modell,
            "--output-format", "text"]
+    if effort:
+        cmd += ["--effort", effort]
     if tools:
         cmd += ["--allowedTools", tools]
     r = subprocess.run(cmd, input=eingabe, capture_output=True, text=True,
@@ -291,7 +301,7 @@ def ein_extrakt(eintrag: dict, bDir: Path, eDir: Path,
             "with the line TOPIC. No follow-up question, no introduction, no "
             "asking about the purpose.")
         try:
-            r = claude_ruf(p, eingabe, "sonnet", TIMEOUT_EXTRAKT)
+            r = claude_ruf(p, eingabe, "sonnet", TIMEOUT_EXTRAKT, effort="low")
         except subprocess.TimeoutExpired:
             return rueckfall("Zeitueberschreitung")
         except OSError as e:
@@ -1152,7 +1162,7 @@ def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
     Richtung bleibt in jedem Fall sicher: Verdaechtige werden ausgeschlossen,
     nie freigegeben."""
     out = claude_ruf(prompt, eingabe, "sonnet", timeout,
-                     tools="Read", cwd=BASE).strip()
+                     tools="Read", cwd=BASE, effort="low").strip()
     out = _json_schneiden(out)
     daten = json.loads(out)
     urteile = daten.get("bilder")
