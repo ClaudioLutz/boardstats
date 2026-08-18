@@ -3760,7 +3760,7 @@ def main() -> None:
     tags = tags_bauen(args.sprache, titel, bloecke_ton)
     try:
         video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
-                                               privacy_status="public",
+                                               privacy_status="private",
                                                tags=tags, sprache=args.sprache)
     except RuntimeError as e:
         # Weist YouTube die Metadaten zurueck, scheitert schon das Oeffnen der
@@ -3772,7 +3772,7 @@ def main() -> None:
         print(f"Beschreibung von YouTube abgelehnt ({e}) - zweiter Versuch "
               f"nur mit der Kopfzeile")
         video_id, url = youtube_auth.hochladen(video_mp4, titel, kurz,
-                                               privacy_status="public",
+                                               privacy_status="private",
                                                tags=tags, sprache=args.sprache)
     marker_pfad.write_text(json.dumps({"video_id": video_id, "url": url}, indent=2), encoding="utf-8")
     print(f"hochgeladen: {url}")
@@ -3821,6 +3821,14 @@ def main() -> None:
             print("als Kanal-Trailer gesetzt")
     except RuntimeError as e:
         print(f"Kanal-Trailer nicht gesetzt: {e}")
+
+    # Erst jetzt oeffentlich schalten: bis hierher lief das Video unter
+    # "privat", damit niemand es ohne Vorschaubild, Untertitel oder
+    # Playlist-Eintrag zu sehen bekommt. Schlaegt das fehl, bleibt das Video
+    # bewusst privat statt halbfertig oeffentlich zu stehen - der Fehler
+    # muss auffallen, statt stillschweigend uebergangen zu werden.
+    youtube_auth.status_setzen(video_id, "public")
+    print("auf oeffentlich geschaltet")
 
 
 if __name__ == "__main__":

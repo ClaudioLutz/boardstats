@@ -138,6 +138,30 @@ def hochladen(video_pfad: Path, titel: str, beschreibung: str,
     return video_id, f"https://youtu.be/{video_id}"
 
 
+def status_setzen(video_id: str, privacy_status: str) -> None:
+    """Setzt den privacyStatus eines bestehenden Videos (videos.update).
+
+    Dient dazu, ein zunaechst privat hochgeladenes Video erst nach Thumbnail,
+    Untertiteln und Playlist-Eintrag auf oeffentlich zu schalten - so sieht
+    niemand ein Video ohne Vorschaubild oder Beschreibung. Braucht den
+    force-ssl-Scope."""
+    token = access_token()
+    daten = json.dumps({"id": video_id,
+                        "status": {"privacyStatus": privacy_status}}).encode("utf-8")
+    req = urllib.request.Request(
+        "https://www.googleapis.com/youtube/v3/videos?part=status",
+        data=daten, method="PUT",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json; charset=UTF-8"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(
+            f"Status-Aenderung fehlgeschlagen ({e.code}): {detail}") from e
+
+
 def loeschen(video_id: str) -> None:
     """Loescht ein Video des Kanals endgueltig (videos.delete; braucht den
     force-ssl-Scope). Nur auf ausdrueckliche Anweisung aufrufen."""
