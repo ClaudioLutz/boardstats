@@ -103,7 +103,7 @@ import subprocess
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape as xml_escape
@@ -1248,16 +1248,78 @@ def ass_erzeugen(anzeigen: list[Anzeige], ziel_ass: Path) -> None:
 
 # ----------------------------------------------------------- Hintergrundbilder
 
-def motiv_werte(datum: str) -> dict[str, dict]:
-    """Bewertungen der Sichtpruefung je Bilddatei (unterhaltung/themen,
-    1-5; seit 16.08.2026 in motive.json). Leer bei alten Tagen ohne
-    Bewertungen - dann zaehlt jedes Bild als neutrale 3."""
+MOTIV_RUECKGRIFF = 7   # so viele Tage zurueck darf die Kulisse notfalls stammen
+_quelle_gemeldet: set[str] = set()
+
+
+def _motive_brauchbar(ordner: Path) -> dict | None:
+    """Sichtpruefungs-Ergebnis eines Tages, aber nur wenn es wirklich Bilder
+    benennt: threads nicht leer und mindestens eine genannte Datei liegt da.
+    Ein leeres oder verwaistes motive.json zaehlt nicht - sonst gilt der Tag
+    als versorgt und der Rueckgriff greift nicht."""
     try:
-        daten = json.loads((HINTERGRUND_DIR / datum / "motive.json")
-                           .read_text(encoding="utf-8"))
+        daten = json.loads((ordner / "motive.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return None
+    threads = daten.get("threads")
+    if not isinstance(threads, dict) or not threads:
+        return None
+    for namen in threads.values():
+        if isinstance(namen, list) and any((ordner / str(n)).exists()
+                                           for n in namen):
+            return daten
+    return None
+
+
+def motiv_quelle(datum: str) -> tuple[Path, dict] | None:
+    """Ordner und motive.json, aus denen die Kulisse dieses Videos kommt.
+
+    Normalfall ist der eigene Tag. Scheitert dessen Sichtpruefung, wird der
+    juengste Tag der letzten MOTIV_RUECKGRIFF Tage genommen, dessen Bilder
+    schon einmal freigegeben und gezeigt wurden. Wiederholte Bilder von
+    gestern sind unschoen, ein Video aus einem einzigen Bild ist ein Fehler -
+    genau das passierte am 18.08.2026, als ein doppelt beschriebenes Bildpaar
+    die Freigabe aller 36 Tagesbilder kippte und alle 70 Szenen mit dem
+    Vorschaubild-Motiv liefen. Ungepruefte Downloads kommen nie infrage: die
+    Zuordnung entsteht ausschliesslich aus einem motive.json.
+
+    Die Thread-Nummern eines fremden Tages passen auf keinen Abschnitt des
+    heutigen Berichts - der Szenenbau zieht die Bilder dann reihum aus dem
+    Pool statt thread-treu, was fuer eine Kulisse voellig genuegt."""
+    eigen = HINTERGRUND_DIR / datum
+    daten = _motive_brauchbar(eigen)
+    if daten is not None:
+        return eigen, daten
+    try:
+        tag = date.fromisoformat(datum)
+    except ValueError:
+        return None
+    for zurueck in range(1, MOTIV_RUECKGRIFF + 1):
+        alt_dir = HINTERGRUND_DIR / (tag - timedelta(days=zurueck)).isoformat()
+        daten = _motive_brauchbar(alt_dir)
+        if daten is not None:
+            if datum not in _quelle_gemeldet:
+                _quelle_gemeldet.add(datum)
+                print(f"WARNUNG: keine freigegebenen Hintergrundbilder fuer "
+                      f"{datum} - Kulisse kommt aus {alt_dir.name}")
+            return alt_dir, daten
+    if datum not in _quelle_gemeldet:
+        _quelle_gemeldet.add(datum)
+        print(f"WARNUNG: keine freigegebenen Hintergrundbilder fuer {datum} "
+              f"und keine aus den letzten {MOTIV_RUECKGRIFF} Tagen - das "
+              f"Video laeuft mit dem Tagesmotiv als einziger Kulisse")
+    return None
+
+
+def motiv_werte(datum: str) -> dict[str, dict]:
+    """Bewertungen der Sichtpruefung je Bilddatei (bildlich/unterhaltung/
+    themen, 1-5; seit 16.08.2026 in motive.json). Leer bei alten Tagen ohne
+    Bewertungen - dann zaehlt jedes Bild als neutrale 3. Kommt aus demselben
+    Tag wie die Bilder selbst (siehe motiv_quelle)."""
+    quelle = motiv_quelle(datum)
+    if quelle is None:
         return {}
-    werte = daten.get("werte")
+    werte = quelle[1].get("werte")
     return werte if isinstance(werte, dict) else {}
 
 
@@ -1325,14 +1387,17 @@ def thread_titel(datum: str) -> dict[str, str]:
 def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
     """Freigegebene Hintergrundbilder je Thread (Report-Lauf,
     arbeit/motive/<datum>/), je Thread absteigend nach Bildrang sortiert
-    (Motive vor Textwaenden). Leer, wenn der Tag keine hat."""
-    ordner = HINTERGRUND_DIR / datum
-    try:
-        threads = json.loads((ordner / "motive.json")
-                             .read_text(encoding="utf-8"))["threads"]
-    except (OSError, json.JSONDecodeError, KeyError):
+    (Motive vor Textwaenden). Leer nur, wenn auch der Rueckgriff auf die
+    Vortage nichts findet (siehe motiv_quelle)."""
+    quelle = motiv_quelle(datum)
+    if quelle is None:
         return {}
-    werte = motiv_werte(datum)
+    ordner, daten = quelle
+    threads = daten["threads"]
+    # Bewertungen aus derselben Datei wie die Bilder, nicht aus motiv_werte():
+    # bei einem Rueckgriff darf beides nicht aus verschiedenen Tagen kommen.
+    rohwerte = daten.get("werte")
+    werte = rohwerte if isinstance(rohwerte, dict) else {}
     aus: dict[str, list[Path]] = {}
     for tid, namen in threads.items():
         namen = sorted(namen, key=lambda n: (-_bild_rang(werte, n), n))

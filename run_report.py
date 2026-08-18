@@ -1105,12 +1105,26 @@ def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
 
 
 def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
-                   timeout: int) -> dict:
+                   timeout: int, duldung: float = 0.0) -> dict:
     """Gemeinsames Netz aller Sichtpruefungen: Aufruf, Parsen und der Beleg,
     dass wirklich hingesehen wurde. Ein headless-Aufruf kann sonst ein
     wohlgeformtes Urteil liefern, ohne die Dateien je geoeffnet zu haben
     (verweigertes Werkzeug, Pfad ausserhalb des Arbeitsordners) - deshalb
-    braucht jedes Bild eine eigene, nicht leere Beschreibung."""
+    braucht jedes Bild eine eigene, nicht leere Beschreibung.
+
+    Urteile ohne eigene Beschreibung tragen danach die Marke "_verdacht" und
+    sind fuer den Aufrufer verbrannt. `duldung` sagt, welcher Anteil davon
+    noch als Schlamperei an einzelnen Bildern durchgeht: 0.0 heisst
+    alles-oder-nichts (so beim Vorschaubild - ein ungepruefter Kanalanstrich
+    kostet im schlimmsten Fall den Kanal), ein hoeherer Wert laesst die
+    uebrigen Urteile stehen. Letzteres kam vom Ausfall am 16. und 18.08.2026:
+    ein einziges doppelt beschriebenes Bildpaar kippte die Freigabe aller 36
+    Hintergrundbilder, und das Video lief mit einem einzigen Bild.
+
+    Oberhalb der Duldung bleibt es beim Fehler - viele gleiche Beschreibungen
+    sind kein Ausrutscher, sondern eine Antwort, die nichts gesehen hat. Die
+    Richtung bleibt in jedem Fall sicher: Verdaechtige werden ausgeschlossen,
+    nie freigegeben."""
     out = claude_ruf(prompt, eingabe, "sonnet", timeout,
                      tools="Read", cwd=BASE).strip()
     out = _json_schneiden(out)
@@ -1118,16 +1132,26 @@ def _sicht_antwort(prompt: str, bilder: list[Path], eingabe: str,
     urteile = daten.get("bilder")
     if not isinstance(urteile, list) or len(urteile) < len(bilder):
         raise RuntimeError(f"Sichtpruefung unvollstaendig: {out[:200]!r}")
-    beschreibungen = set()
+    nach_text: dict[str, list[dict]] = {}
     for urteil in urteile:
+        if not isinstance(urteil, dict):
+            raise RuntimeError(f"Sichtpruefung unlesbar: {out[:200]!r}")
         text = re.sub(r"\W+", " ", str(urteil.get("beschreibung") or "")).strip()
         if len(text) < 20:
-            raise RuntimeError(f"Bild {urteil.get('datei')!r} ohne Beschreibung "
-                               f"- vermutlich ungesehen")
-        beschreibungen.add(text.lower())
-    if len(beschreibungen) < len(urteile):
-        raise RuntimeError("dieselbe Beschreibung fuer mehrere Bilder - "
-                           "vermutlich ungesehen")
+            urteil["_verdacht"] = "ohne Beschreibung"
+            continue
+        nach_text.setdefault(text.lower(), []).append(urteil)
+    for gleiche in nach_text.values():
+        if len(gleiche) > 1:
+            for urteil in gleiche:
+                urteil["_verdacht"] = "Beschreibung doppelt"
+    verdacht = [u for u in urteile if u.get("_verdacht")]
+    if len(verdacht) > duldung * len(urteile):
+        raise RuntimeError(f"{len(verdacht)} von {len(urteile)} Urteilen ohne "
+                           f"eigene Beschreibung - vermutlich ungesehen")
+    for urteil in verdacht:
+        log.info("Sichtpruefung: %s %s - nicht freigegeben",
+                 urteil.get("datei"), urteil["_verdacht"])
     return daten
 
 
@@ -1191,7 +1215,9 @@ def motiv_waehlen(manifest: dict, datum: str, thema: str) -> Path | None:
 HG_JE_THREAD = 4         # so viele Bilder liefert ein Thread hoechstens
 HG_MAX = 36              # Gesamtdeckel fuer die Sichtpruefung
 HG_SEITE = (0.4, 3.5)    # Hintergruende werden cover-beschnitten, fast alles geht
-TIMEOUT_HINTERGRUND = 900
+HG_STAPEL = 12           # Bilder je Sichtpruefungs-Aufruf (Schadensgrenze)
+HG_DULDUNG = 0.34        # so viel Verdacht je Stapel gilt als Schlamperei
+TIMEOUT_HINTERGRUND = 300  # je Stapel; 36/12 Stapel = dasselbe Gesamtbudget
 
 HINTERGRUND_PROMPT = """\
 Du prüfst Bilder für den Videohintergrund eines Nachrichtenvideos über das
@@ -1300,35 +1326,59 @@ def hintergrund_kandidaten(manifest: dict,
 
 def hintergrund_pruefen(bilder: list[Path]) -> dict[Path, dict[str, int]]:
     """Lockere Sichtpruefung fuer Videohintergruende: einzige Frage ist der
-    Richtlinienverstoss, alles andere geht durch. Das Netz gegen ungesehene
-    Urteile (_sicht_antwort) bleibt dasselbe wie beim Vorschaubild. Liefert
-    je freigegebenem Bild die Bewertungen (unterhaltung/themen, 1-5) - der
-    Video-Lauf sortiert die Bildauswahl danach."""
-    if not bilder:
-        return {}
-    nach_name = {p.name: p for p in bilder}
-    eingabe = ("Kandidaten (Dateiname: Pfad):\n"
-               + "\n".join(f"- {p.name}: {p}" for p in bilder))
-    daten = _sicht_antwort(HINTERGRUND_PROMPT, bilder, eingabe,
-                           TIMEOUT_HINTERGRUND)
+    Richtlinienverstoss, alles andere geht durch. Liefert je freigegebenem
+    Bild die Bewertungen (bildlich/unterhaltung/themen, 1-5) - der Video-Lauf
+    sortiert die Bildauswahl danach.
+
+    Geprueft wird in Stapeln von HG_STAPEL Bildern, und ein misslungener
+    Stapel kostet nur seine eigenen Bilder. Grund ist der Ausfall am 16. und
+    18.08.2026: ein einziger Aufruf ueber alle 36 Bilder lieferte zweimal
+    dieselbe Beschreibung, das Netz gegen ungesehene Urteile verwarf darauf
+    die ganze Freigabe, es entstand kein motive.json - und das Video lief mit
+    einem einzigen Bild. Zwoelf Bilder je Aufruf bekommen zudem mehr
+    Aufmerksamkeit als 36, doppelte Beschreibungen werden also seltener.
+
+    Ueberlebt kein Stapel, ist das ein Fehler und kein leeres Ergebnis: der
+    Aufrufer darf dann kein motive.json schreiben, sonst gilt der Tag als
+    versorgt und der Rueckgriff im Video-Lauf greift nicht."""
     frei: dict[Path, dict[str, int]] = {}
-    for urteil in daten["bilder"]:
-        name = str(urteil.get("datei") or "")
-        if urteil.get("ok") and name in nach_name:
-            frei[nach_name[name]] = {
-                "bildlich": _wert_1_5(urteil.get("bildlich")),
-                "unterhaltung": _wert_1_5(urteil.get("unterhaltung")),
-                "themen": _wert_1_5(urteil.get("themen")),
-            }
-        elif name in nach_name:
-            log.info("Hintergrund %s abgelehnt: %s", name, urteil.get("grund"))
-    # Fehlt die Bildlichkeit ganz, hat das Modell das Feld verschluckt: dann
-    # bekommt jedes Bild die neutrale 3 und der Video-Lauf erkennt Textwaende
-    # nur noch am Unterhaltungswert - das gehoert ins Log.
-    if frei and not any("bildlich" in u for u in daten["bilder"]
-                        if isinstance(u, dict)):
-        log.warning("Sichtpruefung ohne bildlich-Bewertung - Textwaende "
-                    "werden nur ueber den Unterhaltungswert erkannt")
+    stapel = [bilder[i:i + HG_STAPEL]
+              for i in range(0, len(bilder), HG_STAPEL)]
+    for nr, teil in enumerate(stapel, 1):
+        nach_name = {p.name: p for p in teil}
+        eingabe = ("Kandidaten (Dateiname: Pfad):\n"
+                   + "\n".join(f"- {p.name}: {p}" for p in teil))
+        try:
+            daten = _sicht_antwort(HINTERGRUND_PROMPT, teil, eingabe,
+                                   TIMEOUT_HINTERGRUND, HG_DULDUNG)
+        except Exception as e:
+            log.warning("Hintergrund-Stapel %d/%d verworfen: %s",
+                        nr, len(stapel), e)
+            continue
+        for urteil in daten["bilder"]:
+            name = str(urteil.get("datei") or "")
+            if name not in nach_name:
+                continue
+            if urteil.get("_verdacht"):
+                continue  # ein ungesehenes Urteil ist nie eine Freigabe
+            if urteil.get("ok"):
+                frei[nach_name[name]] = {
+                    "bildlich": _wert_1_5(urteil.get("bildlich")),
+                    "unterhaltung": _wert_1_5(urteil.get("unterhaltung")),
+                    "themen": _wert_1_5(urteil.get("themen")),
+                }
+            else:
+                log.info("Hintergrund %s abgelehnt: %s", name,
+                         urteil.get("grund"))
+        # Fehlt die Bildlichkeit ganz, hat das Modell das Feld verschluckt:
+        # dann bekommt jedes Bild die neutrale 3 und der Video-Lauf erkennt
+        # Textwaende nur noch am Unterhaltungswert - das gehoert ins Log.
+        if not any("bildlich" in u for u in daten["bilder"]):
+            log.warning("Stapel %d ohne bildlich-Bewertung - Textwaende "
+                        "werden nur ueber den Unterhaltungswert erkannt", nr)
+    if not frei:
+        raise RuntimeError(f"kein brauchbares Urteil aus {len(stapel)} "
+                           f"Stapeln ({len(bilder)} Bilder)")
     return frei
 
 
