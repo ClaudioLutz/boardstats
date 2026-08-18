@@ -2149,6 +2149,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  f"({e}) - Clip wird nicht verwendet")
     klip_zuordnung = {nr: p for nr, p in klip_zuordnung.items()
                       if p in klip_poster}
+    if klip_zuordnung:
+        print("Clip-Zuordnung: " + ", ".join(
+            ("Intro" if nr == INTRO_KLIP_KEY else f"Kapitel {nr}")
+            + f" -> {p.name}" for nr, p in klip_zuordnung.items()))
 
     # Intro. Kaltstart: in Sekunde 0 steht gross das Schlagwort des Tages im
     # Bild - dasselbe, das das Vorschaubild traegt. Damit loest das Video den
@@ -2159,7 +2163,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                      if b.rolle == "agenda_kopf"), None)
     erster_kopf = start_von(koepfe[0][0]) if koepfe else ende
     intro_bis = start_von(kopf_idx) if kopf_idx is not None else erster_kopf
-    s = neu(tages_motiv or pool_bild(), 0.0)
+    s = neu(klip_zuordnung.get(INTRO_KLIP_KEY) or tages_motiv or pool_bild(),
+           0.0)
     hook_ab = 0.4
     if thumb and intro_bis > KALTSTART + 1.0:
         s.overlays.append(ov(szenen.zahl_tafel(thumb, "", ""), 0.0,
@@ -2645,7 +2650,7 @@ def _motiv_normalisiert(motiv: Path, arbeit: Path) -> Path:
     diese Kopie - aber ein Rueckgriff auf denselben Tag kann dieselbe Datei
     mehrfach als Szenen-Kulisse ziehen)."""
     ziel = arbeit / "normalisiert" / f"{motiv.stem}.mp4"
-    if ziel.exists():
+    if ziel.exists() and ziel.stat().st_size > 0:
         return ziel
     ziel.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
@@ -2673,21 +2678,33 @@ def _klip_poster(pfad: Path, arbeit: Path) -> Path:
     return ziel
 
 
+INTRO_KLIP_KEY = -1  # Sentinel in _klip_zuordnung()s Rueckgabe: kollidiert
+# nie mit einem echten Abschnitts-Index (immer >= 0), markiert den fuer das
+# Intro nominierten Clip in derselben dict wie die Kapitel-Zuteilung.
+
 KLIP_PROMPT_ZUORDNUNG = """\
 Du ordnest kurze, TONLOSE Videoclips (WebM/MP4-Ausschnitte vom Board /biz/)
 den Abschnitten eines Nachrichtenvideos zu, damit sie dort als kurze bewegte
-Kulisse statt eines Standbilds laufen.
+Kulisse statt eines Standbilds laufen. Bewegtbild ist deutlich unterhaltsamer
+als ein Standbild - nutze JEDEN Clip, der zu einem Abschnitt vernuenftig
+passt (Stimmung/Thema/Motiv, nicht nur Stichwortgleichheit). Im Zweifel
+lieber zuteilen als weglassen; nur wenn ein Clip zu KEINEM Abschnitt passt,
+bleibt er ungenutzt.
 
 Unten stehen die Abschnitte (Nummer und Titel) sowie die freigegebenen
 Clips mit ihrer Beschreibung. Waehle fuer jeden Abschnitt HOECHSTENS EINEN
-Clip, der inhaltlich am besten passt (Stimmung/Thema/Motiv, nicht nur
-Stichwortgleichheit). Ein Clip darf hoechstens einem Abschnitt zugeteilt
-werden. Passt kein Clip zu einem Abschnitt, bleibt er ohne Clip - das ist
-der Normalfall, Clips sind eine Ergaenzung zur Bild-Kulisse, kein Zwang.
+Clip. Ein Clip darf hoechstens einem Abschnitt zugeteilt werden.
+
+Zusaetzlich: nominiere unter "intro" den einen Clip (falls vorhanden), der
+sich am besten als Aufmerksamkeits-Fang fuer die allerersten Sekunden des
+Videos eignet (auffaellig, keine Vorkenntnis des Themas noetig) - unabhaengig
+von der Abschnitts-Zuordnung, notfalls auch derselbe Clip, der bereits einem
+Abschnitt zugeteilt wurde.
 
 Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
 Code-Zaun:
-{"zuordnung": {"<abschnitt-nummer>": "<clip-md5>", ...}}
+{"zuordnung": {"<abschnitt-nummer>": "<clip-md5>", ...},
+ "intro": "<clip-md5-oder-null>"}
 """
 
 
@@ -2706,13 +2723,20 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
     gewaehlt werden, unbegrenzt. Analog der 14-Tage-MD5-Sperrliste der
     Bilder (run_report.VERWENDET_TAGE) bleibt ein kuerzlich gezeigter Clip
     hier aussen vor, und jede tatsaechliche Wahl schreibt "zuletzt_verwendet"
-    sofort in den Katalog zurueck."""
+    sofort in den Katalog zurueck. Ausnahme: "zuletzt_verwendet" == datum
+    zaehlt weiterhin als frei - sonst sperrt sich ein erneuter Testlauf
+    desselben Tages (z.B. nach einem Bugfix-Rebuild) selbst alle Clips."""
     katalog = klip_katalog.katalog_laden()
     grenze = (date.fromisoformat(datum)
              - timedelta(days=rr.VERWENDET_TAGE)).isoformat()
+
+    def frisch_genug(e: dict) -> bool:
+        letzte = e.get("zuletzt_verwendet")
+        return not letzte or letzte == datum or letzte < grenze
+
     frei = {md5: e for md5, e in katalog["clips"].items()
            if e.get("status") == "frei" and e.get("beschreibung")
-           and (e.get("zuletzt_verwendet") or "0000-00-00") < grenze}
+           and frisch_genug(e)}
     if not frei or not abschnitte:
         return {}
     zeilen = [f"{i}: {titel_map.get(a.threads[0], a.threads[0])}"
@@ -2749,6 +2773,13 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
         aus[idx] = pfad
         vergeben.add(md5)
         katalog["clips"][md5]["zuletzt_verwendet"] = datum
+    intro_md5 = daten.get("intro")
+    if isinstance(intro_md5, str) and intro_md5 in frei:
+        pfad = klip_katalog.klip_datei(intro_md5, katalog, ziel_dir)
+        if pfad is not None:
+            aus[INTRO_KLIP_KEY] = pfad
+            vergeben.add(intro_md5)
+            katalog["clips"][intro_md5]["zuletzt_verwendet"] = datum
     if vergeben:
         klip_katalog.katalog_speichern(katalog)
     return aus
