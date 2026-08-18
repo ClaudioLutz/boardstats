@@ -2655,7 +2655,12 @@ def _motiv_normalisiert(motiv: Path, arbeit: Path) -> Path:
     ziel.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", str(motiv),
-         "-vf", f"scale='min(1920,iw)':-2,fps={FPS}",
+         # trunc(.../2)*2 statt nur min(1920,iw): manche /biz/-Clips haben
+         # eine ungerade Breite (z.B. 341x540) - yuv420p verlangt gerade
+         # Breite UND Hoehe, -2 rundet nur die berechnete Seite, nicht die
+         # feste (Fuchs-Clip 18.08.2026: ffmpeg-Exit 187, "width not
+         # divisible by 2").
+         "-vf", f"scale='trunc(min(1920,iw)/2)*2':-2,fps={FPS}",
          "-pix_fmt", "yuv420p", "-an", str(ziel)],
         check=True, timeout=120, capture_output=True)
     return ziel
