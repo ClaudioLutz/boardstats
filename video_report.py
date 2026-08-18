@@ -2223,6 +2223,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             p = eigenes_bild(eigene) or pool_bild(nur_frisch=True)
             if p is not None:
                 return p
+            # Ein zugeteilter Videoclip (siehe _klip_zuordnung) darf hier nie
+            # wiederholt werden: ohne diese Sperre lieferte der Fallback
+            # unten bei knappem Kapitel-Pool denselben bewegten Clip fuer
+            # jede weitere Story-Szene des Kapitels zurueck - anders als ein
+            # zweimal gezeigtes Standbild faellt das sofort unangenehm auf
+            # (Nutzer-Feedback 18.08.2026: Clip 10x am Berichtsende
+            # wiederholt, "0 Relevanz und 0 Unterhaltungswert").
+            if aktuell is not None and aktuell in klip_poster:
+                return pool_bild() or tages_motiv
             # Ist der Tagespool durch, wird wiederholt - dann lieber ein
             # Motiv zweimal als eine Textwand einmal.
             wieder = [p for p in eigene
