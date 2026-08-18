@@ -42,5 +42,10 @@ fi
     # einzige Konfiguration (eine deutsche Berichtsfassung existiert nicht
     # mehr, seit die Synthese direkt auf Englisch laeuft).
     "$VENV_PY" video_report.py --sprache en || echo "Video fehlgeschlagen (Status $?)"
+    # Rohclips des WebM/MP4-Katalogs aufraeumen (Katalog-Eintrag bleibt) -
+    # an denselben Lauf gebunden, der sie zuletzt gebraucht haben koennte,
+    # statt eines eigenen Cron-Eintrags. Ein Fehlschlag hier darf das
+    # bereits fertige Video nicht nachtraeglich als gescheitert markieren.
+    "$VENV_PY" klip_katalog.py || echo "Clip-Bereinigung fehlgeschlagen (Status $?)"
     echo "===== Video beendet:  $(date '+%Y-%m-%d %H:%M:%S') ====="
 } >> "$LOG" 2>&1

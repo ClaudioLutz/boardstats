@@ -1683,6 +1683,17 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         # als Hintergrund unter den Text - auch das darf nie blockieren.
         log.warning("Hintergrund-Auswahl fehlgeschlagen (Video nimmt das "
                     "Vorschaubild als Hintergrund): %s", e)
+    try:
+        log.info("Pruefe WebM/MP4-Clips fuers Video (Sonnet, "
+                 "Sichtpruefung) ...")
+        import klip_katalog
+        log.info("%d neue Clips freigegeben",
+                 klip_katalog.klips_ernten(manifest, datum))
+    except Exception as e:
+        # Clips sind eine Ergaenzung zur Bild-Kulisse, kein Ersatz - eine
+        # gescheiterte Ernte darf den Bericht nie blockieren.
+        log.warning("Clip-Ernte fehlgeschlagen (Video nimmt die "
+                    "Bild-Kulisse ohne Clips): %s", e)
     (tag_dir / "README.md").write_text(
         _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
     markdown_index_aktualisieren()

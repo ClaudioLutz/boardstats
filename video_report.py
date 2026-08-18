@@ -111,6 +111,8 @@ from xml.sax.saxutils import escape as xml_escape
 from PIL import ImageFont
 
 import folien
+import klip_katalog
+import run_report as rr
 import szenen
 import thumbnail
 import youtube_auth
@@ -2097,8 +2099,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     folge: list[Szene] = []
 
     def neu(motiv: Path | None, start: float) -> Szene:
-        animiert = motiv is not None and typen.get(motiv.name) == "animiert"
-        poster = poster_pfade.get(motiv.name) if motiv is not None else None
+        poster: Path | None
+        if motiv is not None and motiv in klip_poster:
+            # ein zugeteilter WebM/MP4-Clip (siehe _klip_zuordnung), kein
+            # Bild-Motiv aus motive.json - eigener Poster-Weg statt typen/
+            # poster_pfade, die nur die Bild-Kulisse kennen.
+            animiert, poster = True, klip_poster[motiv]
+        else:
+            animiert = motiv is not None and typen.get(motiv.name) == "animiert"
+            poster = poster_pfade.get(motiv.name) if motiv is not None else None
         s = Szene(motiv, start, zoom_rein=len(folge) % 2 == 0,
                   motiv_animiert=animiert, motiv_poster=poster)
         folge.append(s)
@@ -2125,6 +2134,21 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                               or pool_bild(nur_frisch=True)
                               or (eigene[0] if eigene else pool_bild()))
     titel_map = thread_titel(datum)
+
+    # Freigegebene WebM/MP4-Clips inhaltlich auf Abschnitte verteilen (siehe
+    # _klip_zuordnung) - eine Ergaenzung zur Bild-Kulisse, kein Ersatz: die
+    # meisten Abschnitte bleiben ohne Clip. Das Posterframe entsteht nur fuer
+    # tatsaechlich zugeteilte Clips, nicht fuer den ganzen Katalog.
+    klip_zuordnung = _klip_zuordnung(datum, abschnitte, titel_map)
+    klip_poster: dict[Path, Path] = {}
+    for pfad in klip_zuordnung.values():
+        try:
+            klip_poster[pfad] = _klip_poster(pfad, arbeit)
+        except Exception as e:
+            print(f"WARNUNG: Clip-Poster fuer {pfad.name} fehlgeschlagen "
+                 f"({e}) - Clip wird nicht verwendet")
+    klip_zuordnung = {nr: p for nr, p in klip_zuordnung.items()
+                      if p in klip_poster}
 
     # Intro. Kaltstart: in Sekunde 0 steht gross das Schlagwort des Tages im
     # Bild - dasselbe, das das Vorschaubild traegt. Damit loest das Video den
@@ -2213,7 +2237,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
         # Opener: Kapiteltitel als Lower Third, solange die Ueberschrift
         # gesprochen wird; die Szene laeuft danach als erste Story weiter.
-        akt = kapitel_motive[k]
+        # Ein zugeteilter Clip (siehe _klip_zuordnung) ersetzt hier bewusst
+        # nur das Opener-Motiv dieses einen Abschnitts, nicht dessen ganze
+        # Bild-Kulisse - Clips sind eine Ergaenzung, kein Ersatz.
+        akt = klip_zuordnung.get(nr, kapitel_motive[k])
         kapitel_szene = neu(akt, kopf_start)
         opener_bis = min(max(rumpf_start, kopf_start + OPENER_MIN),
                          naechster - 0.5)
@@ -2618,6 +2645,104 @@ def _motiv_normalisiert(motiv: Path, arbeit: Path) -> Path:
          "-pix_fmt", "yuv420p", "-an", str(ziel)],
         check=True, timeout=120, capture_output=True)
     return ziel
+
+
+def _klip_poster(pfad: Path, arbeit: Path) -> Path:
+    """Standbild eines WebM/MP4-Clips (Katalog-Clips haben - anders als
+    animierte GIFs - kein vorab erzeugtes Posterframe, weil ihre
+    Sichtpruefung nur Extraktframes braucht, keinen dauerhaften Poster).
+    Wird nur fuer tatsaechlich einer Szene zugeteilte Clips erzeugt, nicht
+    fuer den ganzen Katalog."""
+    ziel = arbeit / "normalisiert" / f"{pfad.stem}__poster.png"
+    if ziel.exists():
+        return ziel
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(pfad),
+         "-frames:v", "1", "-q:v", "2", str(ziel)],
+        check=True, timeout=30, capture_output=True)
+    return ziel
+
+
+KLIP_PROMPT_ZUORDNUNG = """\
+Du ordnest kurze, TONLOSE Videoclips (WebM/MP4-Ausschnitte vom Board /biz/)
+den Abschnitten eines Nachrichtenvideos zu, damit sie dort als kurze bewegte
+Kulisse statt eines Standbilds laufen.
+
+Unten stehen die Abschnitte (Nummer und Titel) sowie die freigegebenen
+Clips mit ihrer Beschreibung. Waehle fuer jeden Abschnitt HOECHSTENS EINEN
+Clip, der inhaltlich am besten passt (Stimmung/Thema/Motiv, nicht nur
+Stichwortgleichheit). Ein Clip darf hoechstens einem Abschnitt zugeteilt
+werden. Passt kein Clip zu einem Abschnitt, bleibt er ohne Clip - das ist
+der Normalfall, Clips sind eine Ergaenzung zur Bild-Kulisse, kein Zwang.
+
+Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
+Code-Zaun:
+{"zuordnung": {"<abschnitt-nummer>": "<clip-md5>", ...}}
+"""
+
+
+def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
+                    titel_map: dict[str, str]) -> dict[int, Path]:
+    """Ordnet freigegebene Katalog-Clips (arbeit/clips/katalog.json)
+    inhaltlich Abschnitten zu - ein claude_ruf()-Aufruf, analog den
+    Sichtpruefungen, statt einer Rang-Sortierung wie bei der Bildkulisse
+    (siehe _bild_rang): Clips sind selten genug, dass sich eine inhaltliche
+    Einzelzuordnung lohnt (Recherche 18.08.2026, Abschnitt "Zuordnung im
+    Drehbuch"). Leer, wenn keine Clips frei sind oder der Aufruf scheitert -
+    dann laeuft die Kulisse wie bisher nur mit Bildern, nie ein Fehler.
+
+    Der Katalog ist kumulativ (siehe klip_katalog.py) - ohne eine
+    Wiederverwendungssperre koennte derselbe freigegebene Clip taeglich neu
+    gewaehlt werden, unbegrenzt. Analog der 14-Tage-MD5-Sperrliste der
+    Bilder (run_report.VERWENDET_TAGE) bleibt ein kuerzlich gezeigter Clip
+    hier aussen vor, und jede tatsaechliche Wahl schreibt "zuletzt_verwendet"
+    sofort in den Katalog zurueck."""
+    katalog = klip_katalog.katalog_laden()
+    grenze = (date.fromisoformat(datum)
+             - timedelta(days=rr.VERWENDET_TAGE)).isoformat()
+    frei = {md5: e for md5, e in katalog["clips"].items()
+           if e.get("status") == "frei" and e.get("beschreibung")
+           and (e.get("zuletzt_verwendet") or "0000-00-00") < grenze}
+    if not frei or not abschnitte:
+        return {}
+    zeilen = [f"{i}: {titel_map.get(a.threads[0], a.threads[0])}"
+             if a.threads else f"{i}: Abschnitt {i}"
+             for i, a in enumerate(abschnitte)]
+    eingabe = ("Abschnitte:\n" + "\n".join(zeilen) + "\n\nClips:\n"
+              + "\n".join(f"- {md5}: {e['beschreibung']}"
+                          for md5, e in frei.items()))
+    try:
+        out = rr.claude_ruf(KLIP_PROMPT_ZUORDNUNG, eingabe, "sonnet",
+                            180, effort="low").strip()
+        daten = json.loads(rr._json_schneiden(out))
+    except Exception as e:
+        print(f"WARNUNG: Clip-Zuordnung fehlgeschlagen ({e}) - Kulisse "
+             f"laeuft ohne Clips")
+        return {}
+    roh = daten.get("zuordnung")
+    if not isinstance(roh, dict):
+        return {}
+    ziel_dir = klip_katalog.KLIP_DIR / datum
+    aus: dict[int, Path] = {}
+    vergeben: set[str] = set()
+    for k, md5 in roh.items():
+        try:
+            idx = int(k)
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= idx < len(abschnitte)) or not isinstance(md5, str) \
+                or md5 in vergeben or md5 not in frei:
+            continue
+        pfad = klip_katalog.klip_datei(md5, katalog, ziel_dir)
+        if pfad is None:
+            continue
+        aus[idx] = pfad
+        vergeben.add(md5)
+        katalog["clips"][md5]["zuletzt_verwendet"] = datum
+    if vergeben:
+        klip_katalog.katalog_speichern(katalog)
+    return aus
 
 
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
