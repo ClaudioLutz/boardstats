@@ -32,7 +32,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
-from PIL import Image
+from PIL import Image, ImageDraw
 
 import design_tokens
 import thumbnail
@@ -102,6 +102,14 @@ def aktivitaets_chart(reihe: list[tuple[str, int]],
     puffer.seek(0)
     chart = Image.open(puffer).convert("RGBA")
 
+    # matplotlib faerbt nur die Achsenflaeche (ax.set_facecolor) ein, nicht
+    # die Raender drumherum (Titel/Tick-Labels) - die figure selbst bleibt
+    # bewusst transparent, sonst waere sie ein rechteckiger Fremdkoerper mit
+    # eigener, nicht abgerundeter Kante. Denselben Kartenhintergrund noch
+    # einmal in PIL als abgerundetes Rechteck HINTER den Chart zu legen
+    # schliesst genau diese Luecke - ohne ihn stand der Chart komplett
+    # freischwebend auf dem rohen Board-Bild (Nutzer-Feedback 18.08.2026:
+    # Balken kaum lesbar vor Bildrauschen).
     karte = Image.new("RGBA", (B, H), (0, 0, 0, 0))
     ziel_breite = 1100
     skala = ziel_breite / chart.width
@@ -109,6 +117,11 @@ def aktivitaets_chart(reihe: list[tuple[str, int]],
                          Image.Resampling.LANCZOS)
     x = (B - chart.width) // 2
     y = (H - chart.height) // 2
+    polster = 28
+    ImageDraw.Draw(karte).rounded_rectangle(
+        [x - polster, y - polster, x + chart.width + polster,
+         y + chart.height + polster],
+        radius=18, fill=(*theme["bg"], 235), outline=theme["rand"], width=2)
     karte.alpha_composite(chart, (x, y))
     return karte
 
