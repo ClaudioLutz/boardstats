@@ -247,6 +247,8 @@ offenen Fragen je Thread.
 | `youtube_auth.py` | YouTube-OAuth-Refresh + Resumable-Upload |
 | `youtube_auth_setup.py` | Einmaliges interaktives YouTube-OAuth-Setup |
 | `report.sh` / `run.sh` / `video.sh` | Cron-Wrapper für Bericht, Crawl bzw. Video |
+| `hg_nachzug.py` | Hintergrund-Sichtprüfung eines Tages nachziehen (Reparatur) |
+| `tests/` | Tests der Kulisse: `python -m unittest discover -s tests` |
 
 Laufzeitdaten (`arbeit/`, `berichte/`, `cache/`, `logs/`) sind bewusst
 nicht versioniert — sie enthalten Board-Rohinhalte.
