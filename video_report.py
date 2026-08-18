@@ -2901,15 +2901,12 @@ BETT_DB = -20.0          # so viel leiser als die Sprache laeuft das Bett
 BETT_AUSBLENDE = 4.0     # Sekunden Ausblende am Videoende
 BETT_SEKUNDEN = 720      # Bettlaenge; alle Perioden gehen glatt darin auf
 ZIEL_LUFS = -14.0        # YouTubes Normalisierungsziel
-# Segmentierung + Ducking (Befund 18.08.2026): eine Bandenergie-Messung mit
-# der echten Stimme zeigte, dass das Bett nur in Intro/Outro unbedenklich
-# durchgehend laeuft (dort ~8% der Laufzeit) - im Hauptteil drueckt
-# sidechaincompress es weg, sobald Sprache aktiv ist, statt es die ganze Zeit
-# auf einer festen -20dB-Konstante zu belassen. SEGMENT_UEBERGANG ist die
-# Crossfade-Laenge an den beiden Segmentgrenzen (Kapitel-1-Start, Outro-
-# Beginn), damit dort kein Klick oder Sprung entsteht.
-OUTRO_SEKUNDEN = 20.0
-SEGMENT_UEBERGANG = 3.0
+# Ducking (Befund 18.08.2026): eine Bandenergie-Messung mit der echten
+# Stimme zeigte, dass eine feste -20dB-Konstante das Arpeggio im
+# 150-700Hz-Sprachband nicht ausreichend absenkt. Das Bett laeuft daher
+# durchgehend als Hintergrundmusik ueber das ganze Video, sidechaincompress
+# drueckt es weg, sobald Sprache aktiv ist, statt es dauerhaft auf -20dB zu
+# belassen.
 DUCK_SCHWELLE = 0.02     # sidechaincompress-Schwelle (linear), weit unter Sprachpegel
 DUCK_RATIO = 20          # nahe Limiting: fast jede Ueberschreitung wird geduckt
 DUCK_ATTACK = 50         # ms
@@ -2975,52 +2972,26 @@ def bett_bauen(ziel: Path = BETT) -> Path:
     return ziel
 
 
-def _erstes_kapitel_start(bloecke: list[Block],
-                          block_worte: list[list[Wort]]) -> float | None:
-    """Start des ersten gesprochenen Worts der ersten ##-Ueberschrift - der
-    tatsaechliche Themenwechsel vom Intro zum Hauptteil. Ungerundet und ohne
-    die 10s-Mindestabstand-Regel aus kapitel_bauen(): die gilt nur fuer die
-    YouTube-Kapitelliste, nicht fuer die Audio-Segmentierung."""
-    for block, worte in zip(bloecke, block_worte):
-        if block.art == "ueberschrift" and worte:
-            return worte[0].start
-    return None
-
-
-def _ton_kette(start: int, ende: float,
-               kapitel1: float | None = None) -> tuple[list[str], list[str], str]:
+def _ton_kette(start: int, ende: float) -> tuple[list[str], list[str], str]:
     """Eingaben, Filterteile und Ausgangs-Label der Tonspur (ohne Loudness).
 
     start ist der ffmpeg-Input-Index der Sprachdatei; der Messlauf zaehlt ab
     0, der Mux ab 1, weil dort das Video Input 0 ist. Ohne Bettdatei bleibt
     es bei der Sprache - fehlt sie, laeuft der Cron-Tag ohne Musik weiter.
 
-    kapitel1 ist der Start des ersten Kapitels (Ende des Intros); fehlt er
-    (z.B. Praesentationsmodus ohne folien.json), laeuft das Bett wie bisher
-    ab t=0 durchgehend, nur mit Ducking. Segmentierung + Ducking sind Befund
-    18.08.2026 (Bandenergie-Messung mit der echten Stimme,
+    Das Bett laeuft durchgehend als Hintergrundmusik ueber die gesamte
+    Videolaenge; sidechaincompress duckt es, sobald Sprache aktiv ist
+    (Befund 18.08.2026, Bandenergie-Messung mit der echten Stimme zeigte,
+    dass eine feste -20dB-Konstante das Arpeggio im 150-700Hz-Sprachband
+    nicht ausreichend absenkt - siehe
     research/messung-maskierung-arpeggio-vs-rauschen-2026-08-18.md und
-    arbeit/messung_ducking.py): das Bett laeuft nur unbedenklich durchgehend
-    in Intro und Outro (~8% der Laufzeit); im Hauptteil drueckt
-    sidechaincompress es weg, sobald Sprache aktiv ist, statt es dauerhaft
-    auf eine feste -20dB-Konstante zu setzen."""
+    arbeit/messung_ducking.py)."""
     if not BETT.exists():
         return [], [], f"[{start}:a]"
     ab = max(ende - BETT_AUSBLENDE, 0.1)
     sprache = f"[{start}:a]"
-    ie = kapitel1 if kapitel1 is not None else 0.0
-    fade = SEGMENT_UEBERGANG
-    os_ = max(ende - OUTRO_SEKUNDEN, ie + fade)
-    # Tor(t): 1 waehrend Intro [0,ie] und Outro [os,ende], 0 dazwischen, mit
-    # linearer Ueberblendung ueber `fade` Sekunden an beiden Grenzen - eval
-    # frameweise wie das Bett-Design selbst (bett_bauen()), damit an den
-    # Segmentgrenzen kein Sprung im Signal steht.
-    tor = (f"if(lt(t,{ie:.2f}),1,"
-          f"if(lt(t,{ie + fade:.2f}),({ie + fade:.2f}-t)/{fade:.2f},"
-          f"if(lt(t,{os_ - fade:.2f}),0,"
-          f"if(lt(t,{os_:.2f}),(t-({os_ - fade:.2f}))/{fade:.2f},1))))")
     return (["-stream_loop", "-1", "-i", str(BETT)],
-            [f"[{start + 1}:a]volume={BETT_DB}dB,volume='{tor}':eval=frame,"
+            [f"[{start + 1}:a]volume={BETT_DB}dB,"
              f"afade=t=in:st=0:d=2,afade=t=out:st={ab:.2f}:d={BETT_AUSBLENDE}"
              f"[bettg]",
              # sidechaincompress: erstes Label wird komprimiert, zweites ist
@@ -3042,8 +3013,7 @@ def _ton_kette(start: int, ende: float,
             "[mix]")
 
 
-def _loudnorm_gemessen(audio_mp3: Path, ende: float,
-                       kapitel1: float | None = None) -> str:
+def _loudnorm_gemessen(audio_mp3: Path, ende: float) -> str:
     """loudnorm-Filter mit den Messwerten eines Analysedurchlaufs.
 
     Zweipass, weil einpassiges loudnorm vorwaertsblickend regelt und hoerbar
@@ -3054,7 +3024,7 @@ def _loudnorm_gemessen(audio_mp3: Path, ende: float,
     Nachbarvideo. Scheitert die Messung, bleibt es bei einpassig: lieber
     ungenau normalisiert als kein Video."""
     ziel = f"loudnorm=I={ZIEL_LUFS}:TP=-1.5:LRA=11"
-    bett_ein, teile, quelle = _ton_kette(0, ende, kapitel1)
+    bett_ein, teile, quelle = _ton_kette(0, ende)
     kette = ";".join([*teile, f"{quelle}{ziel}:print_format=json[m]"])
     try:
         aus = subprocess.run(
@@ -3074,21 +3044,19 @@ def _loudnorm_gemessen(audio_mp3: Path, ende: float,
         return ziel
 
 
-def ton_argumente(audio_mp3: Path, ende: float,
-                  kapitel1: float | None = None) -> tuple[list[str], list[str]]:
+def ton_argumente(audio_mp3: Path, ende: float) -> tuple[list[str], list[str]]:
     """ffmpeg-Argumente fuer die Tonspur: Bett dazu, Endmix auf ZIEL_LUFS.
 
     Zurueck kommen die Eingabe-Argumente (hinter dem Video-Input) und die
     Ausgabe-Argumente. Beide Renderpfade nutzen dieselbe Funktion, damit ein
     Fallback-Tag nicht anders klingt als die uebrigen. An der Sprachdatei
     selbst wird nichts geaendert: an ihren Wort-Zeitstempeln haengen
-    Overlays, Kapitelmarken und Untertitel. kapitel1 steuert die
-    Bett-Segmentierung, siehe _ton_kette()."""
-    bett_ein, teile, quelle = _ton_kette(1, ende, kapitel1)
+    Overlays, Kapitelmarken und Untertitel."""
+    bett_ein, teile, quelle = _ton_kette(1, ende)
     # level=false am Limiter ist wichtig: mit dem Standard normalisiert er den
     # Ausgang auf seinen limit-Wert und verschiebt damit die Lautheit, die
     # loudnorm gerade gesetzt hat. So greift er nur noch als Notbremse.
-    norm = _loudnorm_gemessen(audio_mp3, ende, kapitel1)
+    norm = _loudnorm_gemessen(audio_mp3, ende)
     teile.append(f"{quelle}{norm},alimiter=limit=0.95:level=false[ton]")
     # Stereo und 48 kHz fest: die Sprachdatei ist Mono mit 24 kHz und wuerde
     # das Ausgabeformat sonst vorgeben (gemessen: Mono bei 96 kHz). Das Bett
@@ -3100,8 +3068,7 @@ def ton_argumente(audio_mp3: Path, ende: float,
 
 
 def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
-                 arbeit: Path, suffix: str, datum: str, ende: float,
-                 kapitel1: float | None = None) -> None:
+                 arbeit: Path, suffix: str, datum: str, ende: float) -> None:
     """Alle Szenen rendern, auf dem 25-fps-Frame-Raster nahtlos aneinander
     schneiden (kein Drift zur Tonspur) und mit dem Audio muxen."""
     if not folge:
@@ -3138,7 +3105,7 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
     liste.write_text(
         "\n".join("file '" + str(c).replace("\\", "/") + "'" for c in clips)
         + "\n", encoding="utf-8")
-    ton_ein, ton_aus = ton_argumente(audio_mp3, ende, kapitel1)
+    ton_ein, ton_aus = ton_argumente(audio_mp3, ende)
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error",
          "-f", "concat", "-safe", "0", "-i", str(liste),
@@ -3150,8 +3117,7 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
 # ----------------------------------------------------------- Video-Zusammenbau
 
 def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
-                   konkat: Path | None = None, ende: float = 0.0,
-                   kapitel1: float | None = None) -> None:
+                   konkat: Path | None = None, ende: float = 0.0) -> None:
     """ass_datei=None ist der Praesentationsmodus: der Text steckt schon in
     den Standbildern der ffconcat-Liste, eingebrannt wird nichts mehr."""
     filter_teile: list[str] = []
@@ -3168,8 +3134,7 @@ def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
     # Dieselbe Tonbehandlung wie im Szenen-Pfad: sonst klingt genau der Tag
     # anders, an dem der Fallback greift. -vf trifft den Videostream,
     # -filter_complex nur die Tonspur - sie liegen nicht uebereinander.
-    ton_ein, ton_aus = ton_argumente(audio_mp3, ende or _mp3_dauer(audio_mp3),
-                                     kapitel1)
+    ton_ein, ton_aus = ton_argumente(audio_mp3, ende or _mp3_dauer(audio_mp3))
     subprocess.run(
         ["ffmpeg", "-y", *eingabe, *ton_ein,
          "-vf", vf,
@@ -3504,7 +3469,6 @@ def main() -> None:
     print(f"{len(worte)} Woerter erkannt")
     block_worte = worte_zu_bloecken(worte, bloecke_ton)
     ende = (worte[-1].end if worte else 0.0) + 3.0  # Puffer, -shortest kappt
-    kapitel1 = _erstes_kapitel_start(bloecke_ton, block_worte)
 
     srt_pfad = arbeit / f"untertitel{cfg['suffix']}.srt"
     srt_datei: Path | None = srt_pfad
@@ -3539,7 +3503,7 @@ def main() -> None:
                       f"({len(folge)} von {voll} Szenen)")
             print("baue Szenen-Video ...")
             szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
-                         datum, ende_bauen, kapitel1)
+                         datum, ende_bauen)
             fertig = True
         except Exception as e:
             # Kein Layout-Problem darf den Upload verhindern.
@@ -3575,7 +3539,7 @@ def main() -> None:
 
     if not fertig:
         print("baue Video ...")
-        video_erzeugen(audio_mp3, ass_arg, video_mp4, konkat, ende, kapitel1)
+        video_erzeugen(audio_mp3, ass_arg, video_mp4, konkat, ende)
 
     if args.nur_video:
         print(f"nur Video gebaut, kein Upload: {video_mp4}")
