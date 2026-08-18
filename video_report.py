@@ -215,6 +215,12 @@ EIGENES_REPO = "github.com/ClaudioLutz"
 
 CANVAS_W = 1280
 CANVAS_H = 720
+# Das Kompositions-Raster bleibt bei 1280x720 (Fonts/Positionen ueberall im
+# Rendering sind darauf abgestimmt); erst beim finalen Mux fuer YouTube wird
+# auf 1080p hochskaliert. Gleiches Seitenverhaeltnis (16:9), also reine
+# Vergroesserung ohne Crop/Padding.
+YOUTUBE_W = 1920
+YOUTUBE_H = 1080
 FONTSIZE = 34
 ZEILENHOEHE = 44
 MARGIN_LINKS = 80          # fester linker Textrand (linksbuendig wie der Bericht)
@@ -3114,7 +3120,9 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error",
          "-f", "concat", "-safe", "0", "-i", str(liste),
-         *ton_ein, "-c:v", "copy", *ton_aus, "-shortest", str(ziel_mp4)],
+         *ton_ein, "-vf", f"scale={YOUTUBE_W}:{YOUTUBE_H}",
+         "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+         "-pix_fmt", "yuv420p", *ton_aus, "-shortest", str(ziel_mp4)],
         check=True, timeout=900, capture_output=True)
     print(f"Szenen-Video: {len(clips)} Szenen, {grenzen[-1] / FPS:.0f} s")
 
@@ -3135,7 +3143,10 @@ def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
     if ass_datei is not None:
         filter_teile.append(
             "ass=" + str(ass_datei).replace("\\", "/").replace(":", r"\:"))
-    vf = ",".join(filter_teile) or "null"
+    # Skalierung zuletzt: ASS-Koordinaten und die Standbilder liegen im
+    # 1280x720-Raster, erst danach wird fuers YouTube-1080p-Ziel vergroessert.
+    filter_teile.append(f"scale={YOUTUBE_W}:{YOUTUBE_H}")
+    vf = ",".join(filter_teile)
     # Dieselbe Tonbehandlung wie im Szenen-Pfad: sonst klingt genau der Tag
     # anders, an dem der Fallback greift. -vf trifft den Videostream,
     # -filter_complex nur die Tonspur - sie liegen nicht uebereinander.
