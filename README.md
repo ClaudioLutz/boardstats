@@ -58,7 +58,10 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    der Aufbau variiert also von Tag zu Tag. Danach sucht der
    Lauf ein Bildmotiv für dieses Vorschaubild: die Kandidaten kommen aus den
    Anhängen der ausgewerteten Threads im Crawl-Snapshot (OP-Bilder zuerst,
-   gespoilerte, gelöschte, zu kleine und Bannerformate fallen raus), Sonnet
+   gespoilerte, gelöschte, zu kleine und Bannerformate fallen raus; GIFs
+   zählen als Kandidat, werden aber schon beim Download auf ihr erstes Frame
+   reduziert und als PNG gespeichert — die Animation bleibt nicht erhalten),
+   Sonnet
    sieht sie mit dem Read-Werkzeug an und wählt höchstens eines aus. Der
    Standard ist Ablehnung: ohne eigene Bildbeschreibung je Kandidat gilt die
    Antwort als ungesehen und wird verworfen, und gewählt werden darf nur

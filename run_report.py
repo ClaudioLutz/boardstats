@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import io
 import json
 import logging
 import os
@@ -46,6 +47,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
+from PIL import Image
 
 from bericht_html import _ist_ueberschrift as ist_ueberschrift
 
@@ -946,8 +949,8 @@ MOTIV_KANDIDATEN = 8     # so viele gehen an die Sichtpruefung
 MOTIV_MIN_BREITE = 500   # schmaler wird auf der halben Bildflaeche matschig
 MOTIV_MIN_HOEHE = 400
 MOTIV_MAX_BYTES = 4_000_000
-MOTIV_ENDUNGEN = (".jpg", ".jpeg", ".png")
-MOTIV_MAGIC = (b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")
+MOTIV_ENDUNGEN = (".jpg", ".jpeg", ".png", ".gif")
+MOTIV_MAGIC = (b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"GIF87a", b"GIF89a")
 MOTIV_SEITE = (0.5, 2.2)  # Banner und schmale Streifen taugen nicht als Motiv
 TIMEOUT_MOTIV = 420
 BILD_BASIS = "https://i.4cdn.org/biz"
@@ -1079,9 +1082,25 @@ def motiv_kandidaten(manifest: dict,
     return aus[:MOTIV_KANDIDATEN]
 
 
+def _gif_erstes_bild(daten: bytes) -> bytes:
+    """Erstes Frame eines GIF als PNG-Bytes. Die Szenen-Kulisse (v7) fuettert
+    Motive roh in ffmpegs zoompan, das eine einzelne Standbildquelle erwartet -
+    ein animiertes Mehrbild-GIF wuerde dort als Bildfolge ankommen und die
+    Zoom-Dauer-Logik zerreissen. Ein Standbild eignet sich fuer Sichtpruefung
+    und v6-Fallback (thumbnail.videohintergrund) genauso wie JPG/PNG."""
+    with io.BytesIO(daten) as puffer, Image.open(puffer) as bild:
+        bild.seek(0)
+        aus = io.BytesIO()
+        bild.convert("RGB").save(aus, "PNG")
+        return aus.getvalue()
+
+
 def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
     """Kandidaten herunterladen, mit dem Rate-Limit des Crawlers (1 req/s).
-    Was kein Bild ist, fliegt sofort raus."""
+    Was kein Bild ist, fliegt sofort raus. GIFs werden auf ihr erstes Frame
+    reduziert (siehe _gif_erstes_bild) - dabei aendert sich die Endung im
+    kandidaten-Dict selbst auf .png, damit spaetere Zuordnungen ueber
+    k["datei"] (z. B. die md5-Merkliste) den tatsaechlichen Dateinamen sehen."""
     if ziel_dir.exists():
         shutil.rmtree(ziel_dir)  # Kandidaten des Vortags nicht mitschleppen
     ziel_dir.mkdir(parents=True, exist_ok=True)
@@ -1098,6 +1117,13 @@ def motiv_laden(kandidaten: list[dict], ziel_dir: Path) -> list[Path]:
             time.sleep(1.0)
         if len(daten) > MOTIV_MAX_BYTES or not daten.startswith(MOTIV_MAGIC):
             continue
+        if daten.startswith((b"GIF87a", b"GIF89a")):
+            try:
+                daten = _gif_erstes_bild(daten)
+            except Exception as e:
+                log.info("GIF %s nicht konvertiert: %s", k["datei"], e)
+                continue
+            k["datei"] = str(Path(k["datei"]).with_suffix(".png"))
         ziel = ziel_dir / k["datei"]
         ziel.write_bytes(daten)
         geladen.append(ziel)
