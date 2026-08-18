@@ -25,6 +25,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
+import design_tokens
 import thumbnail
 
 B = thumbnail.BREITE
@@ -33,9 +34,9 @@ GRUND = thumbnail.GRUND
 AKZENT = thumbnail.AKZENT
 HELL = thumbnail.TEXT_HELL
 GRAU = thumbnail.TEXT_GRAU
-GEDIMMT = (120, 125, 142)     # inaktive Stichpunkte / Nebentext
-KARTE_BG = (35, 35, 66)       # Zahlen-Karten, etwas heller als der Grund
-LINIE = (60, 62, 92)
+GEDIMMT = design_tokens.NEUTRAL[5]    # inaktive Stichpunkte / Nebentext
+KARTE_BG = design_tokens.NEUTRAL[8]   # Zahlen-Karten, etwas heller als der Grund
+LINIE = design_tokens.NEUTRAL[7]
 MARGIN = 64
 
 KOPF_TEXT = "4CHAN /biz/  ·  BOARD REPORT"
@@ -53,9 +54,19 @@ JPEG_QUALITAET = 90
 
 @lru_cache(maxsize=32)
 def _font(fett: bool, groesse: int) -> ImageFont.FreeTypeFont:
-    kandidaten = (thumbnail.FONT_FETT_KANDIDATEN if fett
-                  else thumbnail.FONT_NORMAL_KANDIDATEN)
-    return ImageFont.truetype(thumbnail._font_pfad(kandidaten), groesse)
+    return thumbnail.schrift(fett, groesse)
+
+
+@lru_cache(maxsize=16)
+def _font_mono(groesse: int) -> ImageFont.FreeTypeFont:
+    """Tabellenziffern-Schrift fuer Zahlenwerte (Zahlen-Tafel, Countup) -
+    feste Ziffernbreite haelt das Hochzaehlen ruhig statt zu jittern."""
+    return thumbnail.schrift_mono(groesse)
+
+
+@lru_cache(maxsize=16)
+def _font_medium(groesse: int) -> ImageFont.FreeTypeFont:
+    return thumbnail.schrift_medium(groesse)
 
 
 def _umbrechen(d: ImageDraw.ImageDraw, text: str,
@@ -151,9 +162,9 @@ def _zahlen_karte(d: ImageDraw.ImageDraw, karte: dict, x: int, y: int,
     d.rectangle([x, y + 20, x + 8, y + hoehe - 20], fill=AKZENT)
     wert = str(karte.get("wert", ""))[:14]
     for gr in (56, 48, 40):
-        if d.textlength(wert, font=_font(True, gr)) <= breite - 60:
+        if d.textlength(wert, font=_font_mono(gr)) <= breite - 60:
             break
-    d.text((x + 36, y + 22), wert, font=_font(True, gr), fill=AKZENT)
+    d.text((x + 36, y + 22), wert, font=_font_mono(gr), fill=AKZENT)
     d.text((x + 36, y + hoehe - 84), str(karte.get("titel", ""))[:40],
            font=_font(False, 26), fill=HELL)
     d.text((x + 36, y + hoehe - 48), str(karte.get("sub", ""))[:44],

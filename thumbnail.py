@@ -16,12 +16,14 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
+import design_tokens
+
 BREITE = 1280
 HOEHE = 720
-GRUND = (26, 26, 46)          # derselbe Ton wie der Videohintergrund
-AKZENT = (255, 209, 102)      # amber, wie die Wort-Hervorhebung im Video
-TEXT_HELL = (255, 255, 255)
-TEXT_GRAU = (170, 175, 190)
+GRUND = design_tokens.NEUTRAL[9]      # derselbe Ton wie der Videohintergrund
+AKZENT = design_tokens.AKZENT[6]      # amber, wie die Wort-Hervorhebung im Video
+TEXT_HELL = design_tokens.WEISS
+TEXT_GRAU = design_tokens.NEUTRAL[3]
 
 MOTIV_BREITE = 560            # Bildflaeche rechts
 MOTIV_BLENDE = 200            # weiche Kante zum Textbereich hin
@@ -51,15 +53,41 @@ HG_VERLAUF_START = 420        # y, ab dem der Verlauf einsetzt
 HG_VERLAUF_VOLL = 560         # ab hier volle Deckung (Textzone ab ~524)
 HG_VERLAUF_DECKUNG = 0.85     # Schwaerzung in der Textzone (0..1)
 
-# Dieselben Kandidaten wie im Video-Renderer; hier erneut aufgefuehrt, damit
-# das Modul ohne video_report.py nutzbar bleibt (Importrichtung: video -> thumb).
+# Eigene Schriften liegen als .ttf direkt neben dem Code (assets/fonts/) -
+# portabel zwischen Windows-Dev und Linux-Cron, kein apt-Paket noetig. Die
+# Systemschriften bleiben als Fallback, falls das Verzeichnis mal fehlt.
+# Space Grotesk (Display, fett) fuer Titel/Labels/Akzente und Inter
+# (Grotesk, regulaer/medium) fuer Fliesstext sind zwei verschiedene
+# Familien statt nur zweier Groessen derselben Schrift - das behebt die
+# zuvor bemaengelte fehlende Typo-Hierarchie zwischen Titel und
+# Stichpunkten. IBM Plex Mono ist der Tabellenziffern-Font fuer die
+# Zahlen-Tafel/Countup: feste Ziffernbreite haelt das Hochzaehlen ruhig
+# statt horizontal zu jittern. Alle vier liegen als statische Instanzen
+# vor (per fonttools varLib.instancer aus den Google-Fonts-Variable-Fonts
+# gezogen, siehe assets/fonts/OFL-*.txt) - matplotlib (aktivitaet.py) kann
+# Font-Gewichte anders als Pillow nicht per Variable-Font-Achse waehlen,
+# eine gemeinsame statische Datei pro Rolle vermeidet dieses Sonderproblem.
+FONT_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
+
 FONT_FETT_KANDIDATEN = [
+    str(FONT_DIR / "SpaceGrotesk-Bold.ttf"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "C:/Windows/Fonts/arialbd.ttf",
 ]
 FONT_NORMAL_KANDIDATEN = [
+    str(FONT_DIR / "Inter-Regular.ttf"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "C:/Windows/Fonts/arial.ttf",
+]
+FONT_MEDIUM_KANDIDATEN = [
+    str(FONT_DIR / "Inter-Medium.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
+FONT_MONO_KANDIDATEN = [
+    str(FONT_DIR / "IBMPlexMono-Bold.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "C:/Windows/Fonts/consolab.ttf",
 ]
 
 
@@ -68,6 +96,30 @@ def _font_pfad(kandidaten: list[str]) -> str:
         if Path(f).exists():
             return f
     raise RuntimeError(f"keiner der Font-Kandidaten gefunden: {kandidaten}")
+
+
+def _lade_schrift(kandidaten: list[str], groesse: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(_font_pfad(kandidaten), groesse)
+
+
+def schrift(fett: bool, groesse: int) -> ImageFont.FreeTypeFont:
+    """Zentrale Schriftrolle: fett=True die fette Display-Schrift (Titel,
+    Labels, Akzente), fett=False die neutrale Grotesk fuer Fliesstext."""
+    kandidaten = FONT_FETT_KANDIDATEN if fett else FONT_NORMAL_KANDIDATEN
+    return _lade_schrift(kandidaten, groesse)
+
+
+def schrift_mono(groesse: int) -> ImageFont.FreeTypeFont:
+    """Tabellenziffern-Schrift fuer Zahlen-Tafel/Countup."""
+    return _lade_schrift(FONT_MONO_KANDIDATEN, groesse)
+
+
+def schrift_medium(groesse: int) -> ImageFont.FreeTypeFont:
+    """Inter Medium statt Regular: fuer kleinen Kartentext (Stichpunkte in
+    der Themen-Karte), der nach der YouTube-Kompression sonst duenn wirken
+    kann - bleibt trotzdem klar von der fetten Space-Grotesk-Display-Rolle
+    unterscheidbar, die Titel/Labels tragen."""
+    return _lade_schrift(FONT_MEDIUM_KANDIDATEN, groesse)
 
 
 def _motiv_flaeche(motiv: Path) -> Image.Image:
@@ -120,14 +172,13 @@ def _passende_schrift(text: str, breite: int, hoehe: int,
                       zeichnen: ImageDraw.ImageDraw
                       ) -> tuple[ImageFont.FreeTypeFont, list[str]]:
     """Groesste Schrift, in der der Aufhaenger in den Textblock passt."""
-    pfad = _font_pfad(FONT_FETT_KANDIDATEN)
     for groesse in GROESSEN:
-        font = ImageFont.truetype(pfad, groesse)
+        font = schrift(True, groesse)
         zeilen = _umbrechen(text, font, breite, zeichnen)
         if zeilen and len(zeilen) * groesse * ZEILEN_FAKTOR <= hoehe:
             return font, zeilen
     # Reissleine: kleinste Groesse, hart auf ZEILEN_MAX Zeilen gekappt.
-    font = ImageFont.truetype(pfad, GROESSEN[-1])
+    font = schrift(True, GROESSEN[-1])
     zeilen = _umbrechen(text, font, breite, zeichnen) or [text[:18]]
     return font, zeilen[:ZEILEN_MAX]
 
@@ -201,11 +252,11 @@ def bauen(text: str, motiv: Path | None, ziel: Path, kopf: str = "4CHAN /biz/",
         zeichnen.text((text_x, y + i * schritt), zeile, font=font,
                       fill=TEXT_HELL, stroke_width=4, stroke_fill=GRUND)
 
-    klein = ImageFont.truetype(_font_pfad(FONT_FETT_KANDIDATEN), 34)
+    klein = schrift(True, 34)
     zeichnen.text((text_x, KOPF_Y), kopf, font=klein, fill=AKZENT,
                   stroke_width=3, stroke_fill=GRUND)
     if fuss:
-        mager = ImageFont.truetype(_font_pfad(FONT_NORMAL_KANDIDATEN), 30)
+        mager = schrift(False, 30)
         zeichnen.text((text_x, FUSS_Y), fuss, font=mager, fill=TEXT_GRAU,
                       stroke_width=3, stroke_fill=GRUND)
 

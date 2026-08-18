@@ -22,7 +22,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+import design_tokens
 import folien
+import icons
 import thumbnail
 
 B = thumbnail.BREITE
@@ -30,17 +32,18 @@ H = thumbnail.HOEHE
 AKZENT = thumbnail.AKZENT
 HELL = thumbnail.TEXT_HELL
 GRAU = thumbnail.TEXT_GRAU
-GEDIMMT = (150, 155, 172)
+GEDIMMT = design_tokens.NEUTRAL[4]
 MARGIN = 64
 
 BUG_TEXT = "4CHAN /biz/  ·  BOARD REPORT"
 
 # 4chan blue board (/biz/): Antwort-Karte, Rand, Name, Greentext
-POST_KARTE = (214, 218, 240)
-POST_RAND = (183, 197, 217)
-POST_NAME = (17, 119, 67)
-POST_TEXT = (30, 30, 40)
-POST_GRUEN = (120, 153, 34)
+_BOARD = design_tokens.KARTEN_THEME["board_post"]
+POST_KARTE = _BOARD["bg"]
+POST_RAND = _BOARD["rand"]
+POST_NAME = _BOARD["name"]
+POST_TEXT = _BOARD["text"]
+POST_GRUEN = _BOARD["greentext"]
 
 
 def _leer() -> Image.Image:
@@ -53,14 +56,21 @@ def _bande(bild: Image.Image, oben: int, unten: int, alpha: int = 150) -> None:
     ImageDraw.Draw(bild).rectangle([0, oben, B, unten], fill=(0, 0, 0, alpha))
 
 
+UHR_GROESSE = 22
+
+
 def bug(datum: str) -> Image.Image:
-    """Ecken-Marke oben: Serienname links, Datum rechts. Liegt als eigenes
-    statisches Overlay auf jeder Szene (im Hintergrund wuerde sie mitzoomen)."""
+    """Ecken-Marke oben: Serienname links, Uhr-Icon + Datum rechts. Liegt
+    als eigenes statisches Overlay auf jeder Szene (im Hintergrund wuerde
+    sie mitzoomen)."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
     d.text((40, 30), BUG_TEXT, font=folien._font(True, 24), fill=AKZENT,
            stroke_width=2, stroke_fill=(0, 0, 0))
     breite = d.textlength(datum, font=folien._font(False, 24))
+    uhr = icons.icon("clock", UHR_GROESSE, GRAU)
+    x_uhr = int(B - 40 - breite - UHR_GROESSE - 10)
+    bild.alpha_composite(uhr, (x_uhr, 28))
     d.text((B - 40 - breite, 30), datum, font=folien._font(False, 24),
            fill=GRAU, stroke_width=2, stroke_fill=(0, 0, 0))
     return bild
@@ -115,7 +125,7 @@ def titel_karte(text: str, label: str = "", quelle: str = "",
 KARTE_BREITE = 470
 KARTE_OBEN = 104        # unter dem Ecken-Bug; mit Themen-Titel oben tiefer
 KARTE_UNTEN_MAX = 600   # Lower Thirds laufen nie gleichzeitig mit der Karte
-KARTE_ALT = (198, 203, 216)
+KARTE_ALT = design_tokens.NEUTRAL[2]
 KARTE_INNEN = KARTE_BREITE - 34 - 24   # Textbreite im Kasten
 KARTE_TEXT_X = 56       # Einzug des Punkt-Textes (neben dem Quadrat)
 KARTE_PUNKT_FONT = 25
@@ -166,13 +176,16 @@ def themen_titel(titel: str) -> Image.Image:
     d = ImageDraw.Draw(bild)
     zeilen, f = _titel_zeilen(d, titel)
     tb = max(d.textlength(z, font=f) for z in zeilen)
-    kb = min(int(tb) + 34 + 2 * TITEL_RAND, B - 2 * MARGIN)
+    kb = min(int(tb) + 44 + 2 * TITEL_RAND, B - 2 * MARGIN)
     unten = titel_unterkante(titel)
     d.rounded_rectangle([MARGIN, TITEL_OBEN, MARGIN + kb, unten],
                         radius=12, fill=(0, 0, 0, KARTE_ALPHA))
-    d.rectangle([MARGIN, TITEL_OBEN + 12, MARGIN + 8, unten - 12], fill=AKZENT)
+    # Lesezeichen-Icon statt reinem Balken: derselbe Platz, aber als
+    # Kapitelmarker sofort erkennbar statt als reines Farbfeld.
+    marker = icons.icon("bookmark", 20, AKZENT)
+    bild.alpha_composite(marker, (MARGIN + 10, TITEL_OBEN + 12))
     for i, z in enumerate(zeilen):
-        d.text((MARGIN + 34, TITEL_OBEN + 16 + i * TITEL_ZEILE), z, font=f,
+        d.text((MARGIN + 44, TITEL_OBEN + 16 + i * TITEL_ZEILE), z, font=f,
                fill=HELL, stroke_width=2, stroke_fill=(0, 0, 0))
     return bild
 
@@ -190,7 +203,11 @@ def _karte_layout(d: ImageDraw.ImageDraw, punkte: list[str], sichtbar: int,
     greift die Verdraengung, rutscht der juengste Punkt nach oben statt
     eine Zeile nach unten."""
     x = B - MARGIN - KARTE_BREITE if lage == "right" else MARGIN
-    pf = folien._font(True, KARTE_PUNKT_FONT)
+    # Inter statt Space Grotesk: geparkte Stichpunkte sind Fliesstext, keine
+    # Titel - dieselbe fette Display-Schrift fuer beide war genau die
+    # bemaengelte fehlende Typo-Hierarchie (Titel/Stichpunkte unterschieden
+    # sich nur in der Groesse).
+    pf = folien._font_medium(KARTE_PUNKT_FONT)
     bloecke = [folien._umbrechen(d, p.upper(), pf, KARTE_INNEN)[:2]
                for p in punkte[:max(sichtbar, 0)]]
     # von hinten so viele Punkte aufnehmen wie reinpassen (der juengste zuerst)
@@ -230,7 +247,11 @@ def themen_karte(punkte: list[str], sichtbar: int, lage: str = "left",
     d.rounded_rectangle([x, oben, x + KARTE_BREITE, unten],
                         radius=12, fill=(0, 0, 0, KARTE_ALPHA))
     d.rectangle([x, oben + 12, x + 8, unten - 12], fill=AKZENT)
-    pf = folien._font(True, KARTE_PUNKT_FONT)
+    # Inter statt Space Grotesk: geparkte Stichpunkte sind Fliesstext, keine
+    # Titel - dieselbe fette Display-Schrift fuer beide war genau die
+    # bemaengelte fehlende Typo-Hierarchie (Titel/Stichpunkte unterschieden
+    # sich nur in der Groesse).
+    pf = folien._font_medium(KARTE_PUNKT_FONT)
     for zeilen, py in zip(anzeige, punkt_y):
         d.rectangle([x + 34, py + 9, x + 44, py + 19], fill=GEDIMMT)
         for j, z in enumerate(zeilen):
@@ -258,7 +279,7 @@ def karte_text(text: str) -> str:
     Kappung stuende dort Text, der beim Parken in der Karte wegfaellt -
     das Parken waere dann ein sichtbarer Informationsverlust."""
     zeilen = folien._umbrechen(ImageDraw.Draw(_leer()), text.upper(),
-                              folien._font(True, KARTE_PUNKT_FONT),
+                              folien._font_medium(KARTE_PUNKT_FONT),
                               KARTE_INNEN)[:2]
     return " ".join(zeilen)
 
@@ -335,17 +356,42 @@ def zitat_post(text: str, datum: str) -> Image.Image:
     return bild
 
 
+def _zahl_richtung(wert: str) -> str | None:
+    """Trend-Icon nur, wenn der Zahlenwert selbst ein Vorzeichen traegt
+    ('-15%', '+300%') - das liest ein Vorzeichen ab, das im Text schon
+    steht, statt ein Trendurteil ueber eine unbelegte Board-Behauptung zu
+    erfinden. Unsignierte Zahlen ('300%') bleiben ohne Icon."""
+    m = _ZAHL.search(wert)
+    if not m:
+        return None
+    if m.group(0).startswith("-"):
+        return "trending-down"
+    if m.start() > 0 and wert[m.start() - 1] == "+":
+        return "trending-up"
+    return None
+
+
 def zahl_tafel(wert: str, titel: str, sub: str) -> Image.Image:
     """Bildschirmfuellende Zahl: der grosse Moment fuer die eine Kennzahl."""
     bild = _leer()
     _bande(bild, 208, 540, alpha=150)
     d = ImageDraw.Draw(bild)
     for gr in (128, 108, 88, 68):
-        font = folien._font(True, gr)
+        font = folien._font_mono(gr)
         if d.textlength(wert, font=font) <= B - 2 * MARGIN:
             break
-    d.text(((B - d.textlength(wert, font=font)) / 2, 236), wert, font=font,
-           fill=AKZENT, stroke_width=4, stroke_fill=(0, 0, 0))
+    breite_wert = d.textlength(wert, font=font)
+    richtung = _zahl_richtung(wert)
+    icon_groesse = int(gr * 0.55)
+    icon_luecke = 18 if richtung else 0
+    x0 = (B - breite_wert - icon_groesse - icon_luecke) / 2
+    if richtung:
+        farbe_icon = AKZENT if richtung == "trending-up" else GEDIMMT
+        ic = icons.icon(richtung, icon_groesse, farbe_icon)
+        bild.alpha_composite(ic, (int(x0), int(236 + (gr - icon_groesse) / 2)))
+        x0 += icon_groesse + icon_luecke
+    d.text((x0, 236), wert, font=font, fill=AKZENT, stroke_width=4,
+           stroke_fill=(0, 0, 0))
     tf = folien._font(True, 40)
     d.text(((B - d.textlength(titel, font=tf)) / 2, 400), titel, font=tf,
            fill=HELL)
