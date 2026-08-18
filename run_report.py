@@ -977,7 +977,7 @@ BILD_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; boardstats/1.0)"}
 # langlebige General-Threads wuerden sonst jeden Tag dieselben fruehen
 # Anhaenge liefern. Analog zur 14-Tage-Sperrliste der Videotitel.
 VERWENDET_DATEI = ARBEIT / "motive" / "verwendet.json"
-VERWENDET_TAGE = 14
+VERWENDET_TAGE = 5
 
 
 def verwendete_bilder(datum: str) -> dict[str, str]:

@@ -2829,7 +2829,7 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
 
     Der Katalog ist kumulativ (siehe klip_katalog.py) - ohne eine
     Wiederverwendungssperre koennte derselbe freigegebene Clip taeglich neu
-    gewaehlt werden, unbegrenzt. Analog der 14-Tage-MD5-Sperrliste der
+    gewaehlt werden, unbegrenzt. Analog der MD5-Sperrliste der
     Bilder (run_report.VERWENDET_TAGE) bleibt ein kuerzlich gezeigter Clip
     hier aussen vor, und jede tatsaechliche Wahl schreibt "zuletzt_verwendet"
     sofort in den Katalog zurueck. Ausnahme: "zuletzt_verwendet" == datum
