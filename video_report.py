@@ -954,14 +954,12 @@ def _srt_zeit(sekunden: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def srt_erzeugen(worte: list[Wort], ziel: Path) -> int:
-    """Baut aus den Wort-Zeitstempeln der Vertonung eine SRT-Untertiteldatei.
-
-    Eigene Untertitel statt der YouTube-Automatik: die Zeitstempel stammen
-    direkt aus der TTS und die Cues brechen an Satzenden, an hoerbaren Pausen
-    und spaetestens bei zwei Untertitelzeilen - satzweise, ruhige
-    Einblendungen statt wortweisem Gestotter. Gibt die Cue-Anzahl zurueck."""
-    max_zeichen = 84  # zwei Zeilen a 42 Zeichen (uebliche Untertitel-Breite)
+def _satz_cues(worte: list[Wort], max_zeichen: int = 84
+               ) -> list[tuple[float, float, str]]:
+    """Gruppiert Wort-Zeitstempel zu satzweisen Haeppchen (Start, Ende, Text):
+    Cues brechen an Satzenden, an hoerbaren Pausen und spaetestens bei
+    max_zeichen. Gemeinsame Grundlage fuer die SRT-Untertitel (srt_erzeugen)
+    und die Fallback-Bullets gegen Text-Luecken (_luecken_fuellen)."""
     cues: list[tuple[float, float, str]] = []
     gruppe: list[Wort] = []
 
@@ -969,12 +967,6 @@ def srt_erzeugen(worte: list[Wort], ziel: Path) -> int:
         if not gruppe:
             return
         text = " ".join(w.text for w in gruppe)
-        if len(text) > 42:
-            # an dem Leerzeichen brechen, das der Mitte am naechsten liegt
-            luecken = [i for i, z in enumerate(text) if z == " "]
-            if luecken:
-                mitte = min(luecken, key=lambda i: abs(i - len(text) // 2))
-                text = text[:mitte] + "\n" + text[mitte + 1:]
         cues.append((gruppe[0].start, gruppe[-1].end, text))
         gruppe.clear()
 
@@ -989,9 +981,25 @@ def srt_erzeugen(worte: list[Wort], ziel: Path) -> int:
         if (satzende and laenge >= 24) or pause or voll:
             abschliessen()
     abschliessen()
+    return cues
 
+
+def srt_erzeugen(worte: list[Wort], ziel: Path) -> int:
+    """Baut aus den Wort-Zeitstempeln der Vertonung eine SRT-Untertiteldatei.
+
+    Eigene Untertitel statt der YouTube-Automatik: die Zeitstempel stammen
+    direkt aus der TTS und die Cues brechen an Satzenden, an hoerbaren Pausen
+    und spaetestens bei zwei Untertitelzeilen - satzweise, ruhige
+    Einblendungen statt wortweisem Gestotter. Gibt die Cue-Anzahl zurueck."""
+    cues = _satz_cues(worte)
     zeilen: list[str] = []
     for nr, (start, ende, text) in enumerate(cues, 1):
+        if len(text) > 42:
+            # an dem Leerzeichen brechen, das der Mitte am naechsten liegt
+            luecken = [i for i, z in enumerate(text) if z == " "]
+            if luecken:
+                mitte = min(luecken, key=lambda i: abs(i - len(text) // 2))
+                text = text[:mitte] + "\n" + text[mitte + 1:]
         ende = max(ende, start + 1.2)      # sehr kurze Cues etwas stehen lassen
         if nr < len(cues):
             ende = min(ende, cues[nr][0])  # nie in den naechsten Cue ragen
@@ -1734,6 +1742,69 @@ def _punkt_zeiten(punkte: list[dict], worte: list[Wort], von: float,
     return aus
 
 
+LUECKE_MAX = 16.0  # laengste Stille einer Story-Strecke ohne neuen Stichpunkt,
+                   # sonst Fallback-Bullet aus dem naechsten gesprochenen Satz -
+                   # sonst blieben lange Redestrecken (Einzelwerte, Zitate ohne
+                   # eigenen Stichpunkt) ohne jede Textstuetze im Bild
+                   # (Nutzerfeedback 18.08.2026: fast eine Minute Geplapper
+                   # ohne Text bei den Einzelwerten in "Memory stocks").
+
+
+def _luecken_bullet(satz: str) -> str:
+    """Kurzform eines gesprochenen Satzes als Fallback-Stichpunkt: Grossbuch-
+    staben, hart bei 34 Zeichen am letzten vollen Wort gekappt - derselbe Stil
+    wie die vom Modell verfassten Stichworte, nur ohne redaktionelle
+    Zuspitzung."""
+    text = re.sub(r"^[-–—.,;:!?\"'…\s]+", "", satz.strip())
+    text = re.sub(r"[.,;:!?\"'…]+$", "", text).upper()
+    if len(text) <= 34:
+        return text
+    kurz = text[:34]
+    return kurz[:kurz.rfind(" ")] if " " in kurz else kurz
+
+
+def _luecken_fuellen(stich: list[dict], zeiten: list[float],
+                      gewaehlt: list[tuple[float, float, str, dict]],
+                      worte: list[Wort], von: float, bis: float
+                      ) -> tuple[list[dict], list[float]]:
+    """Ergaenzt Stichpunkte um Fallback-Bullets aus den Satz-Cues der
+    Vertonung, wo eine Story-Strecke (kein Zwischenthema/Zitat/Kennzahl)
+    laenger als LUECKE_MAX ohne neuen Stichpunkt bliebe. Die Zeitpunkte
+    stammen direkt aus den Wort-Zeitstempeln, nicht aus einer Anker-Suche -
+    _punkt_zeiten muss vorher gelaufen sein, dies ist ein zweiter Durchgang
+    obendrauf."""
+    gedeckt = sorted({von, bis} | set(zeiten) |
+                      {t for tz, ebis, _, _ in gewaehlt for t in (tz, ebis)})
+    saetze = _satz_cues(worte)
+    zusatz_zeit: list[float] = []
+    zusatz_stich: list[dict] = []
+    for a, b in zip(gedeckt, gedeckt[1:]):
+        if b - a <= LUECKE_MAX:
+            continue
+        marke = a
+        for cs, _, satz in saetze:
+            if cs <= marke + LUECKE_MAX * 0.6 or cs >= b - 1.0:
+                continue
+            kurz = _luecken_bullet(satz)
+            if not kurz:
+                continue
+            zusatz_zeit.append(cs)
+            zusatz_stich.append({"text": kurz})
+            marke = cs
+    if not zusatz_zeit:
+        return stich, zeiten
+    kombi = sorted(zip(zeiten + zusatz_zeit, stich + zusatz_stich),
+                    key=lambda p: p[0])
+    aus_zeit: list[float] = []
+    aus_stich: list[dict] = []
+    for t, p in kombi:
+        if aus_zeit:
+            t = max(t, aus_zeit[-1] + PUNKT_MIN_ABSTAND)
+        aus_zeit.append(t)
+        aus_stich.append(p)
+    return aus_stich, aus_zeit
+
+
 def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
                   abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
                   fdaten: dict, hook: str, datum: str, arbeit: Path,
@@ -2306,6 +2377,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  if isinstance(p, dict) and str(p.get("text") or "").strip()]
         zeiten = _punkt_zeiten(stich, rumpf_worte, rumpf_start, naechster) \
             if stich else []
+        stich, zeiten = _luecken_fuellen(stich, zeiten, gewaehlt, rumpf_worte,
+                                          rumpf_start, naechster)
         tags = list(zip(zeiten, stich))
         lage = str(eintrag.get("lage") or ("left" if k % 2 == 0 else "right"))
         segmente: list[tuple[float, str, str]] = [(rumpf_start, titel, lage)]
