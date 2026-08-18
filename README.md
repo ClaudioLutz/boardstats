@@ -84,7 +84,11 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    «unchanged since the last run» steht, und das Video wäre ein Aufguss mit
    frischem Titel. Fehlt die Zeile oder ist sie unlesbar, läuft der Tag
    bewusst ungeprüft weiter (sie wird vom Modell geschrieben); `--nur-video`
-   prüft nicht, `--trotz-altdaten` übersteuert. Der Lauf
+   prüft nicht, `--trotz-altdaten` übersteuert. `--vorschau SEKUNDEN` baut
+   fürs Layout-Testen nur den Anfang des Szenen-Videos (volle Auflösung,
+   nur weniger Szenen — die TTS kommt bei unverändertem Text/Stimme aus dem
+   Cache neben der MP3), impliziert `--nur-video` und greift nur im
+   Szenen-Layout (v7). Der Lauf
    bereinigt den Bericht für die Vertonung (`bloecke_erzeugen()`:
    Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus), ergänzt
    knappe gesprochene Rahmen-Sätze (Aufhänger, drei angeteaserte Kapitel,

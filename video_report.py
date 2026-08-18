@@ -3105,7 +3105,14 @@ def main() -> None:
                          f"aelter als {DATENSTAND_MAX_H:.0f} h ist")
     ap.add_argument("--bett-bauen", action="store_true",
                     help=f"Musikbett neu synthetisieren ({BETT}) und beenden")
+    ap.add_argument("--vorschau", type=float, metavar="SEKUNDEN",
+                    default=None,
+                    help="nur die ersten N Sekunden des Szenen-Layouts "
+                         "bauen (impliziert --nur-video, Test); nutzt "
+                         "weiter volle Aufloesung, nur weniger Szenen")
     args = ap.parse_args()
+    if args.vorschau is not None:
+        args.nur_video = True
     if args.bett_bauen:
         # Bewusst ein eigener Aufruf und nicht "baue es, wenn die Datei
         # fehlt": ein Cron-Lauf soll keine Tonspur erzeugen, die niemand
@@ -3193,6 +3200,11 @@ def main() -> None:
         print(f"Untertitel nicht erzeugt: {e}")
         srt_datei = None
 
+    if args.vorschau is not None and not (
+            fdaten and int(fdaten.get("version") or 1) >= 2):
+        print("Vorschau nur im Szenen-Layout (v7) unterstuetzt - "
+              "kein folien.json v2 vorhanden, baue komplett")
+
     fertig = False
     if fdaten and int(fdaten.get("version") or 1) >= 2:
         # Szenen-Layout (v7): Drehbuch-folien.json mit Stichworten,
@@ -3202,9 +3214,16 @@ def main() -> None:
                                  zuordnung, fdaten, hook, datum, arbeit, ende,
                                  thumb_text_laden(tag_dir, args.sprache,
                                                   titel))
+            ende_bauen = ende
+            if args.vorschau is not None:
+                voll = len(folge)
+                ende_bauen = min(ende, args.vorschau)
+                folge = [s for s in folge if s.start < ende_bauen] or folge[:1]
+                print(f"Vorschau: nur die ersten {ende_bauen:.0f} s "
+                      f"({len(folge)} von {voll} Szenen)")
             print("baue Szenen-Video ...")
             szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
-                         datum, ende)
+                         datum, ende_bauen)
             fertig = True
         except Exception as e:
             # Kein Layout-Problem darf den Upload verhindern.
