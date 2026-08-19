@@ -2646,15 +2646,22 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Die Fragmente stehen nur, solange der Satz laeuft: sie
                 # gehen weg, bevor der Punkt in die Karte fliegt, und parken
                 # nie mit - dort bleibt der Bulletpoint allein. Zu kurze
-                # Fenster bekommen keine (zwei bis drei Zeilen Kleintext
-                # wollen gelesen werden), und solange der Kapitel-Opener
-                # steht, bleibt der Punkt allein in der Mitte: sein Lower
-                # Third und der hoehere Stapel wuerden sonst aneinander-
-                # stossen.
+                # Fenster bekommen keine, zwei bis drei Zeilen Kleintext
+                # wollen gelesen werden.
+                #
+                # Solange der Kapitel-Opener steht, bleibt der Detail-Kasten
+                # weg: er reicht bis etwa y=465 und stiesse an dessen Bande
+                # (ab y=426). Er setzt aber nur SPAETER ein, statt ganz zu
+                # entfallen - der erste Stichpunkt eines Kapitels beginnt bei
+                # OPENER_MIN=4.0 fast immer noch unter dem Opener, und ihm die
+                # Fragmente zu streichen haette jedes Kapitel um seinen oft
+                # substanzreichsten Punkt gebracht. Die Fokus-Karte selbst
+                # steht dabei von Anfang an auf ihrer Stapel-Position; sie
+                # endet oberhalb von 400 und kollidiert nie.
                 det_bis = land[n] - (FLUG_DAUER if fliegt[n] else 0.0)
+                det_von = max(t_n, opener_bis)
                 zeigt_detail = bool(details[n]) \
-                    and det_bis - t_n >= DETAIL_MIN \
-                    and t_n >= opener_bis - 0.1
+                    and det_bis - det_von >= DETAIL_MIN
                 bild, tx, ty = szenen.fokus_punkt(
                     punkt_text, glage, details[n] if zeigt_detail else None,
                     karte_oben)
@@ -2665,7 +2672,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     if dbild is not None:
                         dpfad, dx, dy = png(dbild)
                         detail_plan.append(KartenStand(
-                            dpfad, dx, dy, t_n, det_bis))
+                            dpfad, dx, dy, det_von, det_bis))
                 # Bewegt wird das zugeschnittene Overlay: sein Ziel ist die
                 # Kartenposition minus dem Textversatz innerhalb des Bildes.
                 fokus_plan.append(FokusKarte(
