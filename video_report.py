@@ -1927,6 +1927,105 @@ def _detail_liste(punkt: dict) -> list[str]:
     return [str(s).strip() for s in roh if str(s).strip()]
 
 
+# Woerter, die keinen Zeitbezug stiften: sie stehen in fast jedem Satz, ein
+# Treffer auf ihnen zeigt das Fragment irgendwo statt dort, wo sein Inhalt
+# gesprochen wird.
+DETAIL_STOPP = frozenset("""
+and are as at but by for from has have his her in into is it its no not of
+on one or over per than that the their this to under was were with you your
+about after all also any been being can could down had he how just like made
+make more most new now only other out said say says she some such then there
+these they up very what when which who will would
+""".split())
+DETAIL_FENSTER = 8       # so viele Woerter weit darf ein Fragment im
+                         # gesprochenen Text auseinanderliegen und noch als
+                         # eine Fundstelle gelten
+DETAIL_SELTEN = 2        # ein einzelnes Wort taugt nur als Fundstelle, wenn
+                         # es im Abschnitt hoechstens so oft faellt - sonst
+                         # trifft es irgendeines seiner Vorkommen
+DETAIL_VERSATZ = 0.7     # Mindestabstand zweier Fragment-Einblendungen: sie
+                         # sollen nacheinander erscheinen, nicht gemeinsam
+
+
+def _detail_tokens(fragment: str) -> list[str]:
+    """Die Woerter eines Fragments, die einen Zeitbezug stiften koennen:
+    ohne Fuellwoerter, und kurze nur, wenn sie Ziffern tragen ("22%", "5b")."""
+    return [t for t in _norm_text(fragment).split()
+            if t not in DETAIL_STOPP
+            and (len(t) >= 3 or any(z.isdigit() for z in t))]
+
+
+def _detail_fundort(fragment: str, worte: list[Wort]) -> float | None:
+    """Wann im Wortstrom der Inhalt dieses Fragments gesprochen wird.
+
+    Kein Folgenvergleich wie bei den Ankern (_anker_spanne): die Fragmente
+    sind verdichtete Stichworte, "CAFC order 8-17-2026" steht im Text als "a
+    CAFC order dated 8-17-2026". Gesucht wird deshalb die Stelle, an der die
+    meisten Fragment-Woerter dicht beieinander fallen. Ein einzelnes Wort
+    reicht nur, wenn es im Abschnitt selten ist. None, wenn nichts passt."""
+    ziel = set(_detail_tokens(fragment))
+    if not ziel:
+        return None
+    # Ein gesprochenes Wort kann mehrere Tokens tragen: "$12.50" wird zu
+    # "12 50", "8-17-2026" zu "8 17 2026". Verglichen wird deshalb je Wort
+    # eine Token-MENGE, nicht ein String - sonst faende ein Fragment mit
+    # "$12.50" seine eigene Zahl nicht wieder.
+    toks = [set(_norm_text(w.text).split()) for w in worte]
+    treffer = [i for i, t in enumerate(toks) if t & ziel]
+    if not treffer:
+        return None
+    bester: tuple[int, int] | None = None
+    for i in treffer:
+        fenster = {t for j in treffer if i <= j < i + DETAIL_FENSTER
+                   for t in toks[j] & ziel}
+        if bester is None or len(fenster) > bester[0]:
+            bester = (len(fenster), i)
+    assert bester is not None
+    anzahl, start = bester
+    if anzahl < 2:
+        # Ein-Wort-Fundstelle: nur belastbar, wenn das Wort selten faellt.
+        if len(treffer) > DETAIL_SELTEN:
+            return None
+    return worte[start].start
+
+
+def _detail_zeiten(fragmente: list[str], worte: list[Wort], von: float,
+                   bis: float) -> list[float]:
+    """Einblendzeit je Fragment innerhalb der Standzeit des Fokus-Punkts.
+
+    Bevorzugt der Fundort im gesprochenen Text, Luecken gleichmaessig
+    dazwischen. Danach zwei Korrekturen, die den Fundort ueberstimmen
+    duerfen: die Reihenfolge im Kasten steht fest (ein Fragment kann nicht
+    ueber einem frueheren erscheinen), und jedes braucht seine Lesezeit vor
+    dem Ende - das letzte zuerst, sonst blitzt es beim Abflug nur auf."""
+    roh: list[float | None] = [_detail_fundort(f, worte) for f in fragmente]
+    roh = [None if t is None or not von - 0.4 <= t <= bis else t for t in roh]
+    for i, wert in enumerate(roh):
+        if wert is not None:
+            continue
+        vor = von
+        for j in range(i - 1, -1, -1):
+            frueher = roh[j]
+            if frueher is not None:
+                vor = frueher
+                break
+        nach, schritte = bis, len(roh) - i + 1
+        for j in range(i + 1, len(roh)):
+            spaeter = roh[j]
+            if spaeter is not None:
+                nach, schritte = spaeter, j - i + 1
+                break
+        roh[i] = vor + (nach - vor) / max(1, schritte)
+    zeiten = [max(von, t if t is not None else von) for t in roh]
+    for i in range(1, len(zeiten)):      # Reihenfolge des Kastens erzwingen
+        zeiten[i] = max(zeiten[i], zeiten[i - 1] + DETAIL_VERSATZ)
+    rest = 0.0                           # Lesezeit von hinten freihalten
+    for i in range(len(zeiten) - 1, -1, -1):
+        rest += detail_frag_boden(fragmente[i])
+        zeiten[i] = max(von, min(zeiten[i], bis - rest))
+    return zeiten
+
+
 # Woerter, auf denen ein gekappter Stichpunkt nie enden darf: sie kuendigen
 # an, was gerade weggefallen ist ("... USD IN"), und lesen sich als Fehler.
 BULLET_FUELLWORT = {
@@ -2327,6 +2426,9 @@ class KartenStand:
     von: float
     bis: float
     einflug: str = ""
+    blende: float = 0.3       # Aufblendzeit; 0.0 = harter Schnitt
+    haelt: bool = False       # am Ende nicht ausblenden, weil eine
+                              # Folgestufe desselben Kastens uebernimmt
 
 
 @dataclass
@@ -2809,10 +2911,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Punkt beim Parken Text (die Fokus-Karte ist breiter).
                 punkt_text = szenen.karte_text(texte[n])
                 # Die Fragmente stehen nur, solange der Satz laeuft: sie
-                # gehen weg, bevor der Punkt in die Karte fliegt, und parken
-                # nie mit - dort bleibt der Bulletpoint allein. Zu kurze
-                # Fenster bekommen keine, zwei bis drei Zeilen Kleintext
-                # wollen gelesen werden.
+                # erscheinen einzeln an der Stelle, an der ihr Inhalt
+                # gesprochen wird, gehen weg, bevor der Punkt in die Karte
+                # fliegt, und parken nie mit - dort bleibt der Bulletpoint
+                # allein. Zu kurze Fenster bekommen keine, zwei bis drei
+                # Zeilen Kleintext wollen gelesen werden.
                 #
                 # Solange der Kapitel-Opener steht, bleibt der Detail-Kasten
                 # weg: er reicht bis etwa y=465 und stiesse an dessen Bande
@@ -2828,20 +2931,61 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Wie beim Punkt: gemessen wird das sichtbare Fenster gegen
                 # einen Boden nach Zeichenzahl. Drei Fragmente à 25 Zeichen
                 # sind in DETAIL_MIN=2.6s nicht lesbar (38 cps gemessen).
-                zeigt_detail = bool(details[n]) and (
-                    sicht_bis(det_von, det_bis) - det_von
-                    >= detail_boden(details[n]))
+                # Seit der Staffelung ist die Summe der Zeichen genau das
+                # richtige Mass: die Fragmente werden nacheinander gelesen,
+                # ihre Lesezeiten addieren sich also wirklich.
+                # Passt nicht die ganze Liste ins Fenster, fallen
+                # Fragmente von hinten weg, statt dass alle gleichzeitig
+                # aufspringen - die Staffelung ist sonst genau dort dahin,
+                # wo es am engsten ist.
+                frag = list(details[n])
+                fenster_frei = sicht_bis(det_von, det_bis) - det_von
+                while frag and detail_boden(frag) > fenster_frei:
+                    frag = frag[:-1]
+                zeigt_detail = bool(frag)
                 bild, tx, ty = szenen.fokus_punkt(
-                    punkt_text, glage, details[n] if zeigt_detail else None,
+                    punkt_text, glage, frag if zeigt_detail else None,
                     karte_oben)
                 pfad, fx, fy = png(bild)
                 if zeigt_detail:
-                    dbild = szenen.detail_karte(punkt_text, details[n], glage,
+                    teile = szenen.detail_teile(punkt_text, frag, glage,
                                                 karte_oben)
-                    if dbild is not None:
-                        dpfad, dx, dy = png(dbild)
-                        detail_plan.append(KartenStand(
-                            dpfad, dx, dy, det_von, det_bis))
+                    if teile is not None:
+                        kaesten, zeilen_bilder = teile
+                        # Jedes Fragment kommt, wenn sein Inhalt gesprochen
+                        # wird - nicht alle mit dem Bulletpoint zusammen. Der
+                        # Kasten selbst erscheint mit dem ersten Fragment,
+                        # sonst stuende erst eine leere Flaeche da; seine
+                        # Hoehe ist von Anfang an die endgueltige, damit der
+                        # Stapel unter dem fliegenden Fokus-Punkt nicht
+                        # wandert.
+                        fenster = [w for w in rumpf_worte
+                                   if det_von - 0.4 <= w.start <= det_bis]
+                        dz = _detail_zeiten(frag[:len(zeilen_bilder)],
+                                            fenster, det_von,
+                                            det_von + fenster_frei)
+                        # Erst alle Kastenstufen, dann die Zeilen: die
+                        # Overlays werden in Listenreihenfolge aufgelegt,
+                        # und eine spaetere (hoehere) Kastenstufe wuerde
+                        # sonst die frueher eingetragenen Zeilen unter ihrem
+                        # Grund begraben (Render-Probe 19.08.2026: Zeile 1
+                        # und 2 standen nur noch schemenhaft im Bild).
+                        for k, (kbild, zvon) in enumerate(zip(kaesten, dz)):
+                            # Die Kastenstufe steht, bis die naechste sie
+                            # abloest - hart und ohne Blende, sonst laegen
+                            # zwei Kaesten uebereinander und der Grund
+                            # verdoppelte kurz seine Deckkraft.
+                            letzte = k + 1 >= len(dz)
+                            kpfad, kx, ky = png(kbild)
+                            detail_plan.append(KartenStand(
+                                kpfad, kx, ky, zvon,
+                                det_bis if letzte else dz[k + 1],
+                                blende=0.3 if k == 0 else 0.0,
+                                haelt=not letzte))
+                        for zbild, zvon in zip(zeilen_bilder, dz):
+                            zpfad, zx, zy = png(zbild)
+                            detail_plan.append(KartenStand(
+                                zpfad, zx, zy, zvon, det_bis))
                 # Bewegt wird das zugeschnittene Overlay: sein Ziel ist die
                 # Kartenposition minus dem Textversatz innerhalb des Bildes.
                 fokus_plan.append(FokusKarte(
@@ -2864,12 +3008,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             for st in detail_plan:
                 a0, b0 = max(a, st.von), min(b, st.bis)
                 if b0 - a0 > 0.02:
-                    # Wie die Fokus-Karte darueber: nur das Stueck mit dem
-                    # echten Ende darf ausblenden, sonst verblassen die
-                    # Fragmente an einer Szenennaht mitten im Satz.
+                    # Wie die Karte darueber: aufblenden nur im Stueck mit
+                    # dem echten Beginn, und nur das Stueck mit dem echten
+                    # Ende darf ausblenden - sonst blendet dieselbe Zeile an
+                    # jeder Szenennaht neu auf bzw. verblasst mitten im Satz.
                     sz.overlays.append(Overlay(
-                        st.png, a0, b0, 0.3, st.x, st.y,
-                        weiter=b0 < st.bis - 0.02))
+                        st.png, a0, b0, st.blende if a0 == st.von else 0.0,
+                        st.x, st.y,
+                        weiter=st.haelt or b0 < st.bis - 0.02))
             for fk in fokus_plan:
                 a0, b0 = max(a, fk.von), min(b, fk.bis)
                 if b0 - a0 <= 0.02:
@@ -3068,6 +3214,8 @@ FOKUS_MAX = 12.0         # so lange steht ein Fokus-Punkt hoechstens in der
 FOKUS_VORLAUF = 0.9      # Zeit bis zum ersten Zeichen (Blick wandert hin)
 FOKUS_CPS = 15.0         # Lesetempo Fokus-Punkt (Grossbuchstaben, gross)
 DETAIL_CPS = 12.0        # Lesetempo Kleintext-Fragmente
+DETAIL_FRAG_MIN = 1.4    # Boden je einzelnem Fragment (der Kasten als
+                         # Ganzes hat mit DETAIL_MIN seinen eigenen)
 
 
 def fokus_boden(text: str) -> float:
@@ -3075,9 +3223,19 @@ def fokus_boden(text: str) -> float:
     return max(FOKUS_MIN, FOKUS_VORLAUF + len(text) / FOKUS_CPS)
 
 
+def detail_frag_boden(fragment: str) -> float:
+    """Mindest-Standzeit EINES Fragments nach seiner Zeichenzahl.
+
+    Eigener, niedrigerer Boden als DETAIL_MIN: der galt dem ganzen Kasten
+    mit zwei bis drei Zeilen. Seit die Fragmente einzeln erscheinen, ist
+    die Frage pro Fragment eine andere - ein Blick auf eine Zeile."""
+    return max(DETAIL_FRAG_MIN, len(fragment) / DETAIL_CPS)
+
+
 def detail_boden(fragmente: list[str]) -> float:
-    """Mindest-Standzeit des Detail-Kastens nach der Summe seiner Zeichen."""
-    return max(DETAIL_MIN, sum(len(f) for f in fragmente) / DETAIL_CPS)
+    """Mindest-Standzeit des Detail-Kastens: die Lesezeiten seiner Fragmente
+    addieren sich, weil sie nacheinander erscheinen und gelesen werden."""
+    return max(DETAIL_MIN, sum(detail_frag_boden(f) for f in fragmente))
 LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
                          # gedeckt durch GOOGLE_KAPITEL_PAUSE, sonst muesste
                          # der letzte Punkt im laufenden Satz wegfliegen
