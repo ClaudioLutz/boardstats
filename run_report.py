@@ -2226,9 +2226,20 @@ def main() -> int:
         log.error("Synthese meldet keinen Erfolg - Bericht liegt unter %s", ziel)
         return 1
 
-    for alt in sorted(ARBEIT.iterdir(), reverse=True)[LAEUFE_BEHALTEN:]:
-        if alt.is_dir():
-            shutil.rmtree(alt, ignore_errors=True)
+    # Nur Datums-Ordner (YYYY-MM-DD) sind alte Laeufe - ARBEIT traegt daneben
+    # dauerhafte Ordner wie clips/, motive/, thumbs/, srt_nachzug/. Ohne
+    # dieses Filter sortiert reverse=True alphabetisch VOR jedem Datum
+    # ("thumbs" > "srt_nachzug" > "motive" > "clips" > "2026-08-19" > ...),
+    # LAEUFE_BEHALTEN faellt dann mitten in diese Namen statt in die
+    # Datumsordner - Folge: clips/ (mit dem kumulativen Katalog) wurde bei
+    # jedem Lauf geloescht (gefunden 19.08.2026 beim Overseer-Testlauf, als
+    # der frisch geerntete Clip-Katalog direkt nach dem Speichern wieder weg
+    # war).
+    datums_muster = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    alte_laeufe = [p for p in ARBEIT.iterdir()
+                  if p.is_dir() and datums_muster.match(p.name)]
+    for alt in sorted(alte_laeufe, reverse=True)[LAEUFE_BEHALTEN:]:
+        shutil.rmtree(alt, ignore_errors=True)
     log.info("Gesamtdauer %d min", (time.time() - t0) / 60)
     return 0
 
