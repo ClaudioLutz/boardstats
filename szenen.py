@@ -317,6 +317,11 @@ FOKUS_ZEILE = 44
 # Schreibung (drei Zeilen VERSALIEN liest niemand in fuenf Sekunden) und in
 # Inter statt der fetten Display-Schrift - der Bulletpoint darueber bleibt
 # die Ueberschrift. Sie fliegen nie mit: beim Parken bleibt nur der Punkt.
+# Gefuellt sind sie WEISS wie der Bulletpoint, nicht im Grau der geparkten
+# Punkte (Nutzerfeedback 19.08.2026: das Grau las sich auf dem hellen
+# Board-Motiv als ausgegraut, also als nicht mehr aktuell - dabei ist das
+# Fragment gerade das, was in diesem Moment gesprochen wird). Die Hierarchie
+# tragen Schriftschnitt, Groesse und Schreibung, nicht die Helligkeit.
 DETAIL_MAX = 3          # mehr Fragmente konkurrieren mit dem Board-Motiv
 DETAIL_FONT = 23
 DETAIL_ZEILE = 31
@@ -450,7 +455,7 @@ def detail_teile(text: str, detail: list[str], lage: str = "left",
                      fill=AKZENT)
         for j, z in enumerate(zeilen):
             dz.text((x + DETAIL_RAND + DETAIL_TEXT_X, y + j * DETAIL_ZEILE), z,
-                    font=f, fill=KARTE_ALT)
+                    font=f, fill=HELL)
         zeilen_bilder.append(bild)
         y += len(zeilen) * DETAIL_ZEILE + DETAIL_ABSTAND
     return kaesten, zeilen_bilder
