@@ -1,111 +1,121 @@
 # /biz/ Situation Report 2026-08-19
 
-*Data as of: 19.08.2026 07:19 local time (Europe/Zurich), 15 threads analyzed.*
+*Data as of: 19.08.2026 13:18 local time (Europe/Zurich), 16 threads analyzed.*
 
 [Extracts and source threads of the day](README.md)
 
 ---
 
-## STOCKS: KLARNA IS THE DAY'S BODY COUNT
+## STOCKS: KLARNA IS THE FIGHT OF THE DAY
 
-Klarna (KLAR) dropped 22 percent in one session and four separate /smg/ threads are full of the people who bought the dip. Self-reported positions, all unverified:
+Klarna (KLAR) is the single name three separate /smg/ threads argue about, down 22% in one session by one poster's count. The running gag: "A-alright Klarna you had your fun, 22% is more than enough for one day."
 
-- $15.5 average entry, described as "2% of my port"
-- 30 percent of one poster's whole portfolio in KLAR
-- $113 named as the level one poster would buy back at
-- $10k lost on it in a day, plus a claimed $120,000 saved over ten years now nearly gone
+Poster figures, none sourced, none tied to a filing:
 
-The most-quoted line is the smallest loss: "I put 14 dollars into klarna and now I have 12.50. Life aint so bad."
+- EPS $0.01 this quarter, extrapolated to $0.04 for the year
+- revenue +27% year on year against +44% in Q1; the lowered guidance named as the trigger for the dump
+- delinquency rate under 1 percent and falling
+- interest income about 25% of revenue, merchant fees the rest
+- one poster's average entry $15.5, another holds 30% of his portfolio in it, a third lost $10,000 in a day
 
-The bear case is that buy-now-pay-later lends to people who cannot pay. Cited against Klarna: quarterly EPS of $0.01 (about $0.04 annualized), and a claim it has been "losing money for 4 out of 5 years". The defence gives mechanics: a $200 DoorDash order, $190 paid to the merchant, four payments of $50, and a claimed default rate under 1 percent, unsourced.
+The bull case is that Klarna sells risk-taking to merchants rather than interest to consumers: "Merchant fees are most of their revenue" and "The default rate is less than 1 percent and has been decreasing", set against the 22% average US credit card rate.
 
-Netlist (NLST) is the one bull thesis that gained a real document. A poster links a Federal Circuit order PDF dated 8-17-2026 (cafc.uscourts.gov, order 24-2203) as evidence Samsung owes about $303 million, and claims Micron owes roughly half a billion plus treble damages. Skeptics note that buying the thesis three years ago would have left you flat, that "it's not clear what specifically he's patented", and call it "a giant scam". Reliability: the same ID posts the Netlist material repeatedly with enthusiastic framing, so treat it as advocacy with one real citation attached.
+The bear case is credit-cycle timing. One poster says 3% delinquency already eats lender profits, another that the model "is doomed" and only works at a credit peak, a third that the company lost money "4 out of 5 years". Bluntest version: "will lead to violent defaults later on and klar will probably be banned as a result."
 
-Semis, in short:
+Reliability: every number here is a poster claim. The most substantive Klarna and carry-trade posts in thread 62604063 come from one ID, not from consensus.
+https://boards.4chan.org/biz/thread/62605336
+https://boards.4chan.org/biz/thread/62606254
 
-- SOXX sell-off explained as a mechanical "liquidity sweep": puts stacked at 520, retail stops at 530, forced market-maker selling. The poster credits Gemini for the analysis.
-- LAZR down 10 percent overnight and described as delisted into a photonics ETF wrapper; the thread's tribal bit: "FOTO chads, we are flat whereas the LYTE toddlers are -3% and the LAZR ropes are -10%."
-- Cerebras: a claimed 30x efficiency edge over GPUs and revenue going from about 1 billion to 3 billion in a year, yet the same poster would only buy "if it had fallen down to 80 bucks or so a share."
-- SPAC rights as an asymmetric play (OCACr, ALIS/ALISR, priced $0.10 to $1.00 and back to about $0.60), pitched with "If you do pleb shit you get pleb returns." Single-poster method, unverified.
+## KOREA, MEMORY AND WHAT ELSE MOVED THE TAPE
 
-## MACRO AND GEOPOLITICS
+Korea is the day's macro shock and the board's cruelest joke, with "owari da" — Japanese for "it's over", the board's reflex on bad prints — fired off right after the crash post.
 
-The new hard news is a vessel struck in the Strait of Hormuz. Posters quote a UK Maritime Trade Operations report: engine-room damage and one crew casualty from an unknown projectile.
+- KOSPI -5.8%; one poster: "it will never hit above 7k again"
+- cause given: retail leverage, "5 million Koreans going balls to the wall on with leverage", plus governance (foreign investors hold 50-70% of top Korean firms, payout ratios capped near 25%)
+- KORU, the leveraged Korea ETF, "is pumping" after being 22% higher two days ago
+- SK Hynix +6% premarket on a $29 billion treasury buyback plan (source: Yahoo Finance); Kioxia "worst performer on the Nikkei"
 
-Other macro items raised the same day:
+Other concrete items from the same threads:
 
-- Japan's 10-year yield at 2.95 percent, posted as a shock signal
-- Nvidia reportedly setting up a $500 billion fund with private-credit firms for datacenter capex, with GPUs "becoming securitized assets"; CME launching compute futures in October
-- Japan's tariff-era investment pledge to the US: $500 billion promised, $109 billion agreed, $5 billion actually financed
-- KOSPI called structurally broken, with 50 to 70 percent foreign ownership of top firms and under 25 percent of profits returned to shareholders; conclusion "will never hit above 7k again", greeted with "OH NO NO NO HAHAHAHAHA"
+- Target Q2: comp sales +3.8% versus +2.43% expected, net sales $26.54B versus $26.11B, FY adjusted EPS guidance $9.90-$10.90, including a $994 million pretax tariff refund benefit
+- Netlist (NLST): a Federal Circuit order (cafc.uscourts.gov, 17.08.2026) putting roughly $303 million on Samsung; a skeptic in-thread suspects the company sues for things "they can't legally sue for"
+- Nike versus Adidas: "CEO pushed hard into direct online sales and cut many store partners", ceding shelf space to On and Hoka, plus multi-year China weakness
+- Petrobras (PBR) at a PE of 4 versus roughly 40 for a US peer, rebutted with "Market is pricing in the risk of nationalization"
+- diesel at $5.47 a gallon against an all-time high of $5.82 (FT via archive.is), blamed on Middle East and Europe war disruption; CNBC reports a ship attacked in the Strait of Hormuz
+- 30-year US yield at 5.27; 23-hour trading, six days a week, starts in early December
 
-The yen carry unwind thesis got the best rebuttal on the board: "How many times has the carry trade unwound in the past couple years? 4, 5, 6 times already?" One genuine panic post, "this feels unironically VERY VERY dangerous. like 2008 level dangerous or even worse", was answered with the board's standing shrug at feared events that never land, "nothing ever happens".
+The board's word for a bear is "bobo", and one line captures the whole session: "Bobo confidence has reached a critical level." The other captures the tape: "This escalator up, elevator down behavior is really pissing me off."
 
-## CRYPTO
+The one mechanical explanation offered for the semis sell-off is a "liquidity sweep": rising yields forced CTA selling, SOXX 520 puts forced market makers to hedge-short, retail stops at 530 cascaded. The poster openly says he got it from Gemini. His verdict: "it's called a liquidity sweep and it should be illegal." The recurring Japan carry-trade warning got the best rebuttal of the day: "Yen carry fud is like the china bans bitcoin of tradfi."
 
-New in /XMR/: a claim that "Monero over Tor has been de-anonymized." It traces to BanMonero.com citing an August 4 tweet plus a tracing tool at github.com/supertestnet/examiner that has not been updated in two years. Nobody in the thread has tested it. Treat as unconfirmed. The joke resistance level escalated too: "Dont doubt the holy numbers. 4200 next."
+## GAMESTOP: THE EBAY BID, IN NUMBERS
 
-/XSG/ XRP Schizo General is on iteration 2556, which is itself the finding: the same bottom-call has now been re-founded 2,556 times. Today's version argues $1.00 versus $0.589 as the floor, against a stated $3.84 all-time high in January 2018, $0.30 in 2019 and $0.11 in March 2020 (all unsourced). One poster claims Ripple barely uses XRP outside raising retail money; another warns thin liquidity in these generals lets exchanges "hunt your positions" with scam wicks. Mood: "We've been lied to and missed our opportunity to sell for massive profits. We are fools."
+/GME/ has moved off squeeze theory onto an actual corporate action: GameStop built a stake of roughly 9.8 to 10 percent in eBay and bid about $125 a share against a $100 average cost, at $10 above eBay's all-time high, and the offer is now roughly 20% below the bid price.
 
-## PRECIOUS METALS
+- shareholders approved dilution authority up to 2.5 billion shares; Ryan Cohen has since scrapped his own comp package
+- claimed $500 million of Cohen's private money into the deal, $100 million previously into GME
+- GameStop cash and equivalents 9.7 billion; DRS about 65.0 million of 448.7 million shares, 14%, as of 5 June 2026
+- warrants (GME.WS/NXH) expire 30 October 2026; short and off-exchange volume shares of 51-69% posted from chartexchange.com
 
-/pmg/ is asking whether the drop retests $56 silver and $3,900 gold, and one poster answers there is "No fundamental reason" for it beyond the equity selloff. Contested claims:
+The skeptic case: "GME doesn't have the money to buy eBay even if it drops to $50", and dilution was the real point. The bull case: "The fact gamestop built a 9.8% stack in ebay means they are serious." One poster blames the rejection on eBay's own board: "the ebay executives turned down the offer for only one reason: they will all lose their jobs if this deal happens."
 
-- a "massive silver glut" with industry substituting copper, rebutted by silver having "tripled in like 5 years"
-- NOG stock: 10 percent dividends and $2,800 made in one day, countered with a claim it did "8-10 times worse than owning silver" over five years
-- sulfur pitched as industrially essential, dismissed as an overvalued hype trade
-- tin at $560/kg as a storable alternative
+Reliability caveat: the loudest ID at 14% is the resident critic, not a promoter, which argues the bullish side is organic. But "two more weeks" — the board's name for an event that never arrives — is still doing the work here: "Couple more weeks they get super wealthy and they'll leave us alone."
+https://boards.4chan.org/biz/thread/62598721
 
-Tone is stackers being friendly: "Silver at these prices is a cheat code at this point", against "Never buy into the hype train. You'll just be left holding the bag." All stock and sulfur figures come from single posters with round numbers.
+## CRYPTO: MONERO'S NEW BULL STORY IS RANSOMWARE
 
-## HOUSING
+New in /XMR/ since yesterday, and it is speculation, not evidence: a poster reads OpenAI's Hugging Face model-evaluation security incident as the start of automated AI ransomware, which would have to be paid in Monero — "The only thing they could possibly use? Monero. We WILL gigapump." No rebuttal in the extract.
 
-The only new argument attacks the thread's own premise. Redfin has only tracked homebuyer counts since 2013, so the "record low" figure cannot be compared to 2008 or 1929, and the real story is suppressed entry-level demand while luxury holds up: "The poors are fighting amongst themselves for scraps." A new flame war pits an "AI boom produced A LOT of Americans who can buy all of those houses now" optimist against the reply that AI is "paid for with borrowed money". Frozen-market background unchanged: https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-18/bericht.md
+Also new: a cryptography paper (eprint.iacr.org/2026/872.pdf) is now cited against the view-key fear, and the CARROT debate has stopped being argued and started being dismissed as one person's work — "It's the saddest fud campaign I saw so far". Practical warning: xmrcards.com is reported "busted" for gift-card creation.
 
-## BBBYQ
-
-The comma argument is over; the credibility argument replaced it. A YouTuber pushing the thesis allegedly posted and deleted an insider claim, then a similar NDA claim was walked back as being about GTA V leaks. Running punchline: "Never forget jake claiming he had an NDA and then sitting on the couch LMFAO." A fresh "it's happening" screenshot was dismissed as stale legacy bond data. The board's standing jab at deferred payoffs got aimed inward: "you're going to be fabulously rich in 2 more weeks?" Background: https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-18/bericht.md
-
-## TALL TALES
-
-Two threads sell insider status with nothing behind it. A self-described eight-year day trader claims $1.2 million earned and 30 percent APY, says Fidelity banned him for volume, then refuses every question about method because "it's based on experience you couldn't program the parameters into a bot"; a critic puts his account at $3,200 making $20 trades. One poster spots the format: "Just keep catching flies? It's been like 3 hours already."
-
-The other is a timeshare owner claiming free luxury stays for anyone above $100k household income, with full arithmetic ($35k up front, or $20k for 20 years, then $1,000 a week plus $700 maintenance, $500 booking and $200 registration, so $2,400 a week). The board's verdict: "No one believes you wagie."
+The 27x Kraken withdrawal fee, the $2,000 target and the view-key dispute itself are unchanged.
+https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-18/bericht.md
 
 ## FILLING FAST
 
-- /XSG/ #2556 runs 6 posts an hour, 2.4x its own 2.5 average, and contains no news at all, only bottom-calling.
-- The day-trader AMA runs 9 an hour, 1.9x its 4.8 average, on ego alone.
-- The live /smg/ is at 34 posts an hour but that is 0.8x its own 43.0 average, and /pmg/ at 5 an hour is 0.5x its 9.6. Both are cooling, not spiking.
-- One poster's summary of the whole catalog: "this board is truly reaching peak insane asylum rn."
+- Coca-Cola, 9 posts in the first two hours, and it has real content: KO as the rotation destination out of the AI trade, "it has to rotate somewhere", with the counter that staples are not defensive at all — "I would never invest in a consumer staple as a defensive stock", banks and utilities preferred. One poster deflates the chart entirely: "The graph just shows fiat inflation." No numbers anywhere in it.
+- A 26-year-old starting a business degree drew 11 posts in an hour, and the useful answer came from a self-declared accounting manager: bad graduate hiring is offshoring and the economy, not automation — "AI is largely a scam, it's not eliminating accounting jobs" — and study accounting rather than finance, because the skill transfers one way only.
+- The newest /smg/ ran 27 posts in the hour but only 0.7x its own average of 38 per hour; it is cooling, not accelerating.
+- One thread at 6 posts an hour is a body-image question with a picture and no finance content whatsoever.
 
-## UNCHANGED FROM YESTERDAY
+## BOARD LIFE
 
-Bitcoin's 17th-birthday thread (3x-4x remaining upside this cycle, 60 percent since ETF approval, Babylon staking versus ETFs after the Coldcard hack): no new argument.
+The timeshare thread is the day's best consumer arithmetic, from one poster claiming three of them: $35k list talked down to $20k for a 20-year lease, then $1k a week base, $700 annual maintenance, $500 booking and $200 interval registration, landing at $2,400 a week, about $400 a night for three rooms. He calls it a status purchase, not an asset: "It's not an investment or a business decision. It's just a flex." The rebuttal, "Time shares aren't for rich people buddy", plus a genuinely usable tip: buy from a reseller, and use the 5-business-day rescission window. He carries 38% of the thread's posts and is the person everyone is calling a liar, so treat all of it as one unverified voice.
+
+The millionaire-class thread produced no sources at all, only the board's standard verdict on both sides of a status argument, awarding a "Top cope posters award" — cope being the accusation that you are talking yourself out of your own situation.
+
+## UNCHANGED SINCE YESTERDAY
+
+BBBYQ/Teddy (the CUSIP-6 902116 versus 075896 match as claimed proof of a pending merger, warrants expiring 7 October): unchanged, still unresolved, and the thread's own best line is a skeptic's — "The cope required to justify this behavior could power a small city."
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-18/bericht.md
 
-The /biz/ anime "FX Senshi Kurumi-chan" (student recovering the 20 million yen her mother lost trading FX): two new posts, both insults.
+Bitcoin at 17 (only a 3x-4x left this cycle, 60% up since the ETFs, Babylon native staking as the counter-thesis): unchanged, no new posts.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-18/bericht.md
 
-"40 is the new 60. simple as." still never says what it means; the only market-adjacent reading remains the Chili's price joke.
+US housing frozen rather than crashing (2% boomer mortgages, 4.1% unemployment against the 20% one poster says it would take): unchanged, no new posts.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-18/bericht.md
+
+The /biz/ anime about the student recovering her mother's 20,000,000 yen FX loss: unchanged in substance, the new posts are a culture-war fight.
+https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-18/bericht.md
+
+SPAC rights, last reported on the 16th, gained numbers today: conversion ratios of 1:1 up to 10:1, ALIS/ALISR trading $0.10 to $1.00 and back to $0.60, and roughly 100 SPACs with rights of which about 20 have a deal.
 
 ## GLOSSARY
 
-- APY - annual percentage yield, the effective annualized return rate.
-- Carry trade - a strategy of borrowing in a low-interest currency (like yen) to invest in higher-yielding assets elsewhere; unwinding it means reversing those trades, often forced by rate/currency shifts.
-- compute futures - a proposed derivatives contract (per CME, launching October per the thread) letting traders bet on future computing capacity/pricing.
-- ETF - exchange-traded fund; here, a regulated fund product giving exposure to BTC without self-custody.
-- FX - foreign exchange (currency) trading.
-- General - a recurring, long-running thread format on a specific ongoing topic (here, /XSG/ for XRP), continued thread-to-thread with a numbered sequence.
-- general (as in "/pmg/") - a recurring, long-running thread type on a set topic that gets rebaked repeatedly.
-- General/smg - a recurring, long-running thread type ("Stock Market General") that continues day-to-day, distinct from one-off threads.
-- ID - a per-thread poster identifier assigned by the board, not a persistent user account.
-- Liquidity sweep - a claimed pattern where price is pushed to a level (often near clustered stop-losses or options strikes) to trigger forced selling/buying, benefiting those who anticipated it.
-- NDA - non-disclosure agreement; here repeatedly invoked (and disputed) as the reason someone "can't" share alleged insider information.
-- Redfin - a real-estate listing/data company whose buyer-tracking figures are cited as the source of the "record low" claim.
-- simple as - board slang for ending a statement definitively, implying no further debate is needed.
-- SPAC / SPAC rights/warrants - a special-purpose acquisition company (blank-check shell that merges with a private company to take it public); "rights" are a security entitling holders to shares (often at a ratio) upon merger completion.
-- timeshare - a part-ownership or leased-usage arrangement in a vacation property, typically sold via a sales presentation in exchange for free perks.
-- wagie - board slang mocking someone as a low-status wage worker, used here to dismiss a poster's claims as implausible for their perceived income level.
-- Wagie/wage slave - derogatory-but-common board term for someone working a regular job, seen as beneath NEET/trading lifestyle ideals.
+- Consumer Staple - Finanzbegriff für ein Basiskonsumgut-Unternehmen (z. B. Nahrung, Getränke), dessen Nachfrage als konjunkturunabhängig gilt.
+- cope - Board-Slang für sich selbst schönreden/verdrängen einer unangenehmen Realität.
+- CUSIP - eindeutige Wertpapier-Identifikationsnummer (Committee on Uniform Securities Identification Procedures); Kern der gesamten "Conundrum"-Debatte im Thread.
+- Delinquency rate - Anteil der Kredite, bei denen Zahlungen ausbleiben.
+- DRS - Direct Registration System, direkte Registrierung von Aktien beim Transferagenten statt beim Broker, gilt im Board als Schutz vor "Naked Shorting".
+- ETF - börsengehandelter Fonds, hier als Zugang zu BTC ohne eigene Wallet-Verwaltung
+- FUD - "Fear, Uncertainty, Doubt", gezielte negative Stimmungsmache gegen eine Aktie, im Thread mehrfach Gegnern vorgeworfen.
+- Get/Checked - Board-Ritual, bei dem eine sich wiederholende Post-Nummer ("Digits") als bedeutungsvoll/glücksbringend gefeiert wird; hier: "Checked" als Reaktion auf eine Post-Nummer.
+- Guidance - von einer Firma selbst herausgegebene Umsatz-/Gewinnprognose für kommende Quartale.
+- ID - pro Thread neu vergebene, anonyme Kennung eines Posters, erlaubt Zählung unterschiedlicher Stimmen ohne Identität
+- KOSPI - koreanischer Aktienindex (Korea Composite Stock Price Index).
+- liquidity sweep - im Thread verwendeter (unsourced) Begriff für ein angebliches gezieltes Auslösen von Stop-Loss-Kaskaden durch grosse Marktteilnehmer.
+- smg - "Stock Market General", der wiederkehrende Sammelthread für Börsendiskussion auf /biz/.
+- smiggers/smg - Eigenbezeichnung der Poster dieses /smg/-Stock-Market-General-Threads für sich selbst.
+- SPAC-Warrants/Rights - Zusatzrechte bei Special-Purpose-Acquisition-Company-Aktien, die nach einer Fusion in zusätzliche Aktien umgewandelt werden können.
+- staking - Einsatz von Kryptowährung zur Erzielung von Erträgen, üblicherweise über Sperrfristen
+- Timeshare - Teilzeitnutzungsrecht an einer Ferienimmobilie, oft über Jahrzehnte vertraglich gebunden, Kernthema des Threads.

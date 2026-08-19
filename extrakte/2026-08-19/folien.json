@@ -1,450 +1,494 @@
 {
   "abschnitte": [
     {
-      "ueberschrift": "STOCKS: KLARNA IS THE DAY'S BODY COUNT",
-      "titel": "Klarna bloodbath, Netlist bull case",
+      "ueberschrift": "STOCKS: KLARNA IS THE FIGHT OF THE DAY",
+      "titel": "Klarna: fight of the day",
       "lage": "left",
       "stichworte": [
         {
-          "text": "KLAR DROPS 22%",
-          "anker": "dropped 22 percent in one"
+          "text": "KLARNA DOWN 22%",
+          "anker": "down 22% in one session",
+          "detail": [
+            "3 /smg/ threads arguing",
+            "one poster's count"
+          ]
         },
         {
-          "text": "ALL UNVERIFIED",
-          "anker": "Self-reported positions, all unverified"
+          "text": "BOARD'S RUNNING GAG",
+          "anker": "you had your fun, 22%",
+          "detail": [
+            "'22% is more than enough'"
+          ]
         },
         {
-          "text": "$15.50 AVG ENTRY",
-          "anker": "$15.5 average entry, described"
+          "text": "EPS $0.01, YEAR $0.04",
+          "anker": "EPS $0.01 this quarter",
+          "detail": [
+            "extrapolated, unsourced"
+          ]
         },
         {
-          "text": "30% OF PORTFOLIO",
-          "anker": "30 percent of one poster's"
+          "text": "REVENUE +27% YOY",
+          "anker": "revenue +27% year on year",
+          "detail": [
+            "down from +44% in Q1",
+            "guidance cut blamed for dump"
+          ]
         },
         {
-          "text": "$113 BUY BACK LEVEL",
-          "anker": "$113 named as the level"
+          "text": "DELINQUENCY UNDER 1%",
+          "anker": "delinquency rate under 1 percent",
+          "detail": [
+            "and falling, claim"
+          ]
         },
         {
-          "text": "$10K LOST IN A DAY",
-          "anker": "$10k lost on it"
+          "text": "INTEREST 25%, FEES REST",
+          "anker": "interest income about 25%",
+          "detail": [
+            "merchant fees majority"
+          ]
         },
         {
-          "text": "“$14 TO $12.50”",
-          "anker": "put 14 dollars into klarna"
+          "text": "ONE POSTER LOST $10K",
+          "anker": "lost $10,000 in a day",
+          "detail": [
+            "entry $15.5 avg, another 30% stack"
+          ]
         },
         {
-          "text": "BNPL LENDS TO RISK",
-          "anker": "buy-now-pay-later lends to people"
+          "text": "BULL: MERCHANT RISK MODEL",
+          "anker": "sells risk-taking to merchants",
+          "detail": [
+            "vs 22% avg US card rate"
+          ]
         },
         {
-          "text": "EPS JUST $0.01",
-          "anker": "quarterly EPS of $0.01"
+          "text": "BEAR: CREDIT CYCLE TIMING",
+          "anker": "bear case is credit-cycle timing",
+          "detail": [
+            "3% delinquency eats profits",
+            "lost money 4 of 5 years"
+          ]
         },
         {
-          "text": "$200 DOORDASH MATH",
-          "anker": "a $200 DoorDash order"
+          "text": "'PROBABLY BE BANNED'",
+          "anker": "probably be banned as a result"
+        },
+        {
+          "text": "ONE ID, NOT CONSENSUS",
+          "anker": "come from one ID, not from consensus",
+          "detail": [
+            "every number is poster claim"
+          ]
+        }
+      ],
+      "zitat": {
+        "text": "will lead to violent defaults later on and klar will probably be banned as a result.",
+        "anker": "violent defaults later on"
+      },
+      "karte": {
+        "wert": "-22%",
+        "titel": "Klarna single-day drop",
+        "sub": "poster count, unsourced",
+        "anker": "down 22% in one session"
+      },
+      "zwischenthemen": []
+    },
+    {
+      "ueberschrift": "KOREA, MEMORY AND WHAT ELSE MOVED THE TAPE",
+      "titel": "Korea crash rattles markets",
+      "lage": "right",
+      "stichworte": [
+        {
+          "text": "KOREA: MACRO SHOCK",
+          "anker": "day's macro shock",
+          "detail": [
+            "'owari da' - it's over"
+          ]
+        },
+        {
+          "text": "KOSPI -5.8%",
+          "anker": "KOSPI -5.8%",
+          "detail": [
+            "'never hit above 7k again'"
+          ]
+        },
+        {
+          "text": "RETAIL LEVERAGE BLAMED",
+          "anker": "5 million Koreans going balls",
+          "detail": [
+            "+governance: payout capped 25%"
+          ]
+        },
+        {
+          "text": "KORU ETF PUMPING",
+          "anker": "KORU, the leveraged Korea ETF",
+          "detail": [
+            "was +22% two days ago"
+          ]
+        },
+        {
+          "text": "SK HYNIX +6% PREMARKET",
+          "anker": "SK Hynix +6% premarket",
+          "detail": [
+            "$29B buyback plan",
+            "Kioxia worst on Nikkei"
+          ]
         }
       ],
       "zwischenthemen": [
         {
-          "titel": "Netlist's real court win",
-          "anker": "Netlist (NLST) is the one",
-          "lage": "right"
-        },
-        {
-          "titel": "Semis: sweeps, delistings, hype",
-          "anker": "Semis, in short:",
-          "lage": "left"
-        }
-      ],
-      "zitat": {
-        "text": "I put 14 dollars into klarna and now I have 12.50. Life aint so bad.",
-        "anker": "put 14 dollars into klarna"
-      },
-      "karte": {
-        "wert": "$120K",
-        "titel": "Savings nearly gone",
-        "sub": "10 yrs wiped in a day",
-        "anker": "claimed $120,000 saved over"
-      }
-    },
-    {
-      "ueberschrift": "MACRO AND GEOPOLITICS",
-      "titel": "Hormuz strike, yen carry fears",
-      "lage": "right",
-      "stichworte": [
-        {
-          "text": "SHIP STRUCK, HORMUZ",
-          "anker": "vessel struck in the Strait"
-        },
-        {
-          "text": "1 CREW CASUALTY",
-          "anker": "engine-room damage and one crew"
-        },
-        {
-          "text": "JAPAN YIELD AT 2.95%",
-          "anker": "Japan's 10-year yield at 2.95"
-        },
-        {
-          "text": "NVIDIA'S $500B FUND",
-          "anker": "$500 billion fund with private-credit"
-        },
-        {
-          "text": "COMPUTE FUTURES OCT",
-          "anker": "CME launching compute futures in"
-        },
-        {
-          "text": "PLEDGE: $500B TO $5B",
-          "anker": "$500 billion promised, $109 billion"
-        },
-        {
-          "text": "KOSPI “BROKEN”",
-          "anker": "KOSPI called structurally broken"
-        },
-        {
-          "text": "NEVER 7K AGAIN",
-          "anker": "will never hit above 7k"
-        },
-        {
-          "text": "CARRY UNWOUND BEFORE?",
-          "anker": "times has the carry trade"
-        },
-        {
-          "text": "“2008 LEVEL” PANIC",
-          "anker": "this feels unironically VERY VERY"
-        },
-        {
-          "text": "“NOTHING EVER HAPPENS”",
-          "anker": "nothing ever happens"
-        }
-      ],
-      "zitat": {
-        "text": "How many times has the carry trade unwound in the past couple years? 4, 5, 6 times already?",
-        "anker": "times has the carry trade"
-      },
-      "karte": {
-        "wert": "$5B",
-        "titel": "Only $5B financed",
-        "sub": "Of $500B Japan pledged",
-        "anker": "$5 billion actually financed"
-      },
-      "zwischenthemen": []
-    },
-    {
-      "ueberschrift": "CRYPTO",
-      "titel": "Monero doubts, XRP deja vu",
-      "lage": "left",
-      "stichworte": [
-        {
-          "text": "MONERO “DEANONYMIZED”?",
-          "anker": "Monero over Tor has been"
-        },
-        {
-          "text": "SOURCED TO AUG 4 TWEET",
-          "anker": "citing an August 4 tweet"
-        },
-        {
-          "text": "TOOL STALE 2 YEARS",
-          "anker": "has not been updated in"
-        },
-        {
-          "text": "NOBODY TESTED IT",
-          "anker": "Nobody in the thread has"
-        },
-        {
-          "text": "UNCONFIRMED CLAIM",
-          "anker": "Treat as unconfirmed"
-        },
-        {
-          "text": "“4200 NEXT” MEME",
-          "anker": "Dont doubt the holy numbers"
-        }
-      ],
-      "zwischenthemen": [
-        {
-          "titel": "XRP's 2,556th bottom call",
-          "anker": "/XSG/ XRP Schizo General is",
+          "titel": "Other movers: Target to yields",
+          "anker": "Other concrete items from",
           "lage": "right"
         }
       ],
       "zitat": {
-        "text": "We've been lied to and missed our opportunity to sell for massive profits. We are fools.",
-        "anker": "We've been lied to and"
+        "text": "Bobo confidence has reached a critical level.",
+        "anker": "Bobo confidence has reached"
       },
       "karte": {
-        "wert": "2,556",
-        "titel": "Re-founded again",
-        "sub": "Same XRP bottom call",
-        "anker": "re-founded 2,556 times"
+        "wert": "-5.8%",
+        "titel": "KOSPI single-day drop",
+        "sub": "Korea's benchmark index",
+        "anker": "KOSPI -5.8%; one poster"
       }
     },
     {
-      "ueberschrift": "PRECIOUS METALS",
-      "titel": "Silver, gold, and glut denial",
-      "lage": "right",
-      "stichworte": [
-        {
-          "text": "RETEST $56 SILVER?",
-          "anker": "retests $56 silver and"
-        },
-        {
-          "text": "“NO FUNDAMENTAL REASON”",
-          "anker": "No fundamental reason"
-        },
-        {
-          "text": "“GLUT” CLAIM REBUTTED",
-          "anker": "massive silver glut"
-        },
-        {
-          "text": "SILVER TRIPLED IN 5Y",
-          "anker": "tripled in like 5 years"
-        },
-        {
-          "text": "NOG: $2,800 IN A DAY",
-          "anker": "10 percent dividends and $2,800"
-        },
-        {
-          "text": "NOG “WORSE” LONG TERM",
-          "anker": "8-10 times worse than owning"
-        },
-        {
-          "text": "SULFUR HYPE DISMISSED",
-          "anker": "sulfur pitched as industrially"
-        },
-        {
-          "text": "TIN AT $560/KG",
-          "anker": "tin at $560/kg as"
-        },
-        {
-          "text": "“CHEAT CODE” STACKERS",
-          "anker": "Silver at these prices is"
-        },
-        {
-          "text": "“DON'T BUY THE HYPE”",
-          "anker": "Never buy into the hype"
-        },
-        {
-          "text": "UNSOURCED, ROUND NUMBERS",
-          "anker": "single posters with round numbers"
-        }
-      ],
-      "zitat": {
-        "text": "Silver at these prices is a cheat code at this point",
-        "anker": "Silver at these prices is"
-      },
-      "karte": {
-        "wert": "$56",
-        "titel": "Silver retest level",
-        "sub": "Key level being watched",
-        "anker": "the drop retests $56 silver"
-      },
-      "zwischenthemen": []
-    },
-    {
-      "ueberschrift": "HOUSING",
-      "titel": "Housing: Redfin data debunked",
+      "ueberschrift": "GAMESTOP: THE EBAY BID, IN NUMBERS",
+      "titel": "GameStop's eBay bid in numbers",
       "lage": "left",
       "stichworte": [
         {
-          "text": "REDFIN DATA SINCE 2013",
-          "anker": "Redfin has only tracked homebuyer"
+          "text": "GME BUILT 9.8-10% EBAY STAKE",
+          "anker": "9.8 to 10 percent in eBay",
+          "detail": [
+            "bid ~$125/share, cost ~$100 avg",
+            "$10 above eBay ATH"
+          ]
         },
         {
-          "text": "NOT VS 2008 OR 1929",
-          "anker": "cannot be compared to 2008"
+          "text": "OFFER NOW 20% UNDER BID",
+          "anker": "now roughly 20% below the bid"
         },
         {
-          "text": "“POORS FIGHT FOR SCRAPS”",
-          "anker": "The poors are fighting amongst"
+          "text": "DILUTION AUTHORITY 2.5B SHARES",
+          "anker": "dilution authority up to 2.5 billion",
+          "detail": [
+            "Cohen scrapped own comp pkg"
+          ]
         },
         {
-          "text": "AI BOOM = MORE BUYERS?",
-          "anker": "AI boom produced A LOT"
+          "text": "COHEN'S $500M PRIVATE MONEY",
+          "anker": "$500 million of Cohen's private",
+          "detail": [
+            "+$100M earlier into GME"
+          ]
         },
         {
-          "text": "“BORROWED MONEY” REPLY",
-          "anker": "paid for with borrowed money"
+          "text": "GME CASH $9.7 BILLION",
+          "anker": "cash and equivalents 9.7 billion",
+          "detail": [
+            "DRS 65.0M of 448.7M shares, 14%"
+          ]
+        },
+        {
+          "text": "WARRANTS EXPIRE 30 OCT",
+          "anker": "warrants (GME.WS/NXH) expire 30 October",
+          "detail": [
+            "short/off-exchange 51-69% of volume"
+          ]
+        },
+        {
+          "text": "SKEPTIC: 'DOESN'T HAVE MONEY'",
+          "anker": "doesn't have the money to buy",
+          "detail": [
+            "dilution was the real point"
+          ]
+        },
+        {
+          "text": "BULL: 'THEY ARE SERIOUS'",
+          "anker": "built a 9.8% stack in ebay"
+        },
+        {
+          "text": "BLAME: EBAY BOARD SELF-INTEREST",
+          "anker": "ebay executives turned down the offer",
+          "detail": [
+            "'lose their jobs if deal happens'"
+          ]
+        },
+        {
+          "text": "CRITIC ID IS THE SKEPTIC",
+          "anker": "loudest ID at 14% is the",
+          "detail": [
+            "argues bull side is organic"
+          ]
+        },
+        {
+          "text": "'TWO MORE WEEKS' AGAIN",
+          "anker": "Couple more weeks they get"
         }
       ],
       "zitat": {
-        "text": "The poors are fighting amongst themselves for scraps.",
-        "anker": "The poors are fighting amongst"
+        "text": "the ebay executives turned down the offer for only one reason: they will all lose their jobs if this deal happens.",
+        "anker": "ebay executives turned down the offer"
+      },
+      "karte": {
+        "wert": "$125",
+        "titel": "GME's eBay bid per share",
+        "sub": "vs ~$100 avg cost",
+        "anker": "bid about $125 a share"
       },
       "zwischenthemen": []
     },
     {
-      "ueberschrift": "BBBYQ",
-      "titel": "BBBYQ: credibility war begins",
+      "ueberschrift": "CRYPTO: MONERO'S NEW BULL STORY IS RANSOMWARE",
+      "titel": "Monero: ransomware bull thesis",
       "lage": "right",
       "stichworte": [
         {
-          "text": "NEW FIGHT: CREDIBILITY",
-          "anker": "credibility argument replaced it"
+          "text": "NEW THESIS: AI RANSOMWARE",
+          "anker": "start of automated AI ransomware",
+          "detail": [
+            "paid in Monero, poster claims"
+          ]
         },
         {
-          "text": "INSIDER CLAIM DELETED",
-          "anker": "posted and deleted an insider"
+          "text": "'WE WILL GIGAPUMP'",
+          "anker": "We WILL gigapump"
         },
         {
-          "text": "NDA CLAIM WALKED BACK",
-          "anker": "NDA claim was walked back"
+          "text": "PAPER CITED VS VIEW-KEY FEAR",
+          "anker": "cited against the view-key fear"
         },
         {
-          "text": "“NEVER FORGET JAKE”",
-          "anker": "Never forget jake claiming he"
+          "text": "CARROT DEBATE: 'SADDEST FUD'",
+          "anker": "saddest fud campaign I saw"
         },
         {
-          "text": "“HAPPENING” PIC IS STALE",
-          "anker": "dismissed as stale legacy bond"
+          "text": "XMRCARDS.COM BUSTED",
+          "anker": "for gift-card creation",
+          "detail": [
+            "for gift-card creation"
+          ]
         },
         {
-          "text": "“RICH IN 2 WEEKS?” JAB",
-          "anker": "fabulously rich in 2 more"
+          "text": "UNCHANGED: FEE, TARGET, DISPUTE",
+          "anker": "27x Kraken withdrawal fee",
+          "detail": [
+            "27x Kraken fee",
+            "$2,000 target still open"
+          ]
         }
       ],
       "zitat": {
-        "text": "Never forget jake claiming he had an NDA and then sitting on the couch LMFAO.",
-        "anker": "Never forget jake claiming he"
-      },
-      "zwischenthemen": []
-    },
-    {
-      "ueberschrift": "TALL TALES",
-      "titel": "Tall tales: trader, timeshare",
-      "lage": "left",
-      "stichworte": [
-        {
-          "text": "FAKE INSIDER VIBES",
-          "anker": "sell insider status with nothing"
-        },
-        {
-          "text": "CLAIMS $1.2M, 30% APY",
-          "anker": "claims $1.2 million earned and"
-        },
-        {
-          "text": "“FIDELITY BANNED ME”",
-          "anker": "Fidelity banned him for volume"
-        },
-        {
-          "text": "WON'T EXPLAIN METHOD",
-          "anker": "couldn't program the parameters"
-        },
-        {
-          "text": "CRITIC: REALLY $3,200",
-          "anker": "puts his account at $3,200"
-        },
-        {
-          "text": "“CATCHING FLIES” JAB",
-          "anker": "Just keep catching flies"
-        }
-      ],
-      "zwischenthemen": [
-        {
-          "titel": "Timeshare math doesn't add up",
-          "anker": "The other is a timeshare",
-          "lage": "right"
-        }
-      ],
-      "stichworte2": [],
-      "zitat": {
-        "text": "No one believes you wagie.",
-        "anker": "No one believes you wagie"
+        "text": "The only thing they could possibly use? Monero. We WILL gigapump.",
+        "anker": "We WILL gigapump"
       },
       "karte": {
-        "wert": "$1.2M",
-        "titel": "Trader's claimed profit",
-        "sub": "Critic pegs him at $3,200",
-        "anker": "claims $1.2 million earned and"
-      }
+        "wert": "27x",
+        "titel": "Kraken withdrawal fee",
+        "sub": "cited as still unchanged",
+        "anker": "27x Kraken withdrawal fee"
+      },
+      "zwischenthemen": []
     },
     {
       "ueberschrift": "FILLING FAST",
-      "titel": "Filling fast: thread heat check",
-      "lage": "right",
+      "titel": "Filling fast: four new threads",
+      "lage": "left",
       "stichworte": [
         {
-          "text": "XSG: 6 POSTS/HR, NO NEWS",
-          "anker": "runs 6 posts an hour"
+          "text": "KO: ROTATION OUT OF AI TRADE",
+          "anker": "rotation destination out of the AI trade",
+          "detail": [
+            "'it has to rotate somewhere'"
+          ]
         },
         {
-          "text": "2.4X ITS OWN AVERAGE",
-          "anker": "2.4x its own 2.5 average"
+          "text": "COUNTER: STAPLES NOT DEFENSIVE",
+          "anker": "staples are not defensive at all",
+          "detail": [
+            "banks, utilities preferred instead"
+          ]
         },
         {
-          "text": "AMA: 9 POSTS/HR",
-          "anker": "day-trader AMA runs 9 an"
+          "text": "'JUST SHOWS FIAT INFLATION'",
+          "anker": "graph just shows fiat inflation"
         },
         {
-          "text": "SMG: 34/HR, COOLING",
-          "anker": "34 posts an hour but"
+          "text": "26YO ASKS: WHICH DEGREE?",
+          "anker": "26-year-old starting a business degree",
+          "detail": [
+            "11 posts in an hour"
+          ]
         },
         {
-          "text": "PMG: 5/HR, COOLING TOO",
-          "anker": "/pmg/ at 5 an hour"
+          "text": "BLAME: OFFSHORING, NOT AI",
+          "anker": "bad graduate hiring is offshoring",
+          "detail": [
+            "from self-declared acct manager"
+          ]
         },
         {
-          "text": "BOTH COOLING, NOT HOT",
-          "anker": "Both are cooling, not spiking"
+          "text": "ADVICE: STUDY ACCOUNTING",
+          "anker": "study accounting rather than finance",
+          "detail": [
+            "skill transfers one way only"
+          ]
         },
         {
-          "text": "“PEAK INSANE ASYLUM”",
-          "anker": "peak insane asylum rn"
+          "text": "NEWEST /SMG/ COOLING",
+          "anker": "0.7x its own average of 38",
+          "detail": [
+            "27 posts/hr vs avg 38"
+          ]
+        },
+        {
+          "text": "OFF-TOPIC: BODY IMAGE THREAD",
+          "anker": "body-image question with a picture",
+          "detail": [
+            "no finance content"
+          ]
         }
       ],
       "zitat": {
-        "text": "this board is truly reaching peak insane asylum rn.",
-        "anker": "peak insane asylum rn"
-      },
-      "karte": {
-        "wert": "43.0/hr",
-        "titel": "/smg/ average pace",
-        "sub": "Today's 34/hr is quieter",
-        "anker": "its own 43.0 average"
+        "text": "AI is largely a scam, it's not eliminating accounting jobs",
+        "anker": "AI is largely a scam"
       },
       "zwischenthemen": []
     },
     {
-      "ueberschrift": "UNCHANGED FROM YESTERDAY",
-      "titel": "Unchanged since yesterday",
+      "ueberschrift": "BOARD LIFE",
+      "titel": "Board life: timeshares and cope",
+      "lage": "right",
+      "stichworte": [
+        {
+          "text": "TIMESHARE: $35K DOWN TO $20K",
+          "anker": "$35k list talked down to $20k",
+          "detail": [
+            "20-year lease"
+          ]
+        },
+        {
+          "text": "$2,400/WEEK, ~$400/NIGHT",
+          "anker": "landing at $2,400 a week",
+          "detail": [
+            "+$700 maint, $500 booking, $200 reg"
+          ]
+        },
+        {
+          "text": "'IT'S JUST A FLEX'",
+          "anker": "not an investment or a business"
+        },
+        {
+          "text": "TIP: BUY FROM RESELLER",
+          "anker": "buy from a reseller",
+          "detail": [
+            "5-day rescission window"
+          ]
+        },
+        {
+          "text": "ONE VOICE: 38% OF POSTS",
+          "anker": "carries 38% of the thread's posts",
+          "detail": [
+            "everyone calls him a liar"
+          ]
+        },
+        {
+          "text": "MILLIONAIRE THREAD: NO SOURCES",
+          "anker": "Top cope posters award",
+          "detail": [
+            "just a 'cope posters award'"
+          ]
+        }
+      ],
+      "zitat": {
+        "text": "It's not an investment or a business decision. It's just a flex.",
+        "anker": "not an investment or a business"
+      },
+      "karte": {
+        "wert": "$2,400",
+        "titel": "Timeshare cost per week",
+        "sub": "~$400/night for 3 rooms",
+        "anker": "landing at $2,400 a week"
+      },
+      "zwischenthemen": []
+    },
+    {
+      "ueberschrift": "UNCHANGED SINCE YESTERDAY",
+      "titel": "Unchanged: four threads, one new",
       "lage": "left",
       "stichworte": [
         {
-          "text": "BTC: 3-4X UPSIDE STILL",
-          "anker": "3x-4x remaining upside this cycle"
+          "text": "BBBYQ: STILL UNRESOLVED",
+          "anker": "cope required to justify this",
+          "detail": [
+            "'cope could power a small city'"
+          ]
         },
         {
-          "text": "KURUMI-CHAN: STILL SAD",
-          "anker": "20 million yen her mother"
+          "text": "BITCOIN: UNCHANGED, NO POSTS",
+          "anker": "3x-4x left this cycle",
+          "detail": [
+            "60% up since ETFs"
+          ]
+        },
+        {
+          "text": "HOUSING: STILL FROZEN",
+          "anker": "housing frozen rather than crashing",
+          "detail": [
+            "2% mortgages vs 4.1% unemployment"
+          ]
+        },
+        {
+          "text": "ANIME THREAD: CULTURE WAR NOW",
+          "anker": "anime about the student recovering",
+          "detail": [
+            "substance itself unchanged"
+          ]
+        },
+        {
+          "text": "SPAC RIGHTS GET NUMBERS",
+          "anker": "conversion ratios of 1:1 up to",
+          "detail": [
+            "ALIS/ALISR $0.10 to $1.00 to $0.60",
+            "~100 SPACs, ~20 with a deal"
+          ]
         }
       ],
+      "zitat": {
+        "text": "The cope required to justify this behavior could power a small city.",
+        "anker": "cope required to justify this"
+      },
       "zwischenthemen": []
     }
   ],
   "zahlen": [
     {
       "wert": "-22%",
-      "titel": "Klarna's single-day crash",
-      "sub": "Bag-holders papered the board",
-      "satz": "Klarna stock dropped twenty-two percent in a single session, and four separate threads filled up with the people who bought the dip."
+      "titel": "Klarna single-day drop",
+      "sub": "KLAR sinks in one session",
+      "satz": "Klarna dropped twenty-two percent in a single session, by one poster's count."
     },
     {
-      "wert": "$500B",
-      "titel": "Nvidia's new mega-fund",
-      "sub": "Datacenter capex fund",
-      "satz": "Nvidia is reportedly setting up a five hundred billion dollar fund with private credit firms to finance datacenter buildouts."
+      "wert": "-5.8%",
+      "titel": "KOSPI's single-day fall",
+      "sub": "Korea's benchmark crashes",
+      "satz": "South Korea's KOSPI index fell five point eight percent in one day."
     },
     {
-      "wert": "$5B",
-      "titel": "Japan's pledge, financed",
-      "sub": "Of $500B pledged by Japan",
-      "satz": "Of the five hundred billion dollars Japan promised in investment, only five billion dollars has actually been financed so far."
+      "wert": "$125",
+      "titel": "GameStop's eBay bid",
+      "sub": "per share, against $100 cost",
+      "satz": "GameStop reportedly bid about one hundred twenty-five dollars a share for eBay."
     },
     {
-      "wert": "2,556",
-      "titel": "XRP's bottom call count",
-      "sub": "Same thesis, refounded again",
-      "satz": "The XRP Schizo General thread is on its two thousand five hundred and fifty sixth iteration, still calling the same market bottom."
+      "wert": "$2,400",
+      "titel": "Timeshare weekly cost",
+      "sub": "about $400 a night, one poster",
+      "satz": "One poster says his timeshare costs two thousand four hundred dollars a week."
     }
   ],
   "version": 2
