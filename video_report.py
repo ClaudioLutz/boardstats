@@ -2504,6 +2504,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         return None
 
     ov_nr = 0
+    # [geplant, weggefallen] der Stichwort-Fragmente: seit die Lesezeit-Boeden
+    # hoeher liegen (19.08.2026), muss im Log stehen, wie viele Fragmente die
+    # Fenster-Pruefung von hinten wegkuerzt - frisst sie das Feature auf,
+    # gehoeren die Boeden zurueckgenommen, nicht die Fragmente.
+    frag_stat = [0, 0]
 
     def png(bild) -> tuple[Path, int, int]:
         nonlocal ov_nr
@@ -2586,10 +2591,17 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     s = neu(klip_zuordnung.get(INTRO_KLIP_KEY) or tages_motiv or pool_bild(),
            0.0)
     hook_ab = 0.4
-    if thumb and intro_bis > KALTSTART + 1.0:
+    if thumb and intro_bis > KALTSTART_MIN + 1.0:
+        # Das Schlagwort soll KALTSTART lange stehen (2.0s waren ein
+        # Aufblitzen, Nutzer-Feedback 19.08.2026), aber nicht auf Kosten
+        # der Hook-Karte: die braucht ihre Lesezeit vor intro_bis. Weil der
+        # Hook woertlich mitgesprochen wird, gilt fuer ihn die
+        # Untertitel-Norm (HOOK_CPS) statt des Nebenher-Lesetempos.
+        hook_ab = min(KALTSTART,
+                      max(KALTSTART_MIN,
+                          intro_bis - (HOOK_VORLAUF + len(hook) / HOOK_CPS)))
         s.overlays.append(ov(szenen.zahl_tafel(thumb, "", ""), 0.0,
-                             KALTSTART, fade=0.0))
-        hook_ab = KALTSTART
+                             hook_ab, fade=0.0))
     s.overlays.append(ov(szenen.titel_karte(hook, label="TODAY'S TOP STORY"),
                          hook_ab, max(intro_bis, hook_ab + 0.6),
                          einflug="unten"))
@@ -2942,6 +2954,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 fenster_frei = sicht_bis(det_von, det_bis) - det_von
                 while frag and detail_boden(frag) > fenster_frei:
                     frag = frag[:-1]
+                frag_stat[0] += len(details[n])
+                frag_stat[1] += len(details[n]) - len(frag)
                 zeigt_detail = bool(frag)
                 bild, tx, ty = szenen.fokus_punkt(
                     punkt_text, glage, frag if zeigt_detail else None,
@@ -3141,6 +3155,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     fluege = sum(1 for s in folge for o in s.overlays if o.flug_ab is not None)
     print(f"Szenen: {len(folge)}, Overlays: {ov_nr}, "
           f"Fokus-Punkte: {fokus} ({fluege} fliegen in die Karte)")
+    print(f"Stichwort-Fragmente: {frag_stat[0] - frag_stat[1]} gezeigt, "
+          f"{frag_stat[1]} wegen zu enger Fenster weggefallen"
+          if frag_stat[1] else
+          f"Stichwort-Fragmente: {frag_stat[0]} gezeigt, keins weggefallen")
     # Die Zahl, die am 18.08.2026 gefehlt hat: das Video lief mit einem
     # einzigen Motiv durch alle 70 Szenen, und im Log stand nichts davon.
     kulisse = len({s.motiv for s in folge if s.motiv})
@@ -3185,8 +3203,17 @@ FLUG_VORLAUF = 0.25      # so viel vor dem Wechsel setzt er sich in Bewegung:
                          # Wechsel gelandet, waehrend der neue noch einfliegt
                          # (EINFLUG_DAUER). Vorher starteten beide gleichzeitig
                          # und begegneten sich 0.55 s lang in der Bildmitte.
-KALTSTART = 2.0          # so lange steht das Schlagwort des Tages allein im
-                         # Bild, bevor die Hook-Karte uebernimmt
+KALTSTART = 3.5          # Wunschdauer des Schlagworts des Tages allein im
+                         # Bild, bevor die Hook-Karte uebernimmt. 2.0s waren
+                         # ein Aufblitzen (Nutzer-Feedback 19.08.2026); der
+                         # tatsaechliche Wechsel weicht zurueck bis
+                         # KALTSTART_MIN, wenn die Hook-Karte sonst ihre
+                         # Lesezeit vor intro_bis nicht bekaeme.
+KALTSTART_MIN = 2.0      # harter Boden des Schlagworts
+HOOK_VORLAUF = 0.5       # Blickwechsel zur Hook-Karte
+HOOK_CPS = 17.0          # Lesetempo der Hook-Karte: sie wird woertlich
+                         # mitgesprochen, deshalb Untertitel-Norm statt des
+                         # konservativen Nebenher-Tempos (FOKUS_CPS)
 AKTIVITAET_MIN_SEC = 3.5  # kuerzer lohnt sich die Balkengrafik im Outro nicht
                          # (Balken + Titel brauchen einen Moment zum Lesen)
 AUSKLANG = 5.0        # stummer Nachlauf hinter dem letzten gesprochenen Wort:
@@ -3213,9 +3240,12 @@ FOKUS_MAX = 12.0         # so lange steht ein Fokus-Punkt hoechstens in der
 # Konstanten oben bleiben der absolute Boden fuer sehr kurze Texte.
 FOKUS_VORLAUF = 0.9      # Zeit bis zum ersten Zeichen (Blick wandert hin)
 FOKUS_CPS = 15.0         # Lesetempo Fokus-Punkt (Grossbuchstaben, gross)
-DETAIL_CPS = 12.0        # Lesetempo Kleintext-Fragmente
-DETAIL_FRAG_MIN = 1.4    # Boden je einzelnem Fragment (der Kasten als
-                         # Ganzes hat mit DETAIL_MIN seinen eigenen)
+DETAIL_CPS = 10.0        # Lesetempo Kleintext-Fragmente (12.0 lieferte
+                         # Fragmente, die zu kurz standen, um lesbar zu
+                         # sein - Nutzer-Feedback 19.08.2026)
+DETAIL_FRAG_MIN = 2.0    # Boden je einzelnem Fragment (der Kasten als
+                         # Ganzes hat mit DETAIL_MIN seinen eigenen);
+                         # 1.4 war ein Aufblitzen, siehe DETAIL_CPS
 
 
 def fokus_boden(text: str) -> float:
