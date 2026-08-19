@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: main
 typ: infra
-commit: (Folgecommit)
+commit: 30161ca
 ---
 
 # Story-Hook: PowerShell-Lücke und Cron-Fehlalarme geschlossen
