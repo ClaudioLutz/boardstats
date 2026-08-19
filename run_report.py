@@ -1027,7 +1027,17 @@ Rules for "zahlen" (the closing "Numbers of the day" segment):
   units out ("1.26 trillion dollars", not "$1.26T"), no abbreviations.
 """
 
-TIMEOUT_FOLIEN = 420
+TIMEOUT_FOLIEN = 700
+# War 420s bis 19.08.2026. Seit den Stichwort-Fragmenten (rund ein Bullet je
+# Satz plus 2-3 Detail-Fragmente je Bullet, deutlich mehr JSON-Ausgabe als
+# zuvor) reichten 420s im echten Testlauf auf hp-ubuntu nicht mehr - zwei
+# Versuche liefen in Folge in den Timeout, obwohl die Maschine kaum
+# ausgelastet war (Load 0.39) und der kuerzere titel_generieren()-Aufruf
+# im selben Lauf in 23s durchlief. Ein hoeherer Timeout kostet im
+# Erfolgsfall nichts (der Aufruf endet, sobald die Antwort da ist) und
+# senkt nur das Risiko, dass ein produktiver Lauf auf den alten
+# Text-Fallback zurueckfaellt, obwohl die Synthese eigentlich fertig
+# geworden waere.
 
 DETAIL_MAX_FRAGMENTE = 3
 DETAIL_MAX_ZEICHEN = 40
