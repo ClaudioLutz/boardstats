@@ -1,5 +1,23 @@
 # CLAUDE.md — boardstats
 
+## Worktrees — Pflicht für alle Agenten
+
+Jeder Agent, der am Repo etwas ändert (Subagent, Workflow-Agent, Task), arbeitet
+**immer** in einem eigenen Git-Worktree auf einem eigenen Feature-Branch — nie direkt
+im Haupt-Checkout auf `main`:
+
+- Agent-Tool: `isolation: "worktree"`; Workflow-Agenten: `opts.isolation: 'worktree'`
+- Grund: im Haupt-Checkout laufen parallel Generierungen und andere Agenten; direkte
+  Schreibzugriffe kollidieren (halbfertige Dateien, verlorene Änderungen)
+- Reine Lese-/Recherche-Agenten brauchen keinen Worktree; im Zweifel trotzdem einen
+
+**Abschluss ist Pflicht:** Sobald die Arbeit im Worktree fertig ist (Validierung grün,
+Commit sauber, Story dabei), den Feature-Branch ohne Rückfrage nach `main` mergen
+(`git merge --no-ff <branch>`) und pushen. Danach auf `hp-ubuntu` pullen
+(`ssh hp-ubuntu "cd /home/hp-ubuntu/boardstats && git pull --ff-only origin main"`),
+sonst läuft die Cron-Produktion weiter auf altem Code. Ein Worktree, der nicht in
+`main` landet, ist wertlos.
+
 ## Update-Tracking — Pflicht für alle Agenten
 
 Nach **jeder** abgeschlossenen Änderung am Repo (Haupt-Session, Subagent, Worktree-Agent)
