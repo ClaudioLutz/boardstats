@@ -3008,11 +3008,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             for st in detail_plan:
                 a0, b0 = max(a, st.von), min(b, st.bis)
                 if b0 - a0 > 0.02:
-                    # Wie die Fokus-Karte darueber: nur das Stueck mit dem
-                    # echten Ende darf ausblenden, sonst verblassen die
-                    # Fragmente an einer Szenennaht mitten im Satz.
+                    # Wie die Karte darueber: aufblenden nur im Stueck mit
+                    # dem echten Beginn, und nur das Stueck mit dem echten
+                    # Ende darf ausblenden - sonst blendet dieselbe Zeile an
+                    # jeder Szenennaht neu auf bzw. verblasst mitten im Satz.
                     sz.overlays.append(Overlay(
-                        st.png, a0, b0, st.blende, st.x, st.y,
+                        st.png, a0, b0, st.blende if a0 == st.von else 0.0,
+                        st.x, st.y,
                         weiter=st.haelt or b0 < st.bis - 0.02))
             for fk in fokus_plan:
                 a0, b0 = max(a, fk.von), min(b, fk.bis)

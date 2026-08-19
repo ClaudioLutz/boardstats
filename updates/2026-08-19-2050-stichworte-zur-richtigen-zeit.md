@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: worktree-detail-einblendzeit
 typ: feature
-commit: 68324f9
+commit: b28a298 (Nachtrag 0d1a1cd: Blende an Szenennaehten)
 ---
 
 # Stichwort-Fragmente erscheinen einzeln, wenn ihr Inhalt gesprochen wird
@@ -60,6 +60,10 @@ Render-Probe (`research/probe_einblendzeit.py`, echtes Board-Motiv):
    Fragment Kasten und Zeile hintereinander in den Plan — die spätere, höhere
    Kastenstufe legte sich damit über die schon eingetragenen Zeilen, die im
    Bild nur noch schemenhaft standen.
+
+Ein dritter, kleinerer Punkt: die Blende gilt nur im Stueck mit dem echten
+Beginn — sonst blendet dieselbe Zeile an jeder Szenennaht neu auf. Das
+Overlay-Muster ist dasselbe wie bisher, betrifft jetzt aber mehr Overlays.
 
 **Preis:** Pro Stichpunkt entstehen bis zu sechs Overlays statt einem. Nach
 oben wandert nichts: die Stapelgeometrie rechnet weiterhin mit der vollen
