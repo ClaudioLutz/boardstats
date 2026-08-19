@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: main
 typ: infra
-commit: <wird nach dem Commit ergänzt>
+commit: 1dd9d03
 ---
 
 # Overseer-Rolle als lokaler Skill persistiert
