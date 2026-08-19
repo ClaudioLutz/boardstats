@@ -6,13 +6,13 @@
 
 | Thread | Mode | Posts | Substance |
 |---|---|---|---|
-| [/XMR/ Monero General](62521292.md) | incrementally updated | 299 | 188.0 |
+| [/XMR/ Monero General](62521292.md) | unchanged since the last run | 299 | 192.0 |
 | [/smg/ stock market general](62605336.md) | unchanged since the last run | 410 | 182.0 |
 | [/BBBYQ/ - /GameStop CEO is a creditor and co-debtor edition/](62578386.md) | unchanged since the last run | 242 | 132.0 |
-| [/GME/ - Sonic Mania Edition](62598721.md) | read in full | 347 | 129.0 |
-| [/smg/ stock market general](62606254.md) | incrementally updated | 353 | 120.0 |
+| [/GME/ - Sonic Mania Edition](62598721.md) | unchanged since the last run | 347 | 129.5 |
+| [/smg/ stock market general](62606254.md) | read in full | 353 | 120.0 |
 | [/smg/ - Stock Market General](62602586.md) | unchanged since the last run | 345 | 117.0 |
-| [How do you reply to this without sounding like a doomsayer?](62598824.md) | incrementally updated | 167 | 83.5 |
+| [How do you reply to this without sounding like a doomsayer?](62598824.md) | unchanged since the last run | 167 | 85.5 |
 | [/smg/ - Stock Market General](62604063.md) | unchanged since the last run | 353 | 83.0 |
 | [>boomers really spend thousands each year on a hotel room and they ...](62603445.md) | read in full | 66 | 42.5 |
 | [40 is the new 60 simple as.](62602437.md) | read in full | 43 | 36.0 |
