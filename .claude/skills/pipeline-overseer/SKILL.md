@@ -10,6 +10,15 @@ Stehender Auftrag (vom Nutzer bestätigt): Testvideos generieren, jedes auf
 und für deren Funktionsfähigkeit einstehen. Dieses Dokument selbst pflegen —
 neue Erkenntnisse hier nachtragen, nicht nur ins Gedächtnis.
 
+**Stehende Ermächtigung (19.08.2026):** Wenn Glieder der Kette (Crawl →
+Bericht → Video → Upload, inkl. der getrennten Umgebungen lokal/hp-ubuntu)
+nicht sauber zusammenspielen, selbständig fixen und überwachen — dazu
+gehört ausdrücklich auch, sich dafür passende Diagnose-/Test-Werkzeuge zu
+bauen (Skripte, Monitor-Läufe, Log-Auswertungen), statt nur zu melden.
+Grenzen bleiben trotzdem in Kraft: kein Push auf `main` ohne Rückfrage bei
+riskanten/destruktiven Aktionen, kein produktiver Upload/keine echten
+Kosten ohne Test-Flags (siehe Credentials-Hinweis oben).
+
 ## Pipeline-Architektur
 
 Drei entkoppelte Cron-Jobs auf **hp-ubuntu** (`crontab -l`), bewusst getrennt,
@@ -127,6 +136,30 @@ python video_report.py --sprache en --vorschau 20
    das Ergebnis stichprobenartig ansehen/anhören — grüne Tests decken nicht
    ab, ob z.B. ein Ken-Burns-Zoom optisch glatt bleibt oder ein Musikbett
    hörbar richtig gemischt ist.
+7. **Kontrollieren, ob die Anpassung seit dem letzten Stand tatsächlich
+   greift** (Nutzeranweisung, wörtlich: "auch deine Aufgabe ist zu
+   kontrollieren ob die neuen Anpassungen welche seit dem letzten gemacht
+   wurden greifen") — pro Änderung konkret nachweisen, nicht nur annehmen:
+   z.B. Coverage-Gegenprobe (`13a5970`) am Log ablesen ("Abdeckung: N Threads
+   ausgelassen/teilweise, mit Begründung"), Themenverlauf-Tiefe (`d275488`)
+   an der Log-Zeile "Themenverlauf: N Berichte" zählen, Stichwort-Fragmente
+   (`4cd6c64`) in `folien.json`/Szenen-Overlays suchen, Lautheitsänderungen
+   (z.B. `de84ef1`, +7 dB Intro-Bett) per ffmpeg/loudnorm am fertigen Video
+   messen statt nur zu hören. Bei jeder Serie "substantieller Anpassungen"
+   (mehrere Commits an einem Tag an Synthese/Render-Logik) einen echten
+   End-to-End-Testlauf machen (Bericht **und** Video), nicht nur Unit-Tests.
+
+**Wichtige Falle: `run_report.py --kein-github` ist kein reines
+Dry-Run-Flag.** Es schaltet nicht nur den Git-Push ab, sondern die
+komplette `bericht_veroeffentlichen()`-Stufe (Titel, Drehbuch/`folien.json`,
+Motiv-/Hintergrundauswahl **und Clip-Ernte** `klip_katalog.klips_ernten`) -
+siehe `run_report.py:2208-2209`. Ein lokaler Testlauf mit `--kein-github`
+erzeugt also nie ein `bericht.md`/`folien.json`/frische Clip-Kandidaten,
+mit denen `video_report.py` etwas anfangen kann. Für einen echten
+End-to-End-Test (inkl. Clip-Zuordnung) muss der Lauf **ohne**
+`--kein-github` erfolgen (Nutzerentscheidung 19.08.2026: GitHub-Publish
+der Extrakte/Berichte ist unkritisch, darf jederzeit überschrieben werden -
+kein Rückfragebedarf mehr dafür).
 
 ## Bekannte Betriebswerte (Referenz, bei Bedarf hier aktualisieren)
 
@@ -142,11 +175,26 @@ python video_report.py --sprache en --vorschau 20
 - Clip-Katalog-Retention (`klip_katalog.py`, via `video.sh` nach jedem
   Video-Lauf): Rohdatei löscht sich nach Verwendung oder 48 h Alter,
   Katalog-Eintrag (MD5, Bewertung) bleibt erhalten.
+- Reuse-Ausnahme in `_klip_zuordnung()`: `zuletzt_verwendet == heute` zählt
+  weiterhin als frei — ein Rebuild/Testlauf am selben Tag sperrt sich damit
+  nicht selbst alle Clips.
+
+## Geklärte Fälle (Root-Cause gefunden, nicht mehr aktiv verfolgen)
+
+- **`arbeit/clips/`-Verschwinden (19.08.2026, behoben in `034ae86`):** Die
+  Aufräum-Logik am Ende von `run_report.py main()` sortierte alle Einträge
+  unter `arbeit/` alphabetisch absteigend und behielt nur die ersten
+  `LAEUFE_BEHALTEN` (5) — Namen wie `thumbs`/`srt_nachzug`/`motive`/`clips`
+  stehen alphabetisch vor jedem Datumsordner, `clips` fiel exakt auf den
+  Schnitt und wurde bei **jedem** Lauf mitsamt `katalog.json` gelöscht,
+  kurz nachdem `klips_ernten()` sie neu geschrieben hatte. Fix filtert
+  jetzt per Regex nur echte `YYYY-MM-DD`-Ordner vor der Sortierung. Lehre:
+  bei jeder neuen dauerhaften Unterordner-Struktur unter `arbeit/`
+  (Vorbild `clips/`, `motive/`, `thumbs/`) prüfen, ob generische
+  "Alte-Läufe-aufräumen"-Logik davon betroffen ist.
 
 ## Offene/unklare Punkte (nicht aktiv verfolgen, ausser Nutzer spricht sie an)
 
-- Ungeklärter Mechanismus des zwischenzeitlichen Verschwindens von
-  `arbeit/clips/` am 19.08.2026.
 - Ungeklärter Mechanismus, wie Video `Q5Mbsfmkvnc` bereits vor einem
   expliziten Löschversuch auf YouTube als "Deleted video" markiert war.
 
