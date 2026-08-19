@@ -995,6 +995,10 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
   switch splits the section into sub-stories, budget bullets for EACH
   sub-story separately (its own one-per-sentence coverage after the
   switch) - the bullets used before the switch never count against it.
+  Number-heavy passages (earnings lines, single-stock rundowns, price
+  lists) need MORE bullets than prose, not fewer: they are read out
+  slowly, so one bullet for the whole passage freezes the screen for 15
+  seconds or more - give every figure or ticker its own bullet.
   "text" is the on-screen bullet: 2 to 6 punchy words, max 34 characters,
   tickers and figures welcome (e.g. "$120B CUT", "BTC BACK AT 61K",
   "SHORTS WIPED"). Each bullet paraphrases the sentence its anker sits in;

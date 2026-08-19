@@ -419,15 +419,21 @@ def bloecke_erzeugen(markdown: str) -> list[Block]:
 def ton_text(bloecke: list[Block]) -> str:
     """Blocktext fuer die Vertonung; der Trenner kodiert die Pausenlaenge.
 
-    Vor jeder Kapitel-Ueberschrift stehen drei Zeilenumbrueche statt zwei,
-    was _ssml_gruppen zur langen Pause macht (GOOGLE_KAPITEL_PAUSE). Ueber
-    die Blockstruktur laeuft nur diese eine Entscheidung, damit die Blocktexte
-    selbst unberuehrt bleiben: worte_zu_bloecken teilt sie wieder per split()
-    auf und darf die Trenner nie sehen."""
+    Die Zahl der Zeilenumbrueche kodiert die Pausenlaenge (siehe
+    _pause_fuer_trenner): vier vor jeder Kapitel-Ueberschrift, drei vor jedem
+    Agenda-Eintrag, sonst zwei. Ueber die Blockstruktur laufen nur diese
+    Entscheidungen, damit die Blocktexte selbst unberuehrt bleiben:
+    worte_zu_bloecken teilt sie wieder per split() auf und darf die Trenner
+    nie sehen.
+
+    Die Agenda-Pause kauft Lesezeit genau dort, wo die Standzeit einer Folie
+    allein am Sprechtempo haengt: jeder "COMING UP"-Eintrag stand nur 2.1-2.4s
+    fuer rund 30 Zeichen (21-23 cps, Pacing-Messung 19.08.2026)."""
     teile: list[str] = []
     for i, b in enumerate(bloecke):
         if i:
-            teile.append("\n\n\n" if b.art == "ueberschrift" else "\n\n")
+            teile.append("\n\n\n\n" if b.art == "ueberschrift"
+                         else "\n\n\n" if b.rolle == "agenda" else "\n\n")
         teile.append(b.text)
     return "".join(teile)
 
@@ -488,6 +494,20 @@ GOOGLE_ABSATZ_PAUSE = "600ms"   # edge-tts pausierte an Absatzgrenzen von selbst
 # letzten gesprochenen Satz wegfliegen. Zweitnutzen: der Themenwechsel mit
 # Kreuzblende bekommt Luft, statt auf dem letzten Wort zu passieren.
 GOOGLE_KAPITEL_PAUSE = "2500ms"
+# Pause nach jedem Agenda-Satz ("Coming up"): die Agenda-Folie steht genau so
+# lange wie ihr Ansagesatz gesprochen wird, ihre Lesezeit haengt also allein
+# am Sprechtempo. Diese Pause verlaengert sie, ohne den Text zu kuerzen.
+GOOGLE_AGENDA_PAUSE = "1200ms"
+
+
+def _pause_fuer_trenner(trenner: str) -> str:
+    """Pausenlaenge aus der Zahl der Zeilenumbrueche im Trenner (ton_text
+    setzt sie): vier oder mehr = Kapitelgrenze, drei = Agenda-Eintrag, zwei =
+    gewoehnliche Absatzgrenze. Beide Vertonungspfade (Marken und Studio)
+    lesen sie hier."""
+    if len(trenner) > 3:
+        return GOOGLE_KAPITEL_PAUSE
+    return GOOGLE_AGENDA_PAUSE if len(trenner) > 2 else GOOGLE_ABSATZ_PAUSE
 
 # Google gewaehrt das Gratiskontingent je Stimmklasse und Kalendermonat
 # (Studio 1 Mio. Zeichen, Neural2 und Chirp 3 je 1 Mio., Wavenet/Standard
@@ -571,9 +591,8 @@ def _ssml_gruppen(text: str) -> list[tuple[str, list[str]]]:
     <break>-Pausen. Gruppen brechen bevorzugt an Absatzgrenzen, notfalls
     mitten im Absatz (die Mark-Nummern zaehlen je Gruppe ab 0).
 
-    Die Pausenlaenge steht im Trenner: zwei Zeilenumbrueche sind eine
-    Absatzgrenze, drei oder mehr eine Kapitelgrenze mit langer Pause
-    (ton_text setzt sie). Eine Pause an Index 0 ist erlaubt und gewollt -
+    Die Pausenlaenge steht im Trenner (_pause_fuer_trenner). Eine Pause an
+    Index 0 ist erlaubt und gewollt -
     faellt eine Gruppengrenze mit einer Kapitelgrenze zusammen, bliebe der
     Halt sonst genau dort aus, wo das Layout mit ihm rechnet."""
     gruppen: list[tuple[str, list[str]]] = []
@@ -598,8 +617,7 @@ def _ssml_gruppen(text: str) -> list[tuple[str, list[str]]]:
     # re.split mit Gruppe behaelt die Trenner: [Absatz, Trenner, Absatz, ...]
     stuecke = re.split(r"(\n{2,})", text)
     absaetze = [(stuecke[0], "")] + [
-        (stuecke[i + 1],
-         GOOGLE_KAPITEL_PAUSE if len(stuecke[i]) > 2 else GOOGLE_ABSATZ_PAUSE)
+        (stuecke[i + 1], _pause_fuer_trenner(stuecke[i]))
         for i in range(1, len(stuecke) - 1, 2)]
     for absatz, pause in absaetze:
         offen = pause
@@ -862,9 +880,8 @@ def _zahlen_hervorheben(satz: str) -> tuple[str | None, tuple[float, ...]]:
 def _studio_stuecke(text: str) -> list[Stueck]:
     """Liefert je Sprechstueck den Klartext, die Stille davor und optional SSML.
 
-    Die Pausenlaenge steckt wie im Marken-Pfad im Trenner: drei oder mehr
-    Zeilenumbrueche sind eine Kapitelgrenze, zwei eine Absatzgrenze
-    (ton_text setzt sie).
+    Die Pausenlaenge steckt wie im Marken-Pfad im Trenner
+    (_pause_fuer_trenner; ton_text setzt ihn).
 
     Drei Eingriffe in die Prosodie, alle nur dort, wo sie etwas tragen:
     der erste Satz nach einer Kapitelgrenze laeuft langsamer (der Zuhoerer
@@ -874,9 +891,7 @@ def _studio_stuecke(text: str) -> list[Stueck]:
     teile = re.split(r"(\n{2,})", text)
     kapitel_pause = _pause_sekunden(GOOGLE_KAPITEL_PAUSE)
     absaetze = [(teile[0], 0.0)] + [
-        (teile[i + 1],
-         _pause_sekunden(GOOGLE_KAPITEL_PAUSE if len(teile[i]) > 2
-                         else GOOGLE_ABSATZ_PAUSE))
+        (teile[i + 1], _pause_sekunden(_pause_fuer_trenner(teile[i])))
         for i in range(1, len(teile) - 1, 2)]
     # Der Trenner steht VOR der Ueberschrift, die Ueberschrift ist also selbst
     # der Absatz mit der langen Pause. Eine Ueberschrift ist oft ein einziges
@@ -1784,10 +1799,13 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
                     for nr in nummern[:AGENDA_TEASER]]
     rahmen = [PRAES_HOOK.format(hook=satz) if satz else "",
               PRAES_AGENDA, *titel_saetze]
-    # Blockgrenzen kosten je GOOGLE_ABSATZ_PAUSE, die Grenze zur ersten
+    # Die Blockgrenze vor dem Agenda-Kopf kostet GOOGLE_ABSATZ_PAUSE, die vor
+    # jedem Agenda-Eintrag GOOGLE_AGENDA_PAUSE, die zur ersten
     # Kapitel-Ueberschrift GOOGLE_KAPITEL_PAUSE.
     geschaetzt = (sum(len(t.split()) for t in rahmen) / TOKENS_PRO_S
-                  + 0.6 * len(rahmen) + 2.5)
+                  + _pause_sekunden(GOOGLE_ABSATZ_PAUSE)
+                  + _pause_sekunden(GOOGLE_AGENDA_PAUSE) * len(titel_saetze)
+                  + _pause_sekunden(GOOGLE_KAPITEL_PAUSE))
     if not satz or geschaetzt < INTRO_BODEN:
         # format() bewusst nur auf der eigenen Konstante: der Hook ist
         # Modelltext und darf geschweifte Klammern enthalten.
@@ -1883,12 +1901,17 @@ def _punkt_zeiten(punkte: list[dict], worte: list[Wort], von: float,
     return aus
 
 
-LUECKE_MAX = 16.0  # laengste Stille einer Story-Strecke ohne neuen Stichpunkt,
+LUECKE_MAX = 10.0  # laengste Stille einer Story-Strecke ohne neuen Stichpunkt,
                    # sonst Fallback-Bullet aus dem naechsten gesprochenen Satz -
                    # sonst blieben lange Redestrecken (Einzelwerte, Zitate ohne
                    # eigenen Stichpunkt) ohne jede Textstuetze im Bild
                    # (Nutzerfeedback 18.08.2026: fast eine Minute Geplapper
                    # ohne Text bei den Einzelwerten in "Memory stocks").
+                   # War 16.0 bis 19.08.2026: die Pacing-Messung fand danach
+                   # weiter 15-20s Stillstand (Bild UND Ton standen im
+                   # Target-Fenster bei 80 wpm zusammen still), weil die
+                   # Schwelle die Luecke zwischen Stichpunkt-ERSCHEINUNGS-
+                   # zeiten misst, nicht die Standzeit des Fokus-Kastens.
 
 
 def _detail_liste(punkt: dict) -> list[str]:
@@ -2233,11 +2256,20 @@ OPENER_MIN = 4.0         # Mindest-Standzeit des Kapitel-Openers: kurze
                          # Ueberschriften ("BOARD LIFE") sind in unter einer
                          # Sekunde gesprochen, der Titel muss trotzdem lesbar
                          # stehen (Nutzerfeedback 17.08.)
+OPENER_QUELLE_MIN = 6.0  # mit Quellzeile ist der Opener 84-119 Zeichen lang
+                         # (22-31 cps gemessen 19.08.2026, die Quellzeile fiel
+                         # faktisch weg). Er darf ohnehin bis naechster-0.5
+                         # laufen; der Preis sind spaeter einsetzende
+                         # Detail-Kaesten beim ersten Stichpunkt (det_von)
 ZITAT_MAX = 12.0         # Hoechstdauer der Zitat-Szene
 ZITAT_NACHLAUF = 1.5     # so lange steht die Karte noch, nachdem der zitierte
                          # Satz zu Ende gesprochen ist
 ZITAT_MIN = 4.0          # Lesezeit-Boden: kuerzer als das darf keine Karte
                          # stehen, auch wenn ihr Satz frueher endet
+STORY_REST_MIN = 2.5     # kuerzere Story-Reststuecke ziehen kein frisches
+                         # Motiv, sondern laufen auf dem der Vorszene weiter;
+                         # SZENE_MIN_FRAMES ist nur ein technischer Boden,
+                         # dies der gestalterische
 ZWISCHEN_MAX = 6.0       # Hoechstdauer eines Zwischenthema-Openers
 KARTE_MAX = 9.0          # Hoechstdauer der Kennzahl-Szene im Kapitel
 EREIGNIS_ABSTAND = 4.0   # Ruhe zwischen zwei Sonderszenen
@@ -2542,8 +2574,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Bild-Kulisse - Clips sind eine Ergaenzung, kein Ersatz.
         akt = klip_zuordnung.get(nr, kapitel_motive[k])
         kapitel_szene = neu(akt, kopf_start)
-        opener_bis = min(max(rumpf_start, kopf_start + OPENER_MIN),
-                         naechster - 0.5)
+        opener_bis = min(
+            max(rumpf_start,
+                kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)),
+            naechster - 0.5)
         kapitel_szene.overlays.append(ov(
             szenen.titel_karte(titel,
                                label=f"CHAPTER {k + 1:02d} / {len(koepfe)}",
@@ -2649,6 +2683,28 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             """Erste Szenengrenze nach t, sonst das Kapitelende."""
             return next((n for n in naehte if n > t + 0.05), naechster)
 
+        def sicht_bis(a: float, b: float) -> float:
+            """Ende des zusammenhaengenden SICHTBAREN Fensters ab a.
+
+            Fokus-Punkt, Detail-Kasten und Themen-Karte liegen nur auf
+            Story-Strecken (karte_auflegen); Sonderszenen - NEXT UP, Zitat,
+            Kennzahl - tragen ihre eigene Grafik und verdecken sie. Das
+            geplante Fenster zeit[n] -> land[n] ist deshalb nicht das
+            gerenderte: fiel ein Anker kurz vor eine Sonderszene, blieb vom
+            Fenster ein Sekundenbruchteil und die Mindestdauer-Pruefung sah
+            das nicht (Pacing-Messung 19.08.2026: $29B HYNIX BUYBACK stand
+            0.15s, "MIGHT CALL IN SICK" 0.68s - frame-verifiziert)."""
+            t = a
+            for von, bis, so in strecken:
+                if bis <= t + 0.01:
+                    continue
+                if so is not None or von > t + 0.05:
+                    break       # Sonderszene oder Luecke: hier ist Schluss
+                t = min(bis, b)
+                if t >= b - 0.01:
+                    break
+            return t
+
         karten_plan: list[KartenStand] = []
         titel_plan: list[KartenStand] = []
         detail_plan: list[KartenStand] = []
@@ -2682,16 +2738,27 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     ab, halt = zeit[n + 1] - FLUG_VORLAUF, zeit[n + 1]
                 else:
                     ab, halt = g1 - LETZT_HALT - FLUG_DAUER, g1 - LETZT_HALT
+                if ab > zeit[n] + FOKUS_MAX:
+                    # Obergrenze gegen den Stillstand: nach FOKUS_MAX parkt
+                    # der Punkt auch ohne Nachfolger in der Karte, statt dass
+                    # die Bildmitte einfriert (Pacing-Messung 19.08.2026:
+                    # PETROBRAS-Punkt stand 20.6s unveraendert).
+                    ab, halt = zeit[n] + FOKUS_MAX, zeit[n] + FOKUS_MAX \
+                        + FLUG_DAUER
                 # Der Punkt steht bis dahin - auch ueber Szenengrenzen
                 # hinweg, dort laeuft er ohne Blende weiter wie die
                 # Themen-Karte. Nur der Flug selbst darf keine Grenze
                 # ueberqueren, weil fade= das Alpha nicht bei halber
                 # Deckkraft fortsetzen kann; faellt eine Grenze in die
                 # Flugzeit, parkt der Punkt beim Wechsel mit hartem Schnitt.
-                f = (ab - zeit[n] >= FOKUS_MIN
+                # Lesezeit-Boden nach Textlaenge statt Konstante: 1.1s
+                # reichten fuer 29 Zeichen nicht (bis 30 cps gemessen,
+                # 19.08.2026), waehrend parallel ein anderer Satz laeuft.
+                boden = fokus_boden(texte[n])
+                f = (sicht_bis(zeit[n], ab) - zeit[n] >= boden
                      and naht_nach(ab) >= ab + FLUG_DAUER)
                 z = ab + FLUG_DAUER if f else halt
-                steht = z - zeit[n] >= FOKUS_MIN
+                steht = sicht_bis(zeit[n], z) - zeit[n] >= boden
                 if not steht:
                     # Zu kurz fuer eine Fokus-Karte: der Punkt erscheint
                     # sofort in der Liste, wie vor der Bewegung.
@@ -2703,7 +2770,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Liste gegen die Anker verschieben.
                 gerade = min(max(z, land[-1]) if land else z, g1)
                 fliegt.append(f and abs(gerade - z) < 0.01)
-                zeigt.append(steht and gerade - zeit[n] >= FOKUS_MIN)
+                zeigt.append(steht
+                             and sicht_bis(zeit[n], gerade) - zeit[n] >= boden)
                 land.append(gerade)
             marken = [g0] + land
             beginn = g0
@@ -2757,8 +2825,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # endet oberhalb von 400 und kollidiert nie.
                 det_bis = land[n] - (FLUG_DAUER if fliegt[n] else 0.0)
                 det_von = max(t_n, opener_bis)
-                zeigt_detail = bool(details[n]) \
-                    and det_bis - det_von >= DETAIL_MIN
+                # Wie beim Punkt: gemessen wird das sichtbare Fenster gegen
+                # einen Boden nach Zeichenzahl. Drei Fragmente à 25 Zeichen
+                # sind in DETAIL_MIN=2.6s nicht lesbar (38 cps gemessen).
+                zeigt_detail = bool(details[n]) and (
+                    sicht_bis(det_von, det_bis) - det_von
+                    >= detail_boden(details[n]))
                 bild, tx, ty = szenen.fokus_punkt(
                     punkt_text, glage, details[n] if zeigt_detail else None,
                     karte_oben)
@@ -2820,11 +2892,20 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     weiter=b0 < fk.bis - 0.02))
 
         erste_story = True
+        sz: Szene | None = None
         for von, bis, sonder in strecken:
             if sonder is None:
                 for a, b in story_teile(von, bis):
                     if erste_story:
                         sz, erste_story = kapitel_szene, False
+                    elif sz is not None and b - a < STORY_REST_MIN:
+                        # Reststueck vor einer Sonderszene: zu kurz fuer ein
+                        # eigenes Motiv - es blitzte sonst auf und waere
+                        # wieder weg, bevor das Auge es erfasst hat
+                        # (Pacing-Messung 19.08.2026: Szene 37 stand 0.875s).
+                        # Das Vormotiv laeuft einfach weiter, was zugleich
+                        # ein Pool-Bild spart.
+                        pass
                     else:
                         akt = naechstes_motiv(akt)
                         sz = neu(akt, a)
@@ -2971,11 +3052,32 @@ SCHLUSS_FADE = 1.5    # Ausblende des Schlussbilds (Tafel-Alpha und Bild nach
                       # Schwarz); muss kleiner als AUSKLANG bleiben.
 OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
                            # die Aktivitaets-Grafik bekommt nur den Rest
-FOKUS_MIN = 1.1          # kuerzer steht kein Fokus-Punkt in der Bildmitte
+FOKUS_MIN = 1.1          # absoluter Boden; die Lesezeit rechnet fokus_boden()
 DETAIL_MIN = 2.6         # kuerzer bekommt ein Punkt keine Stichwort-Fragmente:
                          # zwei bis drei Zeilen Kleintext wollen gelesen
                          # werden, und ein Aufblitzen kostet mehr Ruhe als es
                          # Substanz bringt
+FOKUS_MAX = 12.0         # so lange steht ein Fokus-Punkt hoechstens in der
+                         # Mitte; danach parkt er auch ohne Nachfolger in der
+                         # Karte - die Karte lebt, statt dass die Mitte
+                         # einfriert (gemessen 19.08.2026: 15.4-20.6s)
+# Lesezeit-Boeden als Funktion der Textlaenge. Untertitel-Norm ist 15-17
+# Zeichen pro Sekunde bei voller Aufmerksamkeit; hier liest der Zuschauer
+# NEBEN dem laufenden gesprochenen Text, deshalb konservativer. Die
+# Konstanten oben bleiben der absolute Boden fuer sehr kurze Texte.
+FOKUS_VORLAUF = 0.9      # Zeit bis zum ersten Zeichen (Blick wandert hin)
+FOKUS_CPS = 15.0         # Lesetempo Fokus-Punkt (Grossbuchstaben, gross)
+DETAIL_CPS = 12.0        # Lesetempo Kleintext-Fragmente
+
+
+def fokus_boden(text: str) -> float:
+    """Mindest-Standzeit eines Fokus-Punkts nach seiner Zeichenzahl."""
+    return max(FOKUS_MIN, FOKUS_VORLAUF + len(text) / FOKUS_CPS)
+
+
+def detail_boden(fragmente: list[str]) -> float:
+    """Mindest-Standzeit des Detail-Kastens nach der Summe seiner Zeichen."""
+    return max(DETAIL_MIN, sum(len(f) for f in fragmente) / DETAIL_CPS)
 LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
                          # gedeckt durch GOOGLE_KAPITEL_PAUSE, sonst muesste
                          # der letzte Punkt im laufenden Satz wegfliegen

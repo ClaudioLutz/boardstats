@@ -76,7 +76,9 @@ class TestStudioStuecke(unittest.TestCase):
     # Die Saetze sind bewusst laenger als STUDIO_SATZ_MIN (45 Zeichen) -
     # kuerzere Fragmente haengt _saetze_teilen an den Vorgaenger, und der
     # Absatz haette dann nur einen einzigen Satz.
-    TEXT = ("An introductory line that is long enough to stand alone.\n\n\n"
+    # Vier Umbrueche = Kapitelgrenze, drei = Agenda-Eintrag, zwei = Absatz
+    # (siehe V._pause_fuer_trenner).
+    TEXT = ("An introductory line that is long enough to stand alone.\n\n\n\n"
             "CRYPTO\n\n"
             "Monero fell 12 percent overnight and nobody explained why. "
             "A second sentence follows it and carries the argument along. "

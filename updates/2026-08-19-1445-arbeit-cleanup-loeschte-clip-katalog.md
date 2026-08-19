@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: main
 typ: bugfix
-commit: <wird nach dem Commit ergänzt>
+commit: 034ae86
 ---
 
 # Aufräum-Logik in run_report.py löschte den Clip-Katalog bei jedem Lauf

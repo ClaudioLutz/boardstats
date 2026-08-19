@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: main
 typ: bugfix
-commit: <wird nach dem Commit ergänzt>
+commit: 7e058b4
 ---
 
 # Folien-Timeout auf 700s erhöht (Overseer-Testlauf)
