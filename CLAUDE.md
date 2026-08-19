@@ -13,6 +13,9 @@ eine Story in `updates/` ablegen:
 
 Reine Recherche/Messung ohne Code-Änderung gehört nach `research/`, nicht nach `updates/`.
 
+Ein PostToolUse-Hook (`~/.claude/hooks/story-reminder.py`) erinnert nach jedem Commit,
+der keine Story mitbringt. Dieser Erinnerung folgen, nicht ignorieren.
+
 Das ersetzt das `activity-log`-MCP nicht — dort weiterhin den Einzeiler pro Commit
 protokollieren.
 
