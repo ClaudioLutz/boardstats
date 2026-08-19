@@ -2976,9 +2976,10 @@ Clip. Ein Clip darf hoechstens einem Abschnitt zugeteilt werden.
 
 Zusaetzlich: nominiere unter "intro" den einen Clip (falls vorhanden), der
 sich am besten als Aufmerksamkeits-Fang fuer die allerersten Sekunden des
-Videos eignet (auffaellig, keine Vorkenntnis des Themas noetig) - unabhaengig
-von der Abschnitts-Zuordnung, notfalls auch derselbe Clip, der bereits einem
-Abschnitt zugeteilt wurde.
+Videos eignet (auffaellig, keine Vorkenntnis des Themas noetig). Dieser Clip
+darf KEINEM Abschnitt zugeteilt sein - waehle ihn aus den uebrigen Clips.
+Bleibt keiner uebrig, gib "intro": null zurueck (oder nimm einen Clip aus
+der Zuordnung heraus, wenn er als Aufhaenger klar am besten passt).
 
 Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
 Code-Zaun:
@@ -3066,6 +3067,16 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
         vergeben.add(md5)
         katalog["clips"][md5]["zuletzt_verwendet"] = datum
     intro_md5 = daten.get("intro")
+    # Backstop zum Prompt: nominiert das Modell trotz der Vorgabe einen
+    # bereits einem Kapitel zugeteilten Clip, laeuft er sonst zweimal im
+    # selben Video - einmal im Intro, einmal im Kapitel-Opener. Genau die
+    # Doppelung, die der Nutzer am 19.08.2026 gemeldet hat. Lieber ein
+    # Intro ohne Clip (faellt auf tages_motiv zurueck) als ein Wiedersehen
+    # nach wenigen Minuten.
+    if isinstance(intro_md5, str) and intro_md5 in vergeben:
+        print(f"Clip-Zuordnung: Intro-Clip {intro_md5[:8]} ist bereits einem "
+             f"Kapitel zugeteilt - Intro laeuft ohne Clip")
+        intro_md5 = None
     if isinstance(intro_md5, str) and intro_md5 in frei:
         pfad = klip_katalog.klip_datei(intro_md5, katalog, ziel_dir)
         if pfad is not None:
