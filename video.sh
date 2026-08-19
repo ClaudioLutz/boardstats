@@ -43,6 +43,12 @@ fi
 
 {
     echo "===== Video gestartet: $(date '+%Y-%m-%d %H:%M:%S') ====="
+    # Ohne diesen Pull lief hp-ubuntu wiederholt tagelang auf einem Stand
+    # zurueck, waehrend main schon weiter war (August 2026: mehrfach von Hand
+    # nachgezogen). --ff-only verweigert bei lokalen Aenderungen/Konflikten
+    # statt etwas zu ueberschreiben; ein Fehlschlag hier darf den Lauf nicht
+    # stoppen (lieber mit dem alten Stand rendern als gar kein Video).
+    git pull --ff-only || echo "WARNUNG: git pull fehlgeschlagen - baue mit dem lokalen Stand weiter"
     # Seit 16.08.2026 ist die ganze Pipeline englisch; --sprache en ist die
     # einzige Konfiguration (eine deutsche Berichtsfassung existiert nicht
     # mehr, seit die Synthese direkt auf Englisch laeuft).
