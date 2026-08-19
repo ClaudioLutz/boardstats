@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Baut das YouTube-Vorschaubild des Tages.
 
-Fester Serienrahmen (dunkler Grund, Amber-Akzent, Kopf- und Fusszeile),
-links der Tages-Aufhaenger in grosser Schrift, rechts ein Bildmotiv. Das
-Motiv ist entweder das vom Report-Lauf gepruefte Board-Bild des Tages oder
-das statische Serienbild aus assets/ - der Rahmen bleibt in beiden Faellen
-derselbe, damit die Reihe wiedererkennbar bleibt.
+Fester Serienrahmen (Designsystem 19.08.2026): dunkle Textflaeche links,
+rechts das Bildmotiv in voller Farbe, dazwischen ein harter
+Diagonalanschnitt mit Amber-Kante. Oben links der Amber-Chip mit der
+Serienmarke, darunter der Tages-Aufhaenger in grosser Schrift mit
+Amber-Balken - das letzte Wort amber als Akzent. Das Motiv ist entweder
+das vom Report-Lauf gepruefte Board-Bild des Tages oder das statische
+Serienbild aus assets/ - der Rahmen bleibt in beiden Faellen derselbe,
+damit die Reihe wiedererkennbar bleibt (und bei Briefmarkengroesse in
+der Sidebar noch als diese Reihe lesbar ist).
 
 Bewusst ohne Netzzugriff und ohne Kenntnis der uebrigen Pipeline: das Modul
 bekommt Text und Motiv gereicht und gibt eine JPEG-Datei zurueck.
@@ -14,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 import design_tokens
 
@@ -25,21 +29,25 @@ AKZENT = design_tokens.AKZENT[6]      # amber, wie die Wort-Hervorhebung im Vide
 TEXT_HELL = design_tokens.WEISS
 TEXT_GRAU = design_tokens.NEUTRAL[3]
 
-MOTIV_BREITE = 560            # Bildflaeche rechts
-MOTIV_BLENDE = 200            # weiche Kante zum Textbereich hin
-MOTIV_FARBE = 0.55            # entsaettigt - das Motiv soll Hintergrund sein
-MOTIV_HELLIGKEIT = 0.78
+# Diagonalanschnitt: die Schnittkante laeuft von x=62% (oben) nach x=50%
+# (unten), links davon liegt die opake Textflaeche, entlang der Kante ein
+# schmaler Amber-Streifen. Das Motiv rechts bleibt in voller Farbe - der
+# Kontrast Textflaeche/Motiv ist der Klick-Appeal bei Briefmarkengroesse.
+DIAG_OBEN = 0.62
+DIAG_UNTEN = 0.50
+DIAG_STREIFEN = 0.013
 
 MARGIN = 64
-BALKEN_BREITE = 12            # Akzentbalken links neben dem Aufhaenger
-BALKEN_ABSTAND = 24
-KOPF_Y = 62
-FUSS_Y = HOEHE - 96
+BALKEN_BREITE = 14            # Akzentbalken links neben dem Aufhaenger
+BALKEN_ABSTAND = 26
+CHIP_Y = 48                   # Amber-Chip mit der Serienmarke oben links
+FUSS_Y = HOEHE - 84
 TEXT_OBEN = 170
-TEXT_UNTEN = FUSS_Y - 24
+TEXT_UNTEN = FUSS_Y - 16
+TEXT_BREITE = 540             # Umbruchbreite links der Diagonale
 ZEILEN_MAX = 3
-GROESSEN = list(range(112, 43, -4))
-ZEILEN_FAKTOR = 1.12
+GROESSEN = list(range(108, 43, -4))
+ZEILEN_FAKTOR = 1.08
 
 JPEG_QUALITAET = 88
 MAX_BYTES = 2_000_000         # harte Grenze von thumbnails/set
@@ -122,30 +130,19 @@ def schrift_medium(groesse: int) -> ImageFont.FreeTypeFont:
     return _lade_schrift(FONT_MEDIUM_KANDIDATEN, groesse)
 
 
-def _motiv_flaeche(motiv: Path) -> Image.Image:
-    """Motiv auf die Bildflaeche zuschneiden (cover), entsaettigen, abdunkeln
-    und links weich auslaufen lassen."""
+def _motiv_vollbild(motiv: Path) -> Image.Image:
+    """Motiv als Vollbild zuschneiden (cover), in voller Farbe - die
+    Diagonale und die dunkle Textflaeche kommen daruf zu liegen."""
     bild: Image.Image = Image.open(motiv).convert("RGB")
-    skala = max(MOTIV_BREITE / bild.width, HOEHE / bild.height)
-    neu = (max(MOTIV_BREITE, int(bild.width * skala + 0.5)),
+    skala = max(BREITE / bild.width, HOEHE / bild.height)
+    neu = (max(BREITE, int(bild.width * skala + 0.5)),
            max(HOEHE, int(bild.height * skala + 0.5)))
     bild = bild.resize(neu, Image.Resampling.LANCZOS)
-    links = (bild.width - MOTIV_BREITE) // 2
+    links = (bild.width - BREITE) // 2
     # Vertikal nicht mittig, sondern im oberen Drittel schneiden: bei
     # Board-Bildern steckt das Motiv haeufiger oben als in der Mitte.
     oben = min((bild.height - HOEHE) // 3, bild.height - HOEHE)
-    bild = bild.crop((links, oben, links + MOTIV_BREITE, oben + HOEHE))
-    bild = ImageEnhance.Color(bild).enhance(MOTIV_FARBE)
-    return ImageEnhance.Brightness(bild).enhance(MOTIV_HELLIGKEIT)
-
-
-def _blende() -> Image.Image:
-    """Alpha-Maske: links durchsichtig, nach MOTIV_BLENDE Pixeln deckend."""
-    maske = Image.new("L", (MOTIV_BREITE, HOEHE), 255)
-    zeichnen = ImageDraw.Draw(maske)
-    for x in range(MOTIV_BLENDE):
-        zeichnen.line([(x, 0), (x, HOEHE)], fill=int(255 * x / MOTIV_BLENDE))
-    return maske
+    return bild.crop((links, oben, links + BREITE, oben + HOEHE))
 
 
 def _umbrechen(text: str, font: ImageFont.FreeTypeFont, breite: int,
@@ -231,32 +228,60 @@ def bauen(text: str, motiv: Path | None, ziel: Path, kopf: str = "4CHAN /biz/",
           fuss: str = "") -> Path:
     """Vorschaubild zusammensetzen und als JPEG unter 2 MB ablegen."""
     bild = Image.new("RGB", (BREITE, HOEHE), GRUND)
-    text_breite = BREITE - 2 * MARGIN - BALKEN_BREITE - BALKEN_ABSTAND
     if motiv is not None:
-        bild.paste(_motiv_flaeche(motiv), (BREITE - MOTIV_BREITE, 0), _blende())
-        text_breite -= MOTIV_BREITE - MOTIV_BLENDE // 2
+        try:
+            bild = _motiv_vollbild(motiv)
+        except OSError:
+            pass  # kaputtes Bild: Farbflaeche statt Abbruch
 
     zeichnen = ImageDraw.Draw(bild)
+    # Diagonalanschnitt: opake Textflaeche links, Amber-Kante entlang des
+    # Schnitts. Beides steht auch ohne Motiv - der Streifen ist Serienmarke.
+    xo, xu = int(BREITE * DIAG_OBEN), int(BREITE * DIAG_UNTEN)
+    sb = int(BREITE * DIAG_STREIFEN)
+    zeichnen.polygon([(0, 0), (xo, 0), (xu, HOEHE), (0, HOEHE)], fill=GRUND)
+    zeichnen.polygon([(xo, 0), (xo + sb, 0), (xu + sb, HOEHE), (xu, HOEHE)],
+                     fill=AKZENT)
+
     text_x = MARGIN + BALKEN_BREITE + BALKEN_ABSTAND
-    font, zeilen = _passende_schrift(text.upper(), text_breite,
+    font, zeilen = _passende_schrift(text.upper(), TEXT_BREITE,
                                      TEXT_UNTEN - TEXT_OBEN, zeichnen)
     schritt = int(font.size * ZEILEN_FAKTOR)
     block_hoehe = schritt * len(zeilen)
     y = TEXT_OBEN + max(0, (TEXT_UNTEN - TEXT_OBEN - block_hoehe) // 2)
 
-    zeichnen.rectangle([MARGIN, y + 6, MARGIN + BALKEN_BREITE,
-                        y + block_hoehe - 6], fill=AKZENT)
+    zeichnen.rectangle([MARGIN, y + 10, MARGIN + BALKEN_BREITE,
+                        y + block_hoehe - 10], fill=AKZENT)
     for i, zeile in enumerate(zeilen):
-        # Kontur statt Schatten: haelt den Text auch dort lesbar, wo die
-        # weiche Kante des Motivs in den Textbereich hineinreicht.
-        zeichnen.text((text_x, y + i * schritt), zeile, font=font,
-                      fill=TEXT_HELL, stroke_width=4, stroke_fill=GRUND)
+        # Kontur statt Schatten haelt den Text auch dort lesbar, wo die
+        # Amber-Kante oder das Motiv in den Textblock hineinreicht. Das
+        # letzte Wort des Aufhaengers steht amber - der eine Akzent, der
+        # das Vorschaubild von einer reinen Texttafel unterscheidet.
+        zy = y + i * schritt
+        if i == len(zeilen) - 1:
+            teile = zeile.rsplit(" ", 1)
+            if len(teile) == 2:
+                vorn, akzent = teile[0] + " ", teile[1]
+            else:
+                vorn, akzent = "", teile[0]
+            zeichnen.text((text_x, zy), vorn, font=font, fill=TEXT_HELL,
+                          stroke_width=4, stroke_fill=GRUND)
+            zeichnen.text((text_x + zeichnen.textlength(vorn, font=font), zy),
+                          akzent, font=font, fill=AKZENT,
+                          stroke_width=4, stroke_fill=GRUND)
+        else:
+            zeichnen.text((text_x, zy), zeile, font=font, fill=TEXT_HELL,
+                          stroke_width=4, stroke_fill=GRUND)
 
-    klein = schrift(True, 34)
-    zeichnen.text((text_x, KOPF_Y), kopf, font=klein, fill=AKZENT,
-                  stroke_width=3, stroke_fill=GRUND)
+    # Amber-Chip mit der Serienmarke: dunkler Text auf Amber statt Amber
+    # auf dunkel - bei Briefmarkengroesse der auffaelligste Baustein.
+    chip_font = schrift(True, 32)
+    chip_breite = zeichnen.textlength(kopf, font=chip_font)
+    zeichnen.rectangle([MARGIN, CHIP_Y, MARGIN + 20 + int(chip_breite) + 20,
+                        CHIP_Y + 56], fill=AKZENT)
+    zeichnen.text((MARGIN + 20, CHIP_Y + 8), kopf, font=chip_font, fill=GRUND)
     if fuss:
-        mager = schrift(False, 30)
+        mager = schrift(False, 28)
         zeichnen.text((text_x, FUSS_Y), fuss, font=mager, fill=TEXT_GRAU,
                       stroke_width=3, stroke_fill=GRUND)
 

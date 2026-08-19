@@ -82,12 +82,13 @@ class KartenBreite(unittest.TestCase):
         gegen den Texteinzug - 22 px zu breit, lange Zeilen liefen aus dem
         Kasten heraus."""
         self.assertEqual(szenen.KARTE_INNEN,
-                         szenen.KARTE_BREITE - szenen.KARTE_TEXT_X - 24)
+                         szenen.KARTE_BREITE - szenen.KARTE_TEXT_X
+                         - szenen.KARTE_PAD_R)
 
     def test_keine_zeile_laeuft_aus_dem_kasten(self):
         d = ImageDraw.Draw(szenen._leer())
         f = folien._font_medium(szenen.KARTE_PUNKT_FONT)
-        platz = szenen.KARTE_BREITE - szenen.KARTE_TEXT_X - 24
+        platz = szenen.KARTE_BREITE - szenen.KARTE_TEXT_X - szenen.KARTE_PAD_R
         for satz in KORPUS:
             punkt = szenen.karte_text(vr._luecken_bullet(satz))
             for zeile in folien._umbrechen(d, punkt.upper(), f,
