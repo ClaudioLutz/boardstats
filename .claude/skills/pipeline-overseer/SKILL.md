@@ -193,6 +193,26 @@ kein Rückfragebedarf mehr dafür).
   (Vorbild `clips/`, `motive/`, `thumbs/`) prüfen, ob generische
   "Alte-Läufe-aufräumen"-Logik davon betroffen ist.
 
+- **Eigene Schriften (`assets/fonts/`) sind Repo-Dateien, keine System-Fonts:**
+  `SpaceGrotesk-Bold.ttf`/`Inter-Regular.ttf`/`Inter-Medium.ttf`/
+  `IBMPlexMono-Bold.ttf` liegen git-tracked im Repo, `thumbnail.FONT_DIR`
+  löst sie repo-relativ auf (`Path(__file__).resolve().parent / "assets" /
+  "fonts"`), PIL lädt per Dateipfad — kein `fc-list`/Font-Installation auf
+  hp-ubuntu nötig, kommen automatisch mit `git pull` mit. Fallback auf
+  System-`DejaVuSans*` in derselben Kandidatenliste, falls eine Datei fehlt.
+  Verifiziert 19.08.2026 auf hp-ubuntu: alle vier Dateien vorhanden (Commit
+  `556aef9`), laden fehlerfrei via `PIL.ImageFont.truetype()`, Pixelvergleich
+  bestätigt sichtbaren Gewichtsunterschied Inter-Regular vs. Inter-Medium
+  (1'922 vs. 2'251 belichtete Pixel bei identischem Text/Grösse) trotz
+  irreführender interner Namenstabelle (`getname()` meldet bei beiden
+  fälschlich "Regular" bzw. bei SpaceGrotesk-Bold fälschlich "Light" —
+  kosmetisches Metadaten-Artefakt aus dem Variable-Font-Export, betrifft
+  nicht das tatsächliche Glyphen-Rendering).
+- **`aktivitaet.py` (Balkengrafik "Board-Aktivität", nutzt dieselben Fonts)
+  ist laut eigenem Docstring noch NICHT in `video_report.py` verdrahtet** —
+  Fonts sind bereit, der Chart läuft im produktiven Video noch nicht mit.
+  Aktiv genutzt werden die Fonts bisher nur über `thumbnail.py`-Karten.
+
 ## Offene/unklare Punkte (nicht aktiv verfolgen, ausser Nutzer spricht sie an)
 
 - Ungeklärter Mechanismus, wie Video `Q5Mbsfmkvnc` bereits vor einem
