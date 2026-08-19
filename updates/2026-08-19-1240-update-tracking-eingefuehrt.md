@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: main
 typ: infra
-commit: (dieser Commit)
+commit: 611499a
 ---
 
 # Update-Tracking als Stories eingeführt
