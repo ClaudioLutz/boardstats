@@ -1868,6 +1868,19 @@ LUECKE_MAX = 16.0  # laengste Stille einer Story-Strecke ohne neuen Stichpunkt,
                    # ohne Text bei den Einzelwerten in "Memory stocks").
 
 
+def _detail_liste(punkt: dict) -> list[str]:
+    """Die Stichwort-Fragmente eines Stichpunkts, wie szenen.detail_karte sie
+    erwartet. Das Feld ist optional: Drehbuecher vor dem 19.08.2026 haben es
+    nicht, und die Fallback-Bullets aus _luecken_fuellen tragen keins - beide
+    liefern hier eine leere Liste und laufen unveraendert weiter."""
+    roh = punkt.get("detail")
+    if isinstance(roh, str):
+        roh = [roh]
+    if not isinstance(roh, list):
+        return []
+    return [str(s).strip() for s in roh if str(s).strip()]
+
+
 def _luecken_bullet(satz: str) -> str:
     """Kurzform eines gesprochenen Satzes als Fallback-Stichpunkt: Grossbuch-
     staben, hart bei 34 Zeichen am letzten vollen Wort gekappt - derselbe Stil
@@ -2546,6 +2559,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         for gi, (g0, gtitel, glage) in enumerate(segmente):
             g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
             texte = [str(p["text"]) for t, p in tags if g0 <= t < g1]
+            # Die Stichwort-Fragmente zum Punkt; die Lueckenfueller aus
+            # _luecken_fuellen haben keine, dann bleibt die Liste leer.
+            details = [_detail_liste(p) for t, p in tags if g0 <= t < g1]
             zeit = [t for t, p in tags if g0 <= t < g1]
             # Der Themen-Titel steht oben und damit ausserhalb der Karte; sein
             # Kasten gibt vor, wo die Stichpunktliste beginnen darf.
@@ -2626,9 +2642,30 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     continue
                 # Derselbe Textinhalt wie in der Karte, sonst verliert der
                 # Punkt beim Parken Text (die Fokus-Karte ist breiter).
+                punkt_text = szenen.karte_text(texte[n])
+                # Die Fragmente stehen nur, solange der Satz laeuft: sie
+                # gehen weg, bevor der Punkt in die Karte fliegt, und parken
+                # nie mit - dort bleibt der Bulletpoint allein. Zu kurze
+                # Fenster bekommen keine (zwei bis drei Zeilen Kleintext
+                # wollen gelesen werden), und solange der Kapitel-Opener
+                # steht, bleibt der Punkt allein in der Mitte: sein Lower
+                # Third und der hoehere Stapel wuerden sonst aneinander-
+                # stossen.
+                det_bis = land[n] - (FLUG_DAUER if fliegt[n] else 0.0)
+                zeigt_detail = bool(details[n]) \
+                    and det_bis - t_n >= DETAIL_MIN \
+                    and t_n >= opener_bis - 0.1
                 bild, tx, ty = szenen.fokus_punkt(
-                    szenen.karte_text(texte[n]), glage)
+                    punkt_text, glage, details[n] if zeigt_detail else None,
+                    karte_oben)
                 pfad, fx, fy = png(bild)
+                if zeigt_detail:
+                    dbild = szenen.detail_karte(punkt_text, details[n], glage,
+                                                karte_oben)
+                    if dbild is not None:
+                        dpfad, dx, dy = png(dbild)
+                        detail_plan.append(KartenStand(
+                            dpfad, dx, dy, t_n, det_bis))
                 # Bewegt wird das zugeschnittene Overlay: sein Ziel ist die
                 # Kartenposition minus dem Textversatz innerhalb des Bildes.
                 fokus_plan.append(FokusKarte(
@@ -2648,6 +2685,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     sz.overlays.append(
                         Overlay(st.png, a0, b0, 0.0, st.x, st.y,
                                 st.einflug if a0 == st.von else ""))
+            for st in detail_plan:
+                a0, b0 = max(a, st.von), min(b, st.bis)
+                if b0 - a0 > 0.02:
+                    # Wie die Fokus-Karte darueber: nur das Stueck mit dem
+                    # echten Ende darf ausblenden, sonst verblassen die
+                    # Fragmente an einer Szenennaht mitten im Satz.
+                    sz.overlays.append(Overlay(
+                        st.png, a0, b0, 0.3, st.x, st.y,
+                        weiter=b0 < st.bis - 0.02))
             for fk in fokus_plan:
                 a0, b0 = max(a, fk.von), min(b, fk.bis)
                 if b0 - a0 <= 0.02:
@@ -2803,6 +2849,10 @@ AKTIVITAET_MIN_SEC = 3.5  # kuerzer lohnt sich die Balkengrafik im Outro nicht
 OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
                            # die Aktivitaets-Grafik bekommt nur den Rest
 FOKUS_MIN = 1.1          # kuerzer steht kein Fokus-Punkt in der Bildmitte
+DETAIL_MIN = 2.6         # kuerzer bekommt ein Punkt keine Stichwort-Fragmente:
+                         # zwei bis drei Zeilen Kleintext wollen gelesen
+                         # werden, und ein Aufblitzen kostet mehr Ruhe als es
+                         # Substanz bringt
 LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
                          # gedeckt durch GOOGLE_KAPITEL_PAUSE, sonst muesste
                          # der letzte Punkt im laufenden Satz wegfliegen
