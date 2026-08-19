@@ -991,7 +991,12 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
   sentence of the WHOLE section, no matter how long it is or how many
   storylines it holds - never let two consecutive sentences pass without
   one, and do not cap the count at some target per section; a section with
-  25 sentences needs roughly 25 bullets, not 14. If a "zwischenthemen"
+  25 sentences needs roughly 25 bullets, not 14. Work paragraph BY
+  paragraph to the very end of the section: EVERY paragraph needs its own
+  bullets with anchors inside that paragraph. A section whose bullets all
+  sit in its first paragraph leaves the rest of the chapter - often a
+  minute or more of narration - with nothing on screen, which is the worst
+  failure this storyboard can have. If a "zwischenthemen"
   switch splits the section into sub-stories, budget bullets for EACH
   sub-story separately (its own one-per-sentence coverage after the
   switch) - the bullets used before the switch never count against it.
@@ -1082,11 +1087,83 @@ def _stichwort(p: dict) -> dict:
             **({"detail": frag} if frag else {})}
 
 
-def folien_generieren(bericht_md: str) -> dict:
-    """Szenen-Drehbuch fuer das Video (ein Sonnet-Aufruf auf den fertigen
-    Bericht). Liefert das geprueft geparste JSON-Objekt mit version=2;
-    video_report.py erkennt daran das v7-Szenen-Layout."""
-    out = claude_ruf(FOLIEN_PROMPT, bericht_md, "sonnet", TIMEOUT_FOLIEN)
+ABSATZ_MIN_ZEICHEN = 200   # kuerzere Absaetze sind Ueberleitungen, keine
+                           # eigene Geschichte - fuer sie reicht der Anker
+                           # des Nachbarabsatzes
+ABSATZ_LUECKEN_MAX = 6     # so viele Absaetze nennt die Nachforderung beim
+                           # Namen; mehr wuerde den Prompt zumuellen
+
+
+def _flachtext(text: str) -> str:
+    """Fliesstext ohne Markdown-Links und ohne Zeilenumbrueche, klein - die
+    Form, in der Anker-Phrasen sich wiederfinden lassen (der Anker ist
+    verbatim aus dem Bericht kopiert, aber ueber eine Zeilengrenze hinweg)."""
+    ohne = re.sub(r"\(https?://[^)]*\)", "", re.sub(r"\[([^]]*)\]", r"\1",
+                                                    text))
+    return re.sub(r"\s+", " ", ohne).strip().lower()
+
+
+def _absaetze(bericht_md: str) -> dict[str, list[str]]:
+    """Ueberschrift -> substanzielle Absaetze des Abschnitts.
+
+    Absatzgenau, nicht satzgenau: ein Absatz ist im /biz/-Bericht eine eigene
+    Geschichte (ein Thread), und genau auf dieser Ebene faellt die Abdeckung
+    aus - das Modell schreibt alle Stichworte zum ersten Thread und laesst
+    die folgenden leer (Messung 19.08.2026)."""
+    aus: dict[str, list[str]] = {}
+    for teil in re.split(r"^## ", bericht_md, flags=re.M)[1:]:
+        kopf, _, rumpf = teil.partition("\n")
+        aus[kopf.strip()] = [
+            a for a in (_flachtext(p) for p in re.split(r"\n\s*\n", rumpf))
+            if len(a) >= ABSATZ_MIN_ZEICHEN]
+    return aus
+
+
+def _abdeckung_luecken(bericht_md: str, daten: dict) -> list[tuple[str, str]]:
+    """Absaetze ohne einen einzigen Anker: (Ueberschrift, Absatzanfang).
+
+    Das ist die Pruefung, die der Prompt allein nicht leistet - die Regel
+    "one bullet per sentence" steht seit dem 19.08.2026 darin und wurde im
+    laengsten Kapitel des Tages trotzdem ignoriert (6 Stichworte, alle im
+    ersten der sechs Absaetze, danach 93 s Rede ohne Text im Bild)."""
+    absaetze = _absaetze(bericht_md)
+    luecken: list[tuple[str, str]] = []
+    for a in daten.get("abschnitte") or []:
+        if not isinstance(a, dict):
+            continue
+        ueber = str(a.get("ueberschrift") or "").strip()
+        if ueber.upper().startswith("UNCHANGED"):
+            continue        # laut Prompt bewusst nur zwei Stichworte
+        teile = absaetze.get(ueber)
+        if teile is None:   # Ueberschrift weicht ab: an der laengsten
+                            # gemeinsamen Kennung zuordnen
+            teile = next((v for k, v in absaetze.items()
+                          if ueber[:20] and ueber[:20] in k), None)
+        anker = [_flachtext(str(p.get("anker") or ""))
+                 for p in (a.get("stichworte") or []) if isinstance(p, dict)]
+        anker = [x for x in anker if x]
+        for absatz in teile or []:
+            if not any(x in absatz for x in anker):
+                luecken.append((ueber, absatz))
+    return luecken
+
+
+def _abdeckung_nachtrag(luecken: list[tuple[str, str]]) -> str:
+    """Die Nachforderung an das Modell: welche Absaetze leer blieben."""
+    zeilen = [f'- section "{u}", paragraph starting "{a[:90]}..."'
+              for u, a in luecken[:ABSATZ_LUECKEN_MAX]]
+    return ("\nADDITION: your last storyboard left these paragraphs without a "
+            "single anchored bullet, so they would run with nothing on "
+            "screen:\n" + "\n".join(zeilen) + "\nWrite the whole storyboard "
+            "again, this time with bullets anchored INSIDE every one of "
+            "these paragraphs as well - keep the rest of the coverage.")
+
+
+def _folien_versuch(bericht_md: str, zusatz: str = "") -> dict:
+    """Ein Drehbuch-Versuch: Sonnet-Aufruf, geparst und auf die Anzeige
+    zurechtgestutzt. `zusatz` haengt eine Nachforderung an den Prompt."""
+    out = claude_ruf(FOLIEN_PROMPT + zusatz, bericht_md, "sonnet",
+                     TIMEOUT_FOLIEN)
     out = _json_schneiden(out.strip())
     try:
         daten = json.loads(out)
@@ -1133,6 +1210,34 @@ def folien_generieren(bericht_md: str) -> dict:
         if isinstance(zahlen, list) else []
     daten["version"] = 2
     return daten
+
+
+def folien_generieren(bericht_md: str) -> dict:
+    """Szenen-Drehbuch fuer das Video (Sonnet-Aufruf auf den fertigen
+    Bericht). Liefert das geprueft geparste JSON-Objekt mit version=2;
+    video_report.py erkennt daran das v7-Szenen-Layout.
+
+    Bleiben ganze Absaetze ohne Anker, geht ein zweiter Aufruf mit der
+    Nachforderung raus, die die leeren Absaetze beim Namen nennt - dieselbe
+    Mechanik wie beim wiederholten Titel-Hook. Bleibt auch der zweite
+    Versuch darunter, gewinnt der bessere von beiden: ein Drehbuch mit
+    Luecken ist immer noch ein Video, ein Abbruch waere keines."""
+    daten = _folien_versuch(bericht_md)
+    luecken = _abdeckung_luecken(bericht_md, daten)
+    if not luecken:
+        return daten
+    print(f"Drehbuch: {len(luecken)} Absaetze ohne Anker "
+          f"({', '.join(u for u, _ in luecken[:4])}) - fordere nach")
+    try:
+        zweit = _folien_versuch(bericht_md, _abdeckung_nachtrag(luecken))
+    except (RuntimeError, OSError) as e:
+        print(f"Drehbuch-Nachforderung fehlgeschlagen ({e}) - "
+              f"bleibe beim ersten Versuch")
+        return daten
+    zweit_luecken = _abdeckung_luecken(bericht_md, zweit)
+    print(f"Drehbuch nach Nachforderung: {len(zweit_luecken)} Absaetze "
+          f"ohne Anker")
+    return zweit if len(zweit_luecken) <= len(luecken) else daten
 
 
 # ------------------------------------------------- Motiv fuers Vorschaubild
