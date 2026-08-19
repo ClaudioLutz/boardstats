@@ -19,8 +19,10 @@ Lauf:  python -m unittest discover -s tests
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -103,6 +105,75 @@ class TestSandwich(unittest.TestCase):
         ordnung = R.sandwich(ex, {"mit_meta": {"substanz_summe": 10.0,
                                                "posts_gesamt": 50}})
         self.assertEqual(len(ordnung), 2)
+
+
+class TestThemenVerlauf(unittest.TestCase):
+    """Regel 8b vergleicht nur gegen den einen Vortag. Ein Thema, das am 15.
+    und am 17. lief und am 18. fehlte, sah damit am 19. wie neu aus."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.wurzel = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        for tag, thema in (("2026-08-14", "Gold ratio trade"),
+                           ("2026-08-15", "Klarna drawdown"),
+                           ("2026-08-16", "Nvidia cuts OpenAI"),
+                           ("2026-08-17", "Kraken raised the fee"),
+                           ("2026-08-18", "Memory whipsawed")):
+            d = self.wurzel / tag
+            d.mkdir()
+            (d / "bericht.md").write_text(
+                f"# Report {tag}\n\n## STOCKS\n\n"
+                f"{thema} and here is a sentence long enough to be kept.\n\n"
+                "## GLOSSARY\n\n- term - meaning\n", encoding="utf-8")
+
+    def _verlauf(self, datum: str, tage: int = R.VERLAUF_TAGE) -> str:
+        with mock.patch.object(R, "EXTRAKTE", self.wurzel):
+            return R.themen_verlauf(datum, tage)
+
+    def test_gestriger_bericht_fehlt_er_liegt_ohnehin_voll_vor(self):
+        v = self._verlauf("2026-08-19")
+        self.assertNotIn("2026-08-18", v)
+        self.assertIn("2026-08-17", v)
+
+    def test_reicht_weiter_zurueck_als_einen_tag(self):
+        v = self._verlauf("2026-08-19")
+        for tag in ("2026-08-17", "2026-08-16", "2026-08-15", "2026-08-14"):
+            self.assertIn(tag, v)
+
+    def test_eroeffnungssatz_steht_dabei(self):
+        # Die Ueberschrift allein taugt nicht - sie heisst jeden Tag STOCKS.
+        self.assertIn("Nvidia cuts OpenAI", self._verlauf("2026-08-19"))
+
+    def test_glossar_zaehlt_nicht_als_thema(self):
+        self.assertNotIn("GLOSSARY", self._verlauf("2026-08-19"))
+
+    def test_ohne_archiv_leerer_block(self):
+        with mock.patch.object(R, "EXTRAKTE", self.wurzel / "gibt-es-nicht"):
+            self.assertEqual(R.themen_verlauf("2026-08-19"), "")
+
+    def test_erster_lauf_nach_einem_einzigen_bericht_bleibt_leer(self):
+        # Nur ein Vorgaenger: der ist der gestrige und wird uebersprungen.
+        self.assertEqual(self._verlauf("2026-08-15"), "")
+
+
+class TestThemenZeilen(unittest.TestCase):
+    def test_links_werden_zu_klartext(self):
+        zeilen = R._themen_zeilen(
+            "## CRYPTO\n\nKraken raised the fee, see "
+            "[the thread](https://boards.4chan.org/biz/thread/1) for details.\n")
+        self.assertEqual(len(zeilen), 1)
+        self.assertNotIn("http", zeilen[0])
+        self.assertIn("the thread", zeilen[0])
+
+    def test_kurze_vorspannzeile_wird_uebersprungen(self):
+        zeilen = R._themen_zeilen(
+            "## CRYPTO\n\nOvernight:\n\n"
+            "- The first bullet that actually carries the story of the day.\n")
+        self.assertIn("The first bullet", zeilen[0])
+
+    def test_abschnitt_ohne_text_behaelt_die_ueberschrift(self):
+        self.assertEqual(R._themen_zeilen("## CRYPTO\n"), ["CRYPTO"])
 
 
 if __name__ == "__main__":

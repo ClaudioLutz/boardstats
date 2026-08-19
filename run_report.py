@@ -705,6 +705,71 @@ def voriger_bericht(datum: str) -> tuple[str, str] | None:
     return text, f"{REPO_URL}/extrakte/{p.parent.name}/bericht.md"
 
 
+VERLAUF_TAGE = 4        # Berichte VOR dem gestrigen, der ohnehin voll vorliegt
+VERLAUF_ZEICHEN = 170   # je Abschnitt: Ueberschrift plus so viel Eroeffnung
+_MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_NACKTE_URL = re.compile(r"\(?https?://\S+\)?")
+
+
+def _themen_zeilen(text: str) -> list[str]:
+    """Je ##-Abschnitt eine Zeile: Ueberschrift plus Anfang des ersten
+    inhaltlichen Absatzes. Die Ueberschriften allein taugen nicht - sie
+    heissen jeden Tag CRYPTO und HOUSING; erst der erste Satz sagt, WELCHE
+    Geschichte an dem Tag darunter stand."""
+    zeilen = text.replace("\r\n", "\n").split("\n")
+    raus: list[str] = []
+    for i, roh in enumerate(zeilen):
+        z = roh.strip()
+        if not z.startswith("## ") or z.upper().startswith(("## GLOSSAR",)):
+            continue
+        titel = z[3:].strip()
+        erste = ""
+        for weiter in zeilen[i + 1:]:
+            k = weiter.strip()
+            if k.startswith("## "):
+                break
+            k = _NACKTE_URL.sub("", _MD_LINK.sub(r"\1", k)).strip()
+            k = k.lstrip("-* ").strip()
+            if len(k) > 30 and not k.endswith(":"):
+                erste = k
+                break
+        raus.append(f"{titel} - {erste[:VERLAUF_ZEICHEN]}" if erste else titel)
+    return raus
+
+
+def themen_verlauf(datum: str, tage: int = VERLAUF_TAGE) -> str:
+    """Die Themen der Berichte VOR dem gestrigen, kompakt.
+
+    Regel 8b vergleicht bisher nur gegen den einen Vortag. Ein Thema, das am
+    15., 17. und 19. auftaucht, sieht damit jedes Mal wie neu aus, weil der
+    18. es nicht enthielt - der Zuschauer hoert dieselbe Geschichte trotzdem
+    zum dritten Mal. Der volle Text mehrerer Tage waere zu teuer und wuerde
+    die eigentlichen Extrakte im Kontext verdraengen; eine Zeile je Abschnitt
+    reicht, um Wiederholung zu erkennen."""
+    kandidaten = sorted(
+        (p for p in EXTRAKTE.glob("*/bericht.md") if p.parent.name < datum),
+        reverse=True)[1:tage + 1]
+    bloecke: list[str] = []
+    for p in kandidaten:
+        try:
+            zeilen = _themen_zeilen(p.read_text(encoding="utf-8", errors="replace"))
+        except OSError as e:
+            log.warning("Themenverlauf: %s nicht lesbar (%s)", p, e)
+            continue
+        if zeilen:
+            bloecke.append(p.parent.name + "\n"
+                           + "\n".join(f"  {z}" for z in zeilen))
+    if not bloecke:
+        return ""
+    log.info("Themenverlauf: %d Berichte, %d Abschnitte",
+             len(bloecke), sum(b.count("\n") for b in bloecke))
+    return ("TOPICS OF THE DAYS BEFORE YESTERDAY (headline plus the opening of "
+            "each section, oldest last). This is NOT material for today's "
+            "report - it exists so you can tell a genuinely new story from one "
+            "the channel has already told:\n"
+            + "=" * 74 + "\n" + "\n".join(bloecke) + "\n" + "=" * 74 + "\n")
+
+
 def bericht_zu_markdown(bericht: str, datum: str) -> str:
     """Der fertige Bericht als eigenstaendige, oeffentliche Markdown-Seite.
     Die Ueberschriften-Erkennung (bericht_html._ist_ueberschrift) stammt noch
@@ -1810,6 +1875,9 @@ Source: {vor_url}
         ]
     if delta_block:
         teile.append(delta_block)
+    verlauf = themen_verlauf(datum)
+    if verlauf:
+        teile.append(verlauf)
     eingabe = "\n".join(teile)
     (arbeit / "synthese_eingabe.txt").write_text(eingabe, encoding="utf-8")
 
@@ -1911,6 +1979,17 @@ Rules:
     - Do not confuse "thread unchanged" (extract metadata) with "topic
       unchanged": a thread can have new posts without the reportable topic
       changing - the rule still applies then.
+8c. LOOK FURTHER BACK THAN ONE DAY (if TOPICS OF THE DAYS BEFORE YESTERDAY
+    is provided). A topic can skip a day and return: it was in the report
+    on the 15th and the 17th, was absent on the 18th, and is therefore not
+    new on the 19th - the viewer has heard it twice already. Check every
+    topic you are about to write in full against that list. Where it
+    appears there, say what has happened SINCE, not what the situation is.
+    If nothing has happened since, it is not a topic for today: give it
+    the one-sentence treatment of rule 8b or leave it out and account for
+    that in the COVERAGE block. This does NOT apply to the generals as
+    institutions (rule 7): that /smg/ exists again is not a repetition -
+    the repetition is telling the same story about it.
 9. The section FILLING FAST describes what these threads actually SAY, not
    just that they grow quickly. Give the acceleration factor against the
    thread's own average where the metadata provides it. A thread with
