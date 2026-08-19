@@ -1812,16 +1812,39 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
     return aus
 
 
-def _anker_zeit(anker: str, worte: list[Wort]) -> float | None:
-    """Startzeit der Anker-Phrase im Wortstrom des Abschnitts (normalisierter
-    Folgenvergleich); None, wenn die Phrase nicht vorkommt."""
+def _anker_spanne(anker: str, worte: list[Wort]) -> tuple[float, float] | None:
+    """Start- und Endzeit der Anker-Phrase im Wortstrom des Abschnitts
+    (normalisierter Folgenvergleich); None, wenn die Phrase nicht vorkommt."""
     ziel = [t for t in (_norm_text(w) for w in anker.split()) if t]
     if not ziel:
         return None
     toks = [_norm_text(w.text) for w in worte]
     for i in range(len(toks) - len(ziel) + 1):
         if toks[i:i + len(ziel)] == ziel:
-            return worte[i].start
+            return worte[i].start, worte[i + len(ziel) - 1].end
+    return None
+
+
+def _anker_zeit(anker: str, worte: list[Wort]) -> float | None:
+    """Startzeit der Anker-Phrase; None, wenn die Phrase nicht vorkommt."""
+    spanne = _anker_spanne(anker, worte)
+    return None if spanne is None else spanne[0]
+
+
+def _satz_ende(worte: list[Wort], ab: float) -> float | None:
+    """Ende des Satzes, in dem die Zeit `ab` liegt.
+
+    Erstes Wort ab dieser Zeit, das auf ein Satzzeichen endet und keine
+    Abkuerzung ist (STUDIO_ABKUERZUNGEN - sonst endete der Satz mitten in
+    "U.S." oder "vs."). None, wenn bis zum Abschnittsende keins folgt."""
+    for w in worte:
+        if w.end < ab:
+            continue
+        blank = w.text.rstrip("\"'»«)]”").lower()
+        if blank.endswith((".", "!", "?", "…")) \
+                and blank not in STUDIO_ABKUERZUNGEN \
+                and not re.fullmatch(r"[a-z]\.", blank):
+            return w.end
     return None
 
 
@@ -2155,6 +2178,10 @@ OPENER_MIN = 4.0         # Mindest-Standzeit des Kapitel-Openers: kurze
                          # Sekunde gesprochen, der Titel muss trotzdem lesbar
                          # stehen (Nutzerfeedback 17.08.)
 ZITAT_MAX = 12.0         # Hoechstdauer der Zitat-Szene
+ZITAT_NACHLAUF = 1.5     # so lange steht die Karte noch, nachdem der zitierte
+                         # Satz zu Ende gesprochen ist
+ZITAT_MIN = 4.0          # Lesezeit-Boden: kuerzer als das darf keine Karte
+                         # stehen, auch wenn ihr Satz frueher endet
 ZWISCHEN_MAX = 6.0       # Hoechstdauer eines Zwischenthema-Openers
 KARTE_MAX = 9.0          # Hoechstdauer der Kennzahl-Szene im Kapitel
 EREIGNIS_ABSTAND = 4.0   # Ruhe zwischen zwei Sonderszenen
@@ -2238,7 +2265,8 @@ def _post_datum(datum: str) -> str:
 def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
-                 ende: float, thumb: str = "") -> list[Szene]:
+                 ende: float, thumb: str = "",
+                 sprech_ende: float = 0.0) -> list[Szene]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, der Themen-Titel oben, die persistente
     Karte mit den geparkten Stichpunkten darunter (beide stehen bis zum
@@ -2467,37 +2495,50 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             kopf_start + 0.2, opener_bis, einflug="unten"))
 
         # Sonderereignisse des Drehbuchs im Kapitelrumpf verorten
-        ereignisse: list[tuple[float, str, dict]] = []
+        # Der vierte Eintrag ist das natuerliche Ende: die Zeit, zu der der
+        # zugehoerige gesprochene Inhalt vorbei ist. None = keins bekannt,
+        # dann gilt allein die Hoechstdauer der Szenenart.
+        ereignisse: list[tuple[float, str, dict, float | None]] = []
         for zt in eintrag.get("zwischenthemen") or []:
             if isinstance(zt, dict) and str(zt.get("titel") or "").strip():
                 tz = _anker_zeit(str(zt.get("anker") or ""), rumpf_worte)
                 if tz is not None and rumpf_start + 2.0 < tz < naechster - 3.0:
-                    ereignisse.append((tz, "zwischen", zt))
+                    ereignisse.append((tz, "zwischen", zt, None))
         zit = eintrag.get("zitat")
         if isinstance(zit, dict) and str(zit.get("text") or "").strip():
-            tz = _anker_zeit(str(zit.get("anker") or ""), rumpf_worte)
-            if tz is None:  # das Zitat selbst steht oft woertlich im Bericht
-                tz = _anker_zeit(str(zit["text"]), rumpf_worte)
-            if tz is not None and tz < naechster - 3.0:
-                ereignisse.append((max(tz, rumpf_start + 1.0), "zitat", zit))
+            sp = _anker_spanne(str(zit.get("anker") or ""), rumpf_worte)
+            if sp is None:  # das Zitat selbst steht oft woertlich im Bericht
+                sp = _anker_spanne(str(zit["text"]), rumpf_worte)
+            if sp is not None and sp[0] < naechster - 3.0:
+                # Die Karte gehoert zu ihrem Satz und geht mit ihm. Ohne diese
+                # Bindung stand sie starre ZITAT_MAX=12s im Bild, waehrend der
+                # Ton laengst beim naechsten Thema war (Nutzer-Feedback
+                # 19.08.2026: XOM-Zitat bei 10:31, gesprochen rund 4s).
+                natur = (_satz_ende(rumpf_worte, sp[1]) or sp[1]) \
+                    + ZITAT_NACHLAUF
+                ereignisse.append((max(sp[0], rumpf_start + 1.0), "zitat",
+                                   zit, max(natur, sp[0] + ZITAT_MIN)))
         kar = eintrag.get("karte")
         if isinstance(kar, dict) and str(kar.get("wert") or "").strip():
             tz = _anker_zeit(str(kar.get("anker") or ""), rumpf_worte)
             if tz is None:
                 tz = rumpf_start + (naechster - rumpf_start) * 0.6
             if tz < naechster - 3.0:
-                ereignisse.append((max(tz, rumpf_start + 1.0), "karte", kar))
+                ereignisse.append((max(tz, rumpf_start + 1.0), "karte", kar,
+                                   None))
         ereignisse.sort(key=lambda e: e[0])
         gewaehlt: list[tuple[float, float, str, dict]] = []
         frei = opener_bis  # keine Sonderszene, solange der Opener steht
-        for tz, art, px in ereignisse:
-            if tz < frei + 1.0:
+        for ez, art, px, bis_natur in ereignisse:
+            if ez < frei + 1.0:
                 continue
             dauer = {"zwischen": ZWISCHEN_MAX, "zitat": ZITAT_MAX,
                      "karte": KARTE_MAX}[art]
-            bis = min(tz + dauer, naechster - 0.5)
-            if bis > tz + 2.0:
-                gewaehlt.append((tz, bis, art, px))
+            bis = min(ez + dauer, naechster - 0.5)
+            if bis_natur is not None:
+                bis = min(bis, bis_natur)
+            if bis > ez + 2.0:
+                gewaehlt.append((ez, bis, art, px))
                 frei = bis + EREIGNIS_ABSTAND
 
         # Themen-Karte: Titel + auflaufende Stichpunkte (moeglichst je Satz
@@ -2785,10 +2826,17 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # matplotlib), faellt nur dieser eine Beat weg, nicht das ganze
         # Szenen-Layout - deshalb der eigene try/except statt eines
         # Modul-weiten `import aktivitaet` oben in der Datei.
+        #
+        # Bemessungsgrundlage ist das Ende der Sprache, nicht das Ende des
+        # Videos: der stumme Ausklang danach gehoert ganz der Abschluss-Tafel
+        # (Nutzerwunsch 19.08.2026, "das Schlussbild muss laenger sichtbar
+        # sein und ausfaden"). Ohne diese Trennung frisst der Chart den
+        # Ausklang auf und die Tafel behaelt wieder nur ihr Minimum.
+        gesprochen = sprech_ende or ende
         try:
             import aktivitaet
             reihe = aktivitaet.taegliche_extrakt_zahlen(EXTRAKTE)
-            chart_dauer = (ende - outro_start) - OUTRO_TAFEL_MIN_SEC
+            chart_dauer = (gesprochen - outro_start) - OUTRO_TAFEL_MIN_SEC
             if len(reihe) >= 2 and chart_dauer >= AKTIVITAET_MIN_SEC:
                 s.overlays.append(ov(aktivitaet.aktivitaets_chart(reihe),
                                      outro_start, outro_start + chart_dauer,
@@ -2796,8 +2844,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 outro_start += chart_dauer
         except Exception as e:
             print(f"Aktivitaets-Chart uebersprungen ({e})")
+        # Die Tafel steht bis zum letzten Frame und blendet dabei laenger aus
+        # als jedes andere Overlay - das Bild dahinter geht ueber SCHLUSS_FADE
+        # gleichzeitig nach Schwarz (siehe _szene_clip).
         s.overlays.append(ov(szenen.outro_tafel(), outro_start, ende,
-                             einflug="unten"))
+                             fade=SCHLUSS_FADE, einflug="unten"))
+        print(f"Schlussbild: {ende - outro_start:.1f}s "
+              f"(davon {ende - gesprochen:.1f}s stummer Ausklang)")
 
     # Je Fokus-Punkt ein eigenes PNG; ueber Naehte geteilte Stuecke teilen es,
     # deshalb ueber die Pfade zaehlen und nicht ueber die Overlays.
@@ -2853,6 +2906,13 @@ KALTSTART = 2.0          # so lange steht das Schlagwort des Tages allein im
                          # Bild, bevor die Hook-Karte uebernimmt
 AKTIVITAET_MIN_SEC = 3.5  # kuerzer lohnt sich die Balkengrafik im Outro nicht
                          # (Balken + Titel brauchen einen Moment zum Lesen)
+AUSKLANG = 5.0        # stummer Nachlauf hinter dem letzten gesprochenen Wort:
+                      # so lange steht das Schlussbild noch, ohne dass Text
+                      # dazukommt. Vorher standen hier 3.0s, die -shortest
+                      # restlos wegschnitt, weil die Tonspur am letzten Wort
+                      # endete - das Video war am letzten Wort schlagartig aus.
+SCHLUSS_FADE = 1.5    # Ausblende des Schlussbilds (Tafel-Alpha und Bild nach
+                      # Schwarz); muss kleiner als AUSKLANG bleiben.
 OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
                            # die Aktivitaets-Grafik bekommt nur den Rest
 FOKUS_MIN = 1.1          # kuerzer steht kein Fokus-Punkt in der Bildmitte
@@ -3090,7 +3150,8 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
 
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                 suffix: str, bug: Overlay, vig: Overlay,
-                naechstes: Path | None, naechster_zoom_rein: bool) -> Path:
+                naechstes: Path | None, naechster_zoom_rein: bool,
+                schluss: bool = False) -> Path:
     """Eine Szene als eigenen kurzen Clip rendern: Motiv mit langsamem
     zoompan-Drift, darueber Vignette, die zeitgesteuerten Text-Overlays und
     zuoberst der Ecken-Bug. Bewusst je Szene ein kleiner, immer gleich
@@ -3137,7 +3198,7 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                   f"normalisiert ({e}) - Standbild-Fallback")
             ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
             return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
-                               naechstes, naechster_zoom_rein)
+                               naechstes, naechster_zoom_rein, schluss)
         # -stream_loop -1 laesst das Motiv seine eigene, meist kuerzere
         # Laufzeit fuellend wiederholen; -t deckelt sie auf die von der TTS
         # vorgegebene Szenendauer (Analogie zu den geloopten Overlay-PNGs
@@ -3211,6 +3272,15 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
         teile.append(f"{kette}[o{j}]overlay=x={xa}:y={ya}"
                      f":enable='between(t,{o.start:.3f},{o.ende:.3f})'[v{j}]")
         kette = f"[v{j}]"
+    # Letzte Szene: das ganze Bild geht nach Schwarz, waehrend die
+    # Abschluss-Tafel darueber ausblendet. Ein Bericht, der am letzten Wort
+    # hart abreisst, wirkt wie ein Verbindungsabbruch (Nutzerwunsch
+    # 19.08.2026). Die Blende liegt im Clip selbst, der Zusammenschnitt
+    # bleibt damit ein Streamcopy.
+    if schluss and dauer > SCHLUSS_FADE + 0.2:
+        teile.append(f"{kette}fade=t=out:st={dauer - SCHLUSS_FADE:.3f}"
+                     f":d={SCHLUSS_FADE}[fin]")
+        kette = "[fin]"
     ziel = arbeit / f"szene{suffix}_{idx:03d}.mp4"
     cmd += ["-filter_complex", ";".join(teile), "-map", kette,
             "-frames:v", str(n), "-r", str(FPS),
@@ -3226,7 +3296,7 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
               f"Retry mit Standbild")
         ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
         return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
-                           naechstes, naechster_zoom_rein)
+                           naechstes, naechster_zoom_rein, schluss)
     return ziel
 
 
@@ -3393,13 +3463,23 @@ def _ton_kette(start: int, ende: float,
     nicht ausreichend absenkt - siehe
     research/messung-maskierung-arpeggio-vs-rauschen-2026-08-18.md und
     arbeit/messung_ducking.py)."""
+    # Die Tonspur muss bis `ende` reichen, nicht nur bis zum letzten Wort:
+    # -shortest kappt das Video an der kuerzesten Spur, und der stumme
+    # Ausklang mit dem Schlussbild faellt sonst restlos weg (gemessen
+    # 19.08.2026: Video 718.4s, letzter Cue 718.5s - der Puffer kam nie an).
     if not BETT.exists():
-        return [], [], f"[{start}:a]"
+        return [], [f"[{start}:a]apad=whole_dur={ende:.3f}[mix]"], "[mix]"
     ab = max(ende - BETT_AUSBLENDE, 0.1)
-    sprache = f"[{start}:a]"
     anhebung = _intro_anhebung(kapitel1)
     return (["-stream_loop", "-1", "-i", str(BETT)],
-            [f"[{start + 1}:a]volume={BETT_DB}dB,"
+            # Die gepolsterte Sprache wird zweimal gebraucht - als Trigger des
+            # Duckings und als Mischanteil - deshalb asplit. Gepolstert wird
+            # vor dem Split, weil sidechaincompress keine framesync-Optionen
+            # kennt: endet der Trigger, endet auch sein Ausgang, und die
+            # Mischung waere trotz laufendem Bett wieder nur so lang wie die
+            # Sprache (gemessen: 5s Sprache, ende=12s -> 5s Mischung).
+            [f"[{start}:a]apad=whole_dur={ende:.3f},asplit=2[sp][sck]",
+             f"[{start + 1}:a]volume={BETT_DB}dB,"
              f"afade=t=in:st=0:d=2,afade=t=out:st={ab:.2f}:d={BETT_AUSBLENDE}"
              f"[bettg]",
              # sidechaincompress: erstes Label wird komprimiert, zweites ist
@@ -3410,15 +3490,16 @@ def _ton_kette(start: int, ende: float,
              # in der Praxis nicht vollstaendig zurueck - siehe
              # arbeit/messung_ducking.py - das ist gewollt: lieber durchgehend
              # unauffaellig als zwischen Silben hoerbar pumpend).
-             f"[bettg]{sprache}sidechaincompress=threshold={DUCK_SCHWELLE}:"
+             f"[bettg][sck]sidechaincompress=threshold={DUCK_SCHWELLE}:"
              f"ratio={DUCK_RATIO}:attack={DUCK_ATTACK}:release={DUCK_RELEASE}"
              f"[bettd]",
              f"[bettd]{anhebung}[bett]" if anhebung else "[bettd]anull[bett]",
              # normalize=0 ist Pflicht: mit dem Standard teilt amix durch die
              # Zahl der Eingaenge und die Sprache verliert 6 dB.
-             # duration=first haelt die Laenge an der Sprache, damit ein
-             # zu kurzes Bett nicht ueber -shortest das Video kappt.
-             f"{sprache}[bett]amix=inputs=2:duration=first:normalize=0[mix]"],
+             # duration=first haelt die Laenge weiter an der Sprache, damit
+             # ein zu kurzes Bett nicht ueber -shortest das Video kappt - die
+             # Sprache reicht durch apad jetzt selbst bis `ende`.
+             "[sp][bett]amix=inputs=2:duration=first:normalize=0[mix]"],
             "[mix]")
 
 
@@ -3511,7 +3592,8 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
     clips = [_szene_clip(s, grenzen[i], grenzen[i + 1], i, arbeit, suffix,
                          bug, vig,
                          crossfade_motiv(s, folge[i + 1]) if i + 1 < len(folge) else None,
-                         folge[i + 1].zoom_rein if i + 1 < len(folge) else True)
+                         folge[i + 1].zoom_rein if i + 1 < len(folge) else True,
+                         schluss=i + 1 == len(folge))
              for i, s in enumerate(folge)]
     liste = arbeit / f"szenen{suffix}.txt"
     liste.write_text(
@@ -3899,7 +3981,8 @@ def main() -> None:
     worte = ton_holen(text, audio_mp3, cfg, args.nur_video)
     print(f"{len(worte)} Woerter erkannt")
     block_worte = worte_zu_bloecken(worte, bloecke_ton)
-    ende = (worte[-1].end if worte else 0.0) + 3.0  # Puffer, -shortest kappt
+    sprech_ende = worte[-1].end if worte else 0.0
+    ende = sprech_ende + AUSKLANG  # stummer Ausklang, siehe _ton_kette
     kapitel1 = kapitel_eins_start(bloecke_ton, block_worte)
     if kapitel1:
         print(f"Vorspann bis {kapitel1:.1f}s - Bett dort "
@@ -3928,7 +4011,8 @@ def main() -> None:
             folge = szenen_bauen(bloecke_ton, block_worte, abschnitte,
                                  zuordnung, fdaten, hook, datum, arbeit, ende,
                                  thumb_text_laden(tag_dir, args.sprache,
-                                                  titel))
+                                                  titel),
+                                 sprech_ende=sprech_ende)
             ende_bauen = ende
             if args.vorschau is not None:
                 voll = len(folge)
