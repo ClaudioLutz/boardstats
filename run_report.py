@@ -957,7 +957,8 @@ section needs every element; pick what fits the material.
 
 Output ONLY one JSON object, no preamble, no code fence:
 {"abschnitte": [{"ueberschrift": "...", "titel": "...", "lage": "left",
-                 "stichworte": [{"text": "...", "anker": "..."}, ...],
+                 "stichworte": [{"text": "...", "detail": ["...", "..."],
+                                 "anker": "..."}, ...],
                  "zwischenthemen": [{"titel": "...", "anker": "...",
                                      "lage": "right"}, ...],
                  "zitat": {"text": "...", "anker": "..."},
@@ -993,6 +994,17 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
   "SHORTS WIPED"). Each bullet paraphrases the sentence its anker sits in;
   together they must let a muted viewer follow the whole story, including
   every single name or claim mentioned, not just the first couple.
+  "detail": 2 or 3 keyword fragments that stand UNDER the bullet while its
+  sentence is spoken, then disappear - only the bullet stays on screen.
+  Write them for the eye, not for the ear: telegram style, max 38
+  characters each, NO full sentences, no final period, sentence case (not
+  ALL CAPS). Every fragment must ADD something the bullet cannot carry -
+  the figure behind it, the name, the mechanism, the counter-argument, or
+  who says it ("one poster claims", "unsourced", "no source given").
+  Never restate or rephrase the bullet, and never repeat one fragment in
+  another. Give detail to every bullet whose sentence holds more than the
+  bullet says; omit the field only where the sentence really is just the
+  bullet.
 - "zwischenthemen": 0 to 2 entries, ONLY when the section clearly switches
   to a second storyline. "titel" (max 40 characters) names the new
   sub-story; its anker sits where the switch happens. The bullet card
@@ -1016,6 +1028,28 @@ Rules for "zahlen" (the closing "Numbers of the day" segment):
 """
 
 TIMEOUT_FOLIEN = 420
+
+DETAIL_MAX_FRAGMENTE = 3
+DETAIL_MAX_ZEICHEN = 40
+
+
+def _stichwort(p: dict) -> dict:
+    """Ein Stichwort des Drehbuchs auf die Anzeige zurechtstutzen.
+
+    "detail" sind die Stichwort-Fragmente, die im Video unter dem
+    Bulletpoint stehen, solange sein Satz gesprochen wird. Sie fahren mit
+    ihm NICHT in die Themen-Karte - dort parkt weiterhin nur der
+    Bulletpoint. Das Feld ist optional: aeltere Drehbuecher haben es nicht,
+    und ein Satz ohne Zusatzsubstanz braucht es nicht."""
+    det = p.get("detail")
+    if isinstance(det, str):
+        det = [det]
+    frag = [str(s).strip().rstrip(".")[:DETAIL_MAX_ZEICHEN]
+            for s in (det if isinstance(det, list) else [])
+            if str(s).strip()][:DETAIL_MAX_FRAGMENTE]
+    return {"text": str(p["text"]).strip()[:38],
+            "anker": str(p.get("anker") or "").strip(),
+            **({"detail": frag} if frag else {})}
 
 
 def folien_generieren(bericht_md: str) -> dict:
@@ -1042,8 +1076,7 @@ def folien_generieren(bericht_md: str) -> dict:
             a.pop("lage", None)
         stich = a.get("stichworte")
         a["stichworte"] = [
-            {"text": str(p["text"]).strip()[:38],
-             "anker": str(p.get("anker") or "").strip()}
+            _stichwort(p)
             for p in (stich if isinstance(stich, list) else [])
             if isinstance(p, dict) and str(p.get("text") or "").strip()][:28]
         zwischen = a.get("zwischenthemen")

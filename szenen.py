@@ -297,8 +297,77 @@ FOKUS_MITTE = 318       # vertikale Mitte des Kastens: hoch genug, dass ein
 FOKUS_RAND = 28
 FOKUS_ZEILE = 44
 
+# Detail-Fragmente unter dem Fokus-Punkt: die Zwischenstufe zwischen dem
+# 34-Zeichen-Bulletpoint und dem gesprochenen Satz. Telegrammstil, gemischte
+# Schreibung (drei Zeilen VERSALIEN liest niemand in fuenf Sekunden) und in
+# Inter statt der fetten Display-Schrift - der Bulletpoint darueber bleibt
+# die Ueberschrift. Sie fliegen nie mit: beim Parken bleibt nur der Punkt.
+DETAIL_MAX = 3          # mehr Fragmente konkurrieren mit dem Board-Motiv
+DETAIL_FONT = 23
+DETAIL_ZEILE = 31
+DETAIL_RAND = 28
+DETAIL_ABSTAND = 8      # Luft zwischen zwei Fragmenten
+DETAIL_LUECKE = 10      # Abstand Fokus-Kasten -> Detail-Kasten
+DETAIL_TEXT_X = 26      # Einzug neben dem Strich-Marker
 
-def fokus_punkt(text: str, lage: str = "left") -> tuple[Image.Image, int, int]:
+# Untere Grenze des Stapels aus Fokus-Kasten und Detail-Kasten. Grosszuegig,
+# weil waehrend der Fokus-Karte kein Lower Third laeuft: Zwischenthema, Zitat
+# und Kennzahl bekommen eigene Szenen ohne Fokus-Karte, und den Kapitel-Opener
+# haelt video_report.py von den Fragmenten frei (dort steht der Punkt allein,
+# also zentriert wie bisher). Bleibt die Vignette, gegen die der Kasten mit
+# KARTE_ALPHA ohnehin selbst antritt.
+STAPEL_UNTEN_MAX = 580
+STAPEL_OBEN_MIN = 112   # unter dem Ecken-Bug, falls kein Titel darueber steht
+
+
+def _detail_bloecke(d: ImageDraw.ImageDraw, fragmente: list[str]
+                    ) -> tuple[list[list[str]], ImageFont.FreeTypeFont]:
+    f = folien._font_medium(DETAIL_FONT)
+    breite = FOKUS_BREITE - 2 * DETAIL_RAND - DETAIL_TEXT_X
+    return ([folien._umbrechen(d, s.strip(), f, breite)[:2]
+             for s in (fragmente or [])[:DETAIL_MAX] if s.strip()], f)
+
+
+def _detail_hoehe(bloecke: list[list[str]]) -> int:
+    return (18 + sum(len(b) * DETAIL_ZEILE for b in bloecke)
+            + DETAIL_ABSTAND * (len(bloecke) - 1) + 18) if bloecke else 0
+
+
+def _stapel(d: ImageDraw.ImageDraw, text: str, detail: list[str] | None,
+            lage: str, oben_min: int = STAPEL_OBEN_MIN) -> tuple:
+    """Geometrie von Fokus-Kasten und Detail-Kasten in einem Zug.
+
+    Beide Kaesten sind eigene Overlays (der Fokus-Punkt fliegt, das Detail
+    nicht), muessen aber uebereinander sitzen - also rechnet eine Funktion
+    fuer beide, und beide Aufrufer muessen dieselben Argumente reichen.
+
+    Ohne Detail bleibt die Lage des Fokus-Kastens exakt die alte (zentriert
+    auf FOKUS_MITTE). Mit Detail wandert der Stapel so weit nach oben, wie
+    er Hoehe braucht - aber nie ueber `oben_min`: auf der linken Bildseite
+    ist das die Unterkante des Themen-Titels, und den zu verdecken waere
+    schlimmer als jede Enge weiter unten. Passt er dann immer noch nicht,
+    fallen Fragmente von hinten weg, statt den Titel zu ueberlaufen."""
+    x = MARGIN if lage == "right" else B - MARGIN - FOKUS_BREITE
+    ff = folien._font(True, 34)
+    zeilen = folien._umbrechen(d, text.upper(), ff,
+                               FOKUS_BREITE - 2 * FOKUS_RAND)[:3]
+    h_f = 24 + len(zeilen) * FOKUS_ZEILE + 24
+    bloecke, df = _detail_bloecke(d, detail or [])
+    while bloecke and (oben_min + h_f + DETAIL_LUECKE + _detail_hoehe(bloecke)
+                       > STAPEL_UNTEN_MAX):
+        bloecke.pop()
+    h_d = _detail_hoehe(bloecke)
+    gesamt = h_f + (DETAIL_LUECKE + h_d if h_d else 0)
+    oben = FOKUS_MITTE - gesamt // 2
+    if h_d:
+        oben = max(oben_min, min(oben, STAPEL_UNTEN_MAX - gesamt))
+    return x, oben, zeilen, ff, h_f, bloecke, df, h_d
+
+
+def fokus_punkt(text: str, lage: str = "left",
+                detail: list[str] | None = None,
+                oben_min: int = STAPEL_OBEN_MIN
+                ) -> tuple[Image.Image, int, int]:
     """Der Stichpunkt, ueber den gerade gesprochen wird: gross in der
     freien Bildhaelfte gegenueber der Themen-Karte. Danach fliegt er in
     die Karte und parkt dort (video_report._lage).
@@ -309,15 +378,13 @@ def fokus_punkt(text: str, lage: str = "left") -> tuple[Image.Image, int, int]:
 
     Der Kasten ist mitgezeichnet: die Karte sitzt auf rohem Board-Motiv,
     und heller Text ohne Grund darunter ist genau der Lesbarkeitsfehler,
-    den das Layout sonst vermeidet."""
+    den das Layout sonst vermeidet.
+
+    `detail` steht nicht in diesem Bild - es verschiebt nur die Lage, damit
+    der Detail-Kasten darunter Platz hat (siehe detail_karte)."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
-    x = MARGIN if lage == "right" else B - MARGIN - FOKUS_BREITE
-    f = folien._font(True, 34)
-    zeilen = folien._umbrechen(d, text.upper(), f,
-                               FOKUS_BREITE - 2 * FOKUS_RAND)[:3]
-    h = 24 + len(zeilen) * FOKUS_ZEILE + 24
-    oben = FOKUS_MITTE - h // 2
+    x, oben, zeilen, f, h, _, _, _ = _stapel(d, text, detail, lage, oben_min)
     d.rounded_rectangle([x, oben, x + FOKUS_BREITE, oben + h],
                         radius=14, fill=(0, 0, 0, KARTE_ALPHA))
     d.rectangle([x, oben + 14, x + 6, oben + h - 14], fill=AKZENT)
@@ -325,6 +392,35 @@ def fokus_punkt(text: str, lage: str = "left") -> tuple[Image.Image, int, int]:
         d.text((x + FOKUS_RAND, oben + 24 + i * FOKUS_ZEILE), z, font=f,
                fill=HELL, stroke_width=2, stroke_fill=(0, 0, 0))
     return bild, x + FOKUS_RAND, oben + 24
+
+
+def detail_karte(text: str, detail: list[str], lage: str = "left",
+                 oben_min: int = STAPEL_OBEN_MIN) -> Image.Image | None:
+    """Die Stichwort-Fragmente zum gerade gesprochenen Punkt, als eigener
+    Kasten direkt unter dem Fokus-Punkt.
+
+    Eigenes Overlay statt mitgezeichnet, weil der Fokus-Punkt fliegt und
+    das Detail nicht: es blendet aus, bevor der Punkt in die Themen-Karte
+    parkt. `text` ist der Fokus-Punkt selbst - er bestimmt mit, wo der
+    Stapel sitzt. None, wenn nichts zu zeigen ist."""
+    bild = _leer()
+    d = ImageDraw.Draw(bild)
+    x, oben, _, _, h_f, bloecke, f, h_d = _stapel(d, text, detail, lage,
+                                                  oben_min)
+    if not bloecke:
+        return None
+    d_oben = oben + h_f + DETAIL_LUECKE
+    d.rounded_rectangle([x, d_oben, x + FOKUS_BREITE, d_oben + h_d],
+                        radius=12, fill=(0, 0, 0, KARTE_ALPHA))
+    y = d_oben + 18
+    for zeilen in bloecke:
+        d.rectangle([x + DETAIL_RAND, y + 14, x + DETAIL_RAND + 12, y + 16],
+                    fill=AKZENT)
+        for j, z in enumerate(zeilen):
+            d.text((x + DETAIL_RAND + DETAIL_TEXT_X, y + j * DETAIL_ZEILE), z,
+                   font=f, fill=KARTE_ALT)
+        y += len(zeilen) * DETAIL_ZEILE + DETAIL_ABSTAND
+    return bild
 
 
 def zitat_post(text: str, datum: str) -> Image.Image:
