@@ -883,7 +883,7 @@ def _studio_stuecke(text: str) -> list[Stueck]:
     # Wort ("CRYPTO") - dort traegt die Verlangsamung wenig. Gemeint ist die
     # Kapiteleroeffnung, also zaehlt der Absatz danach mit.
     echte = [(a, p) for a, p in absaetze if a.strip()]
-    eroeffnung = set()
+    eroeffnung: set[int] = set()
     for k, (_, p) in enumerate(echte):
         if p >= kapitel_pause:
             eroeffnung.update((k, k + 1))
@@ -905,9 +905,9 @@ def _studio_stuecke(text: str) -> list[Stueck]:
                 # Kapiteleroeffnung: nur der erste Satz, und nur ungekappt -
                 # ein zerlegter Satz waere sonst halb langsam, halb nicht.
                 if i == 0 and j == 0 and len(happen) == 1 and k in eroeffnung:
-                    ssml = (f'<speak><prosody rate="{STUDIO_KAPITEL_RATE}">'
-                            f'{xml_escape(teil)}</prosody></speak>')
-                    stuecke.append(Stueck(teil, vor, ssml))
+                    kapitel_ssml = (f'<speak><prosody rate="{STUDIO_KAPITEL_RATE}">'
+                                    f'{xml_escape(teil)}</prosody></speak>')
+                    stuecke.append(Stueck(teil, vor, kapitel_ssml))
                     continue
                 ssml, gewichte = _zahlen_hervorheben(teil)
                 stuecke.append(Stueck(teil, vor, ssml, gewichte))
@@ -953,7 +953,7 @@ def _worte_verteilen(satz: str, start: float, ende: float,
     tokens = satz.split()
     if not tokens:
         return []
-    gewicht = [len(t) + 1 for t in tokens]
+    gewicht: list[float] = [len(t) + 1 for t in tokens]
     if len(faktoren) == len(tokens):
         gewicht = [g * f for g, f in zip(gewicht, faktoren)]
     gesamt = sum(gewicht)
@@ -2541,6 +2541,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
         karten_plan: list[KartenStand] = []
         titel_plan: list[KartenStand] = []
+        detail_plan: list[KartenStand] = []
         fokus_plan: list[FokusKarte] = []
         for gi, (g0, gtitel, glage) in enumerate(segmente):
             g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
