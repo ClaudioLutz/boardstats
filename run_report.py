@@ -1575,12 +1575,15 @@ def motiv_pruefen(bilder: list[Path], thema: str) -> Path | None:
     return nach_name[wahl]
 
 
-def motiv_waehlen(manifest: dict, datum: str, thema: str) -> Path | None:
+def motiv_waehlen(manifest: dict, datum: str, thema: str,
+                  trockenlauf: bool = False) -> Path | None:
     """Board-Bild des Tages fuers Vorschaubild aussuchen und bereitlegen.
 
     Das Ergebnis landet unter arbeit/ und damit ausserhalb des Repos: fremdes
     Bildmaterial gehoert nicht ins oeffentliche Archiv. Findet sich keins,
-    nimmt video_report.py das Serienbild aus assets/."""
+    nimmt video_report.py das Serienbild aus assets/. Mit trockenlauf bleibt
+    die Bildsperre (verwendet.json) aus - ein Testlauf darf kein Bild fuer
+    die naechsten produktiven Laeufe sperren."""
     thumbs = ARBEIT / "thumbs"
     thumbs.mkdir(parents=True, exist_ok=True)
     for alt in thumbs.glob(f"{datum}.*"):
@@ -1598,7 +1601,12 @@ def motiv_waehlen(manifest: dict, datum: str, thema: str) -> Path | None:
         return None
     md5 = next((k["md5"] for k in kandidaten if k["datei"] == gewaehlt.name), "")
     if md5:
-        verwendete_merken([md5], datum)
+        if trockenlauf:
+            log.info("Trockenlauf - Bildsperre fuers Vorschaubild nicht "
+                     "vermerkt (arbeit/motive/verwendet.json bleibt "
+                     "unberuehrt)")
+        else:
+            verwendete_merken([md5], datum)
     ziel = thumbs / f"{datum}{gewaehlt.suffix}"
     shutil.copy2(gewaehlt, ziel)
     return ziel
@@ -1846,10 +1854,16 @@ def hintergrund_pruefen(
     return frei, gruende
 
 
-def hintergruende_waehlen(manifest: dict, datum: str) -> int:
+def hintergruende_waehlen(manifest: dict, datum: str,
+                          trockenlauf: bool = False) -> int:
     """Freigegebene Hintergrundbilder je Thread unter arbeit/motive/<datum>/
     bereitlegen (ausserhalb des Repos, wie das Thumbnail-Motiv). motive.json
     haelt die Zuordnung Thread -> Dateien fuer den Video-Lauf fest.
+
+    Mit trockenlauf werden die Bilder weiterhin geprueft und bereitgelegt
+    (motive.json ist ein Freigabe-Ergebnis, kein Fortschritt), nur die
+    Bildsperren in verwendet.json bleiben aus - ein Testlauf darf dem
+    naechsten produktiven Lauf keine Bilder wegsperren.
 
     Abgelehnte Bilder werden nicht mehr geloescht, sondern nach
     arbeit/motive/<datum>/abgelehnt/ verschoben, mit dem Grund im Dateinamen
@@ -1912,7 +1926,12 @@ def hintergruende_waehlen(manifest: dict, datum: str) -> int:
                  "%s", len(abgelehnt), ablage)
     shutil.rmtree(ziel_dir / "vorschau", ignore_errors=True)  # Posterframes
     # sind schon herauskopiert, der Rest ist reiner Platzverbrauch
-    verwendete_merken(gezeigt, datum)
+    if trockenlauf:
+        log.info("Trockenlauf - %d Bildsperren nicht vermerkt "
+                 "(arbeit/motive/verwendet.json bleibt unberuehrt)",
+                 len(gezeigt))
+    else:
+        verwendete_merken(gezeigt, datum)
     return len(frei)
 
 
@@ -1956,7 +1975,8 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         log.info("Suche Motiv fuers Vorschaubild (Sonnet, Sichtpruefung) ...")
         thema = titel.get("en") or bericht_md[:400]
         log.info("Vorschaubild-Motiv: %s",
-                 motiv_waehlen(manifest, datum, thema) or "keins, Serienbild")
+                 motiv_waehlen(manifest, datum, thema, trockenlauf)
+                 or "keins, Serienbild")
     except Exception as e:
         # Auch hier gilt: das Video entsteht mit dem Serienbild weiter.
         log.warning("Motiv-Auswahl fehlgeschlagen (Video nimmt das "
@@ -1965,7 +1985,7 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
         log.info("Pruefe Hintergrundbilder fuers Video (Sonnet, "
                  "Sichtpruefung) ...")
         log.info("%d Hintergrundbilder freigegeben",
-                 hintergruende_waehlen(manifest, datum))
+                 hintergruende_waehlen(manifest, datum, trockenlauf))
     except Exception as e:
         # Ohne freigegebene Bilder legt video_report.py das Vorschaubild
         # als Hintergrund unter den Text - auch das darf nie blockieren.
@@ -2234,15 +2254,26 @@ def main() -> int:
                     help="alles normal erzeugen (Extrakte, Bericht, Titel, "
                          "Drehbuch, Motive, Clips), nur git add/commit/push "
                          "ueberspringen; --kein-github hat Vorrang und "
-                         "unterdrueckt weiterhin die ganze Markdown-Stufe")
+                         "unterdrueckt weiterhin die ganze Markdown-Stufe. "
+                         "Laesst den Delta-Zustand unberuehrt: cache/ "
+                         "(status.json, <thread>.txt) und die Bildsperren in "
+                         "arbeit/motive/verwendet.json werden nicht "
+                         "fortgeschrieben")
     args = ap.parse_args()
 
     setup_logging()
     log.info("=== Start (host=%s) ===", args.host or "lokal")
 
     if args.kein_cache:
-        (CACHE / "status.json").unlink(missing_ok=True)
-        log.info("Cache-Status verworfen - alle Threads werden voll gelesen")
+        if args.trockenlauf:
+            # Ein Testlauf darf den Delta-Zustand auch nicht per Loeschung
+            # anfassen: ohne status.json laese der naechste Cron-Lauf alle
+            # Threads voll statt nur das Delta seit dem letzten Upload.
+            log.info("--kein-cache im Trockenlauf ignoriert - "
+                     "cache/status.json bleibt bestehen")
+        else:
+            (CACHE / "status.json").unlink(missing_ok=True)
+            log.info("Cache-Status verworfen - alle Threads werden voll gelesen")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     arbeit = ARBEIT / stamp
@@ -2276,7 +2307,17 @@ def main() -> int:
         log.error("kein einziger Extrakt - Abbruch ohne Bericht")
         return 1
 
-    cache_pflegen(manifest, eDir, ergebnisse)
+    # Der Cache ist das Delta-Gedaechtnis der Pipeline: ein Testlauf, der ihn
+    # fortschreibt, verschiebt den Stand "schon gesehen" nach vorn, und der
+    # naechste produktive Lauf verliert genau dieses Delta (passiert am
+    # 19.08.2026, zwoelf Stunden Board-Aktivitaet mussten von Hand
+    # zurueckgerollt werden).
+    if args.trockenlauf:
+        log.info("Trockenlauf - Cache-Fortschritt nicht fortgeschrieben "
+                 "(cache/status.json und cache/<thread>.txt bleiben "
+                 "unberuehrt)")
+    else:
+        cache_pflegen(manifest, eDir, ergebnisse)
 
     # Die Extrakte oeffentlich als Markdown ablegen, unabhaengig davon, ob die
     # Synthese anschliessend gelingt - sie sind ein eigenstaendiges Ergebnis

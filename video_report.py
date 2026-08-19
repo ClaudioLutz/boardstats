@@ -2456,7 +2456,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float, thumb: str = "",
-                 sprech_ende: float = 0.0) -> list[Szene]:
+                 sprech_ende: float = 0.0,
+                 nur_video: bool = False) -> list[Szene]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, der Themen-Titel oben, die persistente
     Karte mit den geparkten Stichpunkten darunter (beide stehen bis zum
@@ -2564,7 +2565,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     # _klip_zuordnung) - eine Ergaenzung zur Bild-Kulisse, kein Ersatz: die
     # meisten Abschnitte bleiben ohne Clip. Das Posterframe entsteht nur fuer
     # tatsaechlich zugeteilte Clips, nicht fuer den ganzen Katalog.
-    klip_zuordnung = _klip_zuordnung(datum, abschnitte, titel_map)
+    klip_zuordnung = _klip_zuordnung(datum, abschnitte, titel_map, nur_video)
     klip_poster: dict[Path, Path] = {}
     for pfad in klip_zuordnung.values():
         try:
@@ -3403,7 +3404,8 @@ Code-Zaun:
 
 
 def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
-                    titel_map: dict[str, str]) -> dict[int, Path]:
+                    titel_map: dict[str, str],
+                    nur_video: bool = False) -> dict[int, Path]:
     """Ordnet freigegebene Katalog-Clips (arbeit/clips/katalog.json)
     inhaltlich Abschnitten zu - ein claude_ruf()-Aufruf, analog den
     Sichtpruefungen, statt einer Rang-Sortierung wie bei der Bildkulisse
@@ -3417,8 +3419,11 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
     gewaehlt werden, unbegrenzt. Analog der MD5-Sperrliste der
     Bilder (run_report.VERWENDET_TAGE) bleibt ein kuerzlich gezeigter Clip
     hier aussen vor, und jede tatsaechliche Wahl schreibt "zuletzt_verwendet"
-    sofort in den Katalog zurueck. Ausnahme: "zuletzt_verwendet" == datum
-    zaehlt weiterhin als frei - sonst sperrt sich ein erneuter Testlauf
+    sofort in den Katalog zurueck - ausser mit nur_video (Testpfad): dann
+    bleibt der Stempel im Speicher und der Katalog auf der Platte unberuehrt,
+    ein Testlauf darf dem naechsten produktiven Lauf keine Clips wegsperren
+    (Delta-Rueckrollung vom 19.08.2026). Ausnahme: "zuletzt_verwendet" ==
+    datum zaehlt weiterhin als frei - sonst sperrt sich ein erneuter Testlauf
     desselben Tages (z.B. nach einem Bugfix-Rebuild) selbst alle Clips."""
     katalog = klip_katalog.katalog_laden()
     grenze = (date.fromisoformat(datum)
@@ -3498,7 +3503,12 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
             vergeben.add(intro_md5)
             katalog["clips"][intro_md5]["zuletzt_verwendet"] = datum
     if vergeben:
-        klip_katalog.katalog_speichern(katalog)
+        if nur_video:
+            print("Testlauf (--nur-video) - Clip-Katalog nicht gestempelt "
+                  "(zuletzt_verwendet in arbeit/clips/katalog.json bleibt "
+                  "unberuehrt)")
+        else:
+            klip_katalog.katalog_speichern(katalog)
     return aus
 
 
@@ -4246,10 +4256,14 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="en")
     ap.add_argument("--nur-video", action="store_true",
-                    help="Video nur bauen, ohne Upload und ohne Marker (Test)")
+                    help="Video nur bauen, ohne Upload und ohne Marker (Test); "
+                         "laesst den Delta-Zustand unberuehrt: kein "
+                         "zuletzt_verwendet-Stempel in arbeit/clips/"
+                         "katalog.json")
     ap.add_argument("--trockenlauf", action="store_true",
                     help="einheitliches Dry-Run-Flag der Pipeline; hier "
-                         "gleichbedeutend mit --nur-video")
+                         "gleichbedeutend mit --nur-video (kein Upload, kein "
+                         "Marker, Delta-Zustand bleibt unberuehrt)")
     ap.add_argument("--trotz-altdaten", action="store_true",
                     help=f"auch hochladen, wenn der Datenstand des Berichts "
                          f"aelter als {DATENSTAND_MAX_H:.0f} h ist")
@@ -4369,7 +4383,8 @@ def main() -> None:
                                  zuordnung, fdaten, hook, datum, arbeit, ende,
                                  thumb_text_laden(tag_dir, args.sprache,
                                                   titel),
-                                 sprech_ende=sprech_ende)
+                                 sprech_ende=sprech_ende,
+                                 nur_video=args.nur_video)
             ende_bauen = ende
             if args.vorschau is not None:
                 voll = len(folge)
