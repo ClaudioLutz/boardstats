@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: main
 typ: feature
-commit: 9fe00f6
+commit: f6f1750
 ---
 
 # Pacing-Befunde der Messung vom 19.08. umgesetzt (Lesezeit, Stillstand, Kurzszenen)
