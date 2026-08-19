@@ -28,11 +28,13 @@ KONFIG_DIR = Path.home() / ".config" / "boardstats"
 CLIENT_DATEI = KONFIG_DIR / "youtube_client.json"
 TOKEN_DATEI = KONFIG_DIR / "youtube_token.json"
 # youtube.upload deckt Video-Upload und Thumbnail; captions.insert (eigene
-# Untertitel) verlangt zusaetzlich youtube.force-ssl. Nach einer Erweiterung
-# hier muss youtube_auth_setup.py einmalig neu durchlaufen werden (Re-Consent),
-# sonst traegt der gespeicherte refresh_token nur die alten Scopes.
+# Untertitel) verlangt zusaetzlich youtube.force-ssl; yt-analytics.readonly ist
+# nur lesend und liefert Abrufe/Wiedergabedauer/Abbruchkurve je Video. Nach einer
+# Erweiterung hier muss youtube_auth_setup.py einmalig neu durchlaufen werden
+# (Re-Consent), sonst traegt der gespeicherte refresh_token nur die alten Scopes.
 SCOPE = ("https://www.googleapis.com/auth/youtube.upload "
-         "https://www.googleapis.com/auth/youtube.force-ssl")
+         "https://www.googleapis.com/auth/youtube.force-ssl "
+         "https://www.googleapis.com/auth/yt-analytics.readonly")
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 THUMBNAIL_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 CAPTIONS_URL = "https://www.googleapis.com/upload/youtube/v3/captions"
