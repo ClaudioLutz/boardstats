@@ -174,7 +174,7 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "google_stimme_marken": "en-US-Neural2-J",
         "titel": "/biz/ Situation Report {datum}",
         "beschreibung": (
-            "Automated situation report from the 4chan board /biz/ (Business & "
+            "Situation report from the 4chan board /biz/ (Business & "
             "Finance), {datum}. Discourse documentation, not financial advice."
         ),
         "thumb_fuss": "Situation report {datum}",
