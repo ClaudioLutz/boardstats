@@ -1881,17 +1881,73 @@ def _detail_liste(punkt: dict) -> list[str]:
     return [str(s).strip() for s in roh if str(s).strip()]
 
 
+# Woerter, auf denen ein gekappter Stichpunkt nie enden darf: sie kuendigen
+# an, was gerade weggefallen ist ("... USD IN"), und lesen sich als Fehler.
+BULLET_FUELLWORT = {
+    "A", "AN", "AND", "AS", "AT", "BUT", "BY", "FOR", "FROM", "IN", "INTO",
+    "IS", "ITS", "OF", "ON", "OR", "OVER", "PER", "THAN", "THAT", "THE",
+    "THEIR", "THIS", "TO", "UNDER", "WITH",
+    "I.E", "E.G",   # Einleitungen; der Schluss-Strip frisst ihnen den Punkt
+}
+BULLET_KLAUSEL = ",;:-–—"      # Satzzeichen, an denen ein Schnitt sauber liegt
+BULLET_KLAUSEL_MIN = 0.6       # so viel des Platzes muss die Klausel fuellen
+# Laengenziel, knapp ueber den 38 Zeichen der vom Modell verfassten Stichworte.
+# Nicht die Kartenkapazitaet ausreizen: zwei volle Kartenzeilen fassen rund 80
+# Zeichen, und ein 80-Zeichen-Prefix des gesprochenen Satzes ist ein
+# eingebrannter Untertitel - genau das, was im Bild nicht stehen soll.
+BULLET_MAX = 42
+
+
 def _luecken_bullet(satz: str) -> str:
     """Kurzform eines gesprochenen Satzes als Fallback-Stichpunkt: Grossbuch-
-    staben, hart bei 34 Zeichen am letzten vollen Wort gekappt - derselbe Stil
+    staben, gekappt auf das, was die Themen-Karte zeigen kann - derselbe Stil
     wie die vom Modell verfassten Stichworte, nur ohne redaktionelle
-    Zuspitzung."""
-    text = re.sub(r"^[-–—.,;:!?\"'…\s]+", "", satz.strip())
-    text = re.sub(r"[.,;:!?\"'…]+$", "", text).upper()
-    if len(text) <= 34:
-        return text
-    kurz = text[:34]
-    return kurz[:kurz.rfind(" ")] if " " in kurz else kurz
+    Zuspitzung.
+
+    Gekappt wird am Wort, bevorzugt an einer Klausel-Grenze; bleibt nur ein
+    Schnitt mitten im Satzteil, endet der Punkt mit einer Auslassung statt auf
+    einem Fuellwort. Laengenziel ist BULLET_MAX, die Kartenkapazitaet
+    (szenen.karte_passt) nur die harte Grenze dahinter - sie auszureizen
+    ergaebe Untertitel statt Stichpunkte."""
+    text = re.sub(r"[\"“”«»]", "", satz)
+    text = re.sub(r"^[-–—.,;:!?'…\s]+", "", text.strip())
+    text = re.sub(r"[.,;:!?'…\s]+$", "", text).upper()
+    if not text:
+        return ""
+    worte = text.split()
+
+    def ohne_fuellwoerter(bis_wort: int) -> int:
+        while bis_wort > 1 and \
+                worte[bis_wort - 1].strip(BULLET_KLAUSEL) in BULLET_FUELLWORT:
+            bis_wort -= 1
+        return bis_wort
+
+    if len(text) <= BULLET_MAX and szenen.karte_passt(text):
+        # ganz drin - nur ein Fuellwort am Schluss verraet, dass schon der
+        # Satz-Cue mitten im Satzteil endete; dann Auslassung statt Fuellwort
+        voll = ohne_fuellwoerter(len(worte))
+        if voll == len(worte):
+            return text
+        return " ".join(worte[:voll]).rstrip(BULLET_KLAUSEL + " ") + " …"
+    # laengster Wort-Prefix innerhalb des Laengenziels
+    n = 0
+    while n < len(worte) and len(" ".join(worte[:n + 1])) <= BULLET_MAX:
+        n += 1
+    if n == 0:                          # ein einzelnes Wort sprengt das Ziel
+        return szenen.karte_text(worte[0][:BULLET_MAX])
+    # Klausel-Grenze im Prefix bevorzugen, solange sie den Platz gut fuellt
+    grenze = ohne_fuellwoerter(max(
+        (i for i in range(1, n + 1) if worte[i - 1][-1] in BULLET_KLAUSEL),
+        default=0))
+    if grenze >= max(1, round(n * BULLET_KLAUSEL_MIN)):
+        return " ".join(worte[:grenze]).rstrip(BULLET_KLAUSEL + " ")
+    # sonst: Fuellwoerter am Ende weg, Auslassung als Kappungsmarke anhaengen
+    n = ohne_fuellwoerter(n)
+    kurz = " ".join(worte[:n]).rstrip(BULLET_KLAUSEL + " ")
+    while n > 1 and not szenen.karte_passt(f"{kurz} …"):
+        n -= 1
+        kurz = " ".join(worte[:n]).rstrip(BULLET_KLAUSEL + " ")
+    return f"{kurz} …"
 
 
 def _luecken_fuellen(stich: list[dict], zeiten: list[float],

@@ -126,8 +126,12 @@ KARTE_BREITE = 470
 KARTE_OBEN = 104        # unter dem Ecken-Bug; mit Themen-Titel oben tiefer
 KARTE_UNTEN_MAX = 600   # Lower Thirds laufen nie gleichzeitig mit der Karte
 KARTE_ALT = design_tokens.NEUTRAL[2]
-KARTE_INNEN = KARTE_BREITE - 34 - 24   # Textbreite im Kasten
 KARTE_TEXT_X = 56       # Einzug des Punkt-Textes (neben dem Quadrat)
+# Textbreite im Kasten: vom Texteinzug bis zum rechten Innenrand. Frueher
+# stand hier 34 statt KARTE_TEXT_X - das ist die Kante des Quadrat-Markers,
+# nicht die des Textes, und die 22 px Differenz liessen lange Zeilen ueber
+# den Kastenrand aufs rohe Board-Motiv laufen.
+KARTE_INNEN = KARTE_BREITE - KARTE_TEXT_X - 24
 KARTE_PUNKT_FONT = 25
 # Deckkraft der Text-Kaesten, deutlich hoeher als die frueheren 160/170: der
 # Text liegt auf rohem Board-Motiv, und dessen Feinstruktur (oft Screenshots
@@ -282,6 +286,17 @@ def karte_text(text: str) -> str:
                               folien._font_medium(KARTE_PUNKT_FONT),
                               KARTE_INNEN)[:2]
     return " ".join(zeilen)
+
+
+def karte_passt(text: str) -> bool:
+    """Ob der Stichpunkt ungekappt in die zwei Kartenzeilen passt.
+
+    Das echte Budget eines Stichpunkts ist diese Kapazitaet, nicht eine
+    Zeichenzahl: wer laenger kappt, verliert den Rest spaeter beim Parken;
+    wer nach Zeichen kappt, wirft bei schmalen Woertern Platz weg."""
+    return text.strip() != "" and len(folien._umbrechen(
+        ImageDraw.Draw(_leer()), text.upper(),
+        folien._font_medium(KARTE_PUNKT_FONT), KARTE_INNEN)) <= 2
 
 
 FOKUS_BREITE = 620
