@@ -104,4 +104,8 @@ One or two sentences: Does the thread read like substantive discussion,
 like promotion or price manipulation, or like idle chatter? Notable signs
 of self-interest (referral links, the same poster pushing the same claim)?
 Poster IDs are per-thread and can be manipulated - treat them as an upper
-bound, not as a head count.
+bound, not as a head count. The header gives you two ratios that hold even
+so: "Posts je ID" separates a broad conversation (around 1.3) from a small
+loud circle (6 and up), and "lauteste ID" names the share of all posts that
+comes from a single ID. Above roughly 25 % the thread is carried by one
+voice - say so, and say whether that voice is the one making the claims.

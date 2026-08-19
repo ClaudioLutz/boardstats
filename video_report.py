@@ -708,6 +708,42 @@ def google_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
 # Stuecken waere die Drift sekundengross. Und "text" statt "ssml": ohne Marks
 # braucht es kein SSML mehr, also zaehlen nur die echten Sprechzeichen zur
 # Abrechnung (7'878 statt 32'242 je Bericht).
+#
+# Prosodie: Was Studio-Q an SSML annimmt, ist am 19.08.2026 gegen die Live-API
+# gemessen (en-US-Studio-Q, derselbe Satz je Probe):
+#   <prosody rate>    ok   4.47s -> 4.97s bei rate="85%"
+#   <prosody volume>  ok
+#   <break>           ok   4.47s -> 4.88s bei 400ms
+#   <say-as>, <s>     ok
+#   <prosody pitch>   HTTP 400 "`<prosody>` tags do not currently support
+#                     `pitch` attributes for Studio voices"
+#   <emphasis>        HTTP 400 "`<emphasis>` tags are not currently supported
+#                     by Studio voices"
+# Betonung gibt es also nicht - der Ersatz ist Verlangsamung. Und Pausen
+# kommen weiter als PCM-Stille zwischen den Stuecken, nicht als <break>:
+# Stille zwischen zwei Aufrufen ist sample-exakt, ein <break> innerhalb eines
+# Satzes verschoebe die interpolierten Wortzeiten des Untertitels.
+# SSML wird nur fuer die Saetze gesendet, die es brauchen; alle anderen gehen
+# weiter als "text" durch. Sonst zaehlten die Tags in jedem Satz zur
+# Abrechnung (der Marken-Pfad kostet mit Tags 32'242 statt 7'878 Zeichen).
+STUDIO_KAPITEL_RATE = "92%"  # erster Satz nach einer Kapitelgrenze
+STUDIO_ZAHL_RATE = "88%"     # harte Zahlen, Ersatz fuer das fehlende <emphasis>
+STUDIO_POINTE_PAUSE = 0.45   # Stille vor dem Schlusssatz eines Absatzes
+STUDIO_POINTE_AB = 3         # ... erst ab so vielen Saetzen im Absatz
+# Was als harte Zahl gilt: Prozente, Geldbetraege und Groessenordnungen. Eine
+# blosse Jahreszahl, ein Datum oder eine Aktenzeichen-Nummer wird bewusst nicht
+# verlangsamt. Die Groessenordnungen stehen laengste zuerst, sonst greift das
+# kurze "m" in "million" und die Stimme spricht "$303 m" und dann "illion".
+_GROESSE = r"(?:billion|million|trillion|bn|tn|[kKmM])"
+ZAHL_HART = re.compile(
+    r"[$€£]\s?\d[\d.,]*(?:\s?" + _GROESSE + r")?\b"
+    # Kein \b hinter dem Prozentzeichen: es ist selbst kein Wortzeichen, die
+    # Grenze faende sich nie und "2%" fiele durch.
+    r"|\d[\d.,]*\s?%"
+    r"|\d[\d.,]*\s?percent(?:age points?)?\b"
+    r"|\d[\d.,]*\s?" + _GROESSE + r"\b"
+    r"|\d[\d.,]*x\b")
+
 STUDIO_SR = 24000            # LINEAR16-Abtastrate
 STUDIO_SATZ_PAUSE = 0.20     # eigene Stille zwischen Saetzen eines Absatzes
 STUDIO_SATZ_MIN = 45         # kuerzere Fragmente an den Vorgaenger haengen
@@ -783,31 +819,98 @@ def _bytes_kappen(satz: str) -> list[str]:
     return happen
 
 
-def _studio_stuecke(text: str) -> list[tuple[str, float]]:
-    """Liefert je Sprechstueck (Satz, Stille davor in Sekunden).
+@dataclass(frozen=True)
+class Stueck:
+    """Ein Sprechstueck: der Klartext (er allein zaehlt fuer die Zeitachse und
+    fuer die Untertitel), die Stille davor, und optional eine SSML-Fassung, die
+    statt des Klartexts an die API geht. gewichte verschiebt die Wortzeiten
+    innerhalb des Satzes: ein verlangsamter Token dauert laenger, als seine
+    Zeichenzahl vermuten laesst."""
+    text: str
+    pause: float
+    ssml: str | None = None
+    gewichte: tuple[float, ...] = ()
+
+
+def _zahlen_hervorheben(satz: str) -> tuple[str | None, tuple[float, ...]]:
+    """Umschliesst harte Zahlen mit <prosody rate>. Studio-Stimmen lehnen
+    <emphasis> ab (HTTP 400, am 19.08.2026 gemessen), also ist Verlangsamung
+    der Ersatz - eine langsam gesprochene Zahl hebt sich genauso ab."""
+    treffer = list(ZAHL_HART.finditer(satz))
+    if not treffer:
+        return None, ()
+    teile: list[str] = []
+    pos = 0
+    for m in treffer:
+        teile.append(xml_escape(satz[pos:m.start()]))
+        teile.append(f'<prosody rate="{STUDIO_ZAHL_RATE}">'
+                     f'{xml_escape(m.group())}</prosody>')
+        pos = m.end()
+    teile.append(xml_escape(satz[pos:]))
+
+    faktor = 100 / float(STUDIO_ZAHL_RATE.rstrip("%"))
+    gewichte: list[float] = []
+    lauf = 0
+    for tok in satz.split():
+        start = satz.index(tok, lauf)
+        lauf = start + len(tok)
+        beruehrt = any(m.start() < lauf and start < m.end() for m in treffer)
+        gewichte.append(faktor if beruehrt else 1.0)
+    return "<speak>" + "".join(teile) + "</speak>", tuple(gewichte)
+
+
+def _studio_stuecke(text: str) -> list[Stueck]:
+    """Liefert je Sprechstueck den Klartext, die Stille davor und optional SSML.
 
     Die Pausenlaenge steckt wie im Marken-Pfad im Trenner: drei oder mehr
     Zeilenumbrueche sind eine Kapitelgrenze, zwei eine Absatzgrenze
-    (ton_text setzt sie)."""
+    (ton_text setzt sie).
+
+    Drei Eingriffe in die Prosodie, alle nur dort, wo sie etwas tragen:
+    der erste Satz nach einer Kapitelgrenze laeuft langsamer (der Zuhoerer
+    hat gerade das Thema gewechselt), harte Zahlen laufen langsamer statt
+    betont, und vor dem Schlusssatz eines laengeren Absatzes steht eine
+    laengere Stille."""
     teile = re.split(r"(\n{2,})", text)
+    kapitel_pause = _pause_sekunden(GOOGLE_KAPITEL_PAUSE)
     absaetze = [(teile[0], 0.0)] + [
         (teile[i + 1],
          _pause_sekunden(GOOGLE_KAPITEL_PAUSE if len(teile[i]) > 2
                          else GOOGLE_ABSATZ_PAUSE))
         for i in range(1, len(teile) - 1, 2)]
-    stuecke: list[tuple[str, float]] = []
-    for absatz, pause in absaetze:
-        if not absatz.strip():
-            continue
-        for i, satz in enumerate(_saetze_teilen(absatz)):
-            for j, happen in enumerate(_bytes_kappen(satz)):
+    # Der Trenner steht VOR der Ueberschrift, die Ueberschrift ist also selbst
+    # der Absatz mit der langen Pause. Eine Ueberschrift ist oft ein einziges
+    # Wort ("CRYPTO") - dort traegt die Verlangsamung wenig. Gemeint ist die
+    # Kapiteleroeffnung, also zaehlt der Absatz danach mit.
+    echte = [(a, p) for a, p in absaetze if a.strip()]
+    eroeffnung = set()
+    for k, (_, p) in enumerate(echte):
+        if p >= kapitel_pause:
+            eroeffnung.update((k, k + 1))
+
+    stuecke: list[Stueck] = []
+    for k, (absatz, pause) in enumerate(echte):
+        saetze = _saetze_teilen(absatz)
+        for i, satz in enumerate(saetze):
+            happen = _bytes_kappen(satz)
+            for j, teil in enumerate(happen):
                 if j:
                     vor = 0.0            # gekappter Satz laeuft ohne Bruch weiter
                 elif i:
-                    vor = STUDIO_SATZ_PAUSE
+                    vor = (STUDIO_POINTE_PAUSE
+                           if i == len(saetze) - 1 and len(saetze) >= STUDIO_POINTE_AB
+                           else STUDIO_SATZ_PAUSE)
                 else:
                     vor = pause
-                stuecke.append((happen, vor))
+                # Kapiteleroeffnung: nur der erste Satz, und nur ungekappt -
+                # ein zerlegter Satz waere sonst halb langsam, halb nicht.
+                if i == 0 and j == 0 and len(happen) == 1 and k in eroeffnung:
+                    ssml = (f'<speak><prosody rate="{STUDIO_KAPITEL_RATE}">'
+                            f'{xml_escape(teil)}</prosody></speak>')
+                    stuecke.append(Stueck(teil, vor, ssml))
+                    continue
+                ssml, gewichte = _zahlen_hervorheben(teil)
+                stuecke.append(Stueck(teil, vor, ssml, gewichte))
     return stuecke
 
 
@@ -826,10 +929,11 @@ def _wav_nutzlast(roh: bytes) -> bytes:
     raise RuntimeError("LINEAR16-Antwort ohne data-Chunk")
 
 
-def _studio_pcm(satz: str, stimme: str, schluessel: str) -> bytes:
+def _studio_pcm(stueck: Stueck, stimme: str, schluessel: str) -> bytes:
     sprache = "-".join(stimme.split("-")[:2])
+    eingabe = ({"ssml": stueck.ssml} if stueck.ssml else {"text": stueck.text})
     body = json.dumps({
-        "input": {"text": satz},
+        "input": eingabe,
         "voice": {"languageCode": sprache, "name": stimme},
         "audioConfig": {"audioEncoding": "LINEAR16",
                         "sampleRateHertz": STUDIO_SR,
@@ -839,12 +943,19 @@ def _studio_pcm(satz: str, stimme: str, schluessel: str) -> bytes:
         _google_anfrage(body, schluessel)["audioContent"]))
 
 
-def _worte_verteilen(satz: str, start: float, ende: float) -> list[Wort]:
-    """Verteilt die gemessene Satzdauer nach Zeichenlaenge auf die Tokens."""
+def _worte_verteilen(satz: str, start: float, ende: float,
+                     faktoren: tuple[float, ...] = ()) -> list[Wort]:
+    """Verteilt die gemessene Satzdauer nach Zeichenlaenge auf die Tokens.
+
+    faktoren streckt einzelne Tokens: wurde eine Zahl per <prosody rate>
+    verlangsamt, braucht sie mehr Zeit, als ihre Zeichenzahl hergibt. Ohne
+    diese Korrektur wandert der Fehler in die Untertitel des Satzes."""
     tokens = satz.split()
     if not tokens:
         return []
     gewicht = [len(t) + 1 for t in tokens]
+    if len(faktoren) == len(tokens):
+        gewicht = [g * f for g, f in zip(gewicht, faktoren)]
     gesamt = sum(gewicht)
     worte: list[Wort] = []
     lauf = start
@@ -871,13 +982,14 @@ def studio_tts_mit_worten(text: str, ziel_mp3: Path, stimme: str) -> list[Wort]:
     puffer = bytearray()
     worte: list[Wort] = []
     zeichen = 0
-    for nr, (satz, pause) in enumerate(stuecke, 1):
-        puffer += b"\x00\x00" * round(pause * STUDIO_SR)
+    for nr, st in enumerate(stuecke, 1):
+        puffer += b"\x00\x00" * round(st.pause * STUDIO_SR)
         start = len(puffer) / 2 / STUDIO_SR
-        puffer += _studio_pcm(satz, stimme, schluessel)
+        puffer += _studio_pcm(st, stimme, schluessel)
         ende = len(puffer) / 2 / STUDIO_SR
-        worte.extend(_worte_verteilen(satz, start, ende))
-        zeichen += len(satz)
+        worte.extend(_worte_verteilen(st.text, start, ende, st.gewichte))
+        # Abgerechnet wird, was gesendet wurde - bei SSML also samt Tags.
+        zeichen += len(st.ssml or st.text)
         if nr % 15 == 0 or nr == len(stuecke):
             print(f"  Studio TTS {nr}/{len(stuecke)} Saetze, {ende:.1f}s, "
                   f"{zeichen} abgerechnete Zeichen")

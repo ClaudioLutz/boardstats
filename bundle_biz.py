@@ -108,6 +108,31 @@ def substanz(text: str) -> float:
     return s
 
 
+def id_verteilung(posts: list[dict]) -> tuple[int, float, int]:
+    """Wie viele Poster-IDs, wie viele Posts je ID, welchen Anteil haelt die
+    lauteste. Die 4chan-API liefert kein unique_ips (am 19.08.2026 gegen die
+    Live-API geprueft: das Feld fehlt am OP), aber /biz/ vergibt Poster-IDs,
+    und die tragen dieselbe Information - mit derselben Einschraenkung, dass
+    sie nur eine Obergrenze der Personen sind.
+
+    Die beiden Verhaeltniszahlen sind auch dann belastbar, wenn die absolute
+    Zahl es nicht ist: gemessen am 19.08.2026 kamen die 242 Posts von /BBBYQ/
+    aus 37 IDs (6.5 je ID), die 107 Posts von "Bitcoin is 17 years old" aus
+    83 IDs (1.3) - ein kleiner lauter Kreis gegen ein breites Gespraech. Bei
+    "8 years day trading" stammten 44 % aller Posts von einer einzigen ID."""
+    zaehler: defaultdict[str, int] = defaultdict(int)
+    for p in posts:
+        pid = p.get("id")
+        if pid:
+            zaehler[pid] += 1
+    if not zaehler:
+        return 0, 0.0, 0
+    gesamt = sum(zaehler.values())
+    return (len(zaehler),
+            round(gesamt / len(zaehler), 1),
+            round(100 * max(zaehler.values()) / gesamt))
+
+
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", s.lower())
 
@@ -269,12 +294,15 @@ def baue_buendel(thread_no, posts, rollen, jetzt, seit_post=0) -> tuple[str, dic
     alter_h = round((jetzt - min(zeiten)) / 3600, 1) if zeiten else 0.0
     letzte_h = sum(1 for z in zeiten if z >= jetzt - 3600)
     neue_posts = sum(1 for a in auswahl if a["no"] > seit_post)
+    beteiligte, je_id, lauteste = id_verteilung(posts)
 
     kopf = [
         f"THREAD {thread_no} - {sub}",
         f"URL: https://boards.4chan.org/biz/thread/{thread_no}",
         f"Posts insgesamt: {len(posts)} | Thread-Alter: {alter_h} h | "
         f"Posts in der letzten Stunde: {letzte_h}",
+        f"Poster-IDs: {beteiligte} | Posts je ID: {je_id} | "
+        f"lauteste ID: {lauteste}% aller Posts",
         "Ausgewaehlt weil: " + "; ".join(rollen.get(thread_no, ["inhaltlich dichte Posts"])),
     ]
     if delta_modus:
@@ -319,6 +347,9 @@ def baue_buendel(thread_no, posts, rollen, jetzt, seit_post=0) -> tuple[str, dic
         "posts_im_buendel": len(auswahl),
         "alter_h": alter_h,
         "posts_letzte_stunde": letzte_h,
+        "beteiligte": beteiligte,
+        "posts_je_id": je_id,
+        "lauteste_id_anteil": lauteste,
         "zeichen": len(inhalt),
         "gekuerzt": gekuerzt,
         "rollen": rollen.get(thread_no, ["inhaltlich dichte Posts"]),
@@ -426,6 +457,7 @@ def main() -> int:
             # Nichts Neues: der vorhandene Extrakt gilt unveraendert weiter.
             # Genau dieser Fall trat gemessen bei einem 48-KB-Thread mit 0.0 KB
             # Delta auf, der trotzdem komplett durchs Modell lief.
+            u_bet, u_je_id, u_laut = id_verteilung(posts)
             manifest["buendel"].append({
                 "thread": t,
                 "betreff": betreff(posts),
@@ -433,6 +465,9 @@ def main() -> int:
                 "posts_gesamt": len(posts),
                 "alter_h": round((jetzt - min(p.get("time", jetzt) for p in posts)) / 3600, 1),
                 "posts_letzte_stunde": 0,
+                "beteiligte": u_bet,
+                "posts_je_id": u_je_id,
+                "lauteste_id_anteil": u_laut,
                 "rollen": rollen.get(t, ["inhaltlich dichte Posts"]),
                 "modus": "unveraendert",
                 "neue_posts": 0,

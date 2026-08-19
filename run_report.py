@@ -1799,6 +1799,9 @@ Source: {vor_url}
             f"URL: {m.get('url', '')}",
             (f"Posts: {m.get('posts_gesamt')} | age: {m.get('alter_h')} h | "
              f"last hour: {m.get('posts_letzte_stunde')} | "
+             f"poster IDs: {m.get('beteiligte', '?')} "
+             f"({m.get('posts_je_id', '?')} posts each, loudest "
+             f"{m.get('lauteste_id_anteil', '?')} %) | "
              f"selected because: {'; '.join(m.get('rollen', []))}"),
             f"Extract status: {hinweis}",
             "=" * 74,
@@ -1915,7 +1918,12 @@ Rules:
 10. At the end of each topic, briefly judge reliability whenever the
     extracts mention signs of self-interest or promotion.
 11. Poster IDs are per-thread and can be manipulated: treat them as an
-    upper bound, make no statements about real head counts.
+    upper bound, make no statements about real head counts. The two ratios
+    in the thread header survive that caveat and are worth saying out loud
+    where they carry the point: "posts each" tells a broad conversation
+    (around 1.3) from a small loud circle (6 and up), and a loudest share
+    above roughly 25 % means one voice carried the thread. Name that when
+    it changes how the claim should be read - never as a bare statistic.
 12. Write NO glossary: it is generated automatically from the extracts and
     appended after you. You may use jargon in the report without
     explaining it. ONE exception, and only it: a board phrase you quote
