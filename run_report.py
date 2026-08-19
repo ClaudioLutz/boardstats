@@ -72,6 +72,10 @@ MIN_EXTRAKTE = 0.6      # Anteil, ab dem die Synthese als vollstaendig gilt
 # Starthypothese vom 08.08.2026, bei Bedarf per A/B-Vergleich nachziehen.
 NEUAUFBAU_NACH = 5      # so oft wird ein Extrakt fortgeschrieben, dann neu
 NEUAUFBAU_ANTEIL = 0.5  # kumulierte neue Posts im Verhaeltnis zur Voll-Basis
+# Ab so vielen Posts gilt die Substanz-Dichte eines Threads als aussagekraeftig.
+# Darunter schlaegt ein einzelner zahlenreicher Post voll durch: gemessen am
+# 19.08.2026 fuehrten Threads mit 1, 5 und 11 Posts die Dichte-Rangliste an.
+MIN_POSTS_DICHTE = 20
 CACHE_TAGE = 10         # Extrakte laenger nicht gesehener Threads wegraeumen
 LAEUFE_BEHALTEN = 5
 
@@ -400,10 +404,38 @@ def sandwich(extrakte: list[Path], meta_nach_thread: dict) -> list[Path]:
     die Mitte faellt um 20-30 Punkte ab; Position 1 praegt die Synthese am
     staerksten). Bisher war die Reihenfolge alphabetisch nach Thread-Nummer,
     also Zufall. Jetzt: der substanzreichste Thread zuerst, der zweitstaerkste
-    als letzter, die schwaechsten in die Mitte."""
-    def score(p: Path) -> float:
+    als letzter, die schwaechsten in die Mitte.
+
+    Die Rangfolge kommt aus zwei Ranglisten, weil eine allein systematisch
+    schiefliegt: substanz_summe ist eine Summe ueber alle Posts und damit
+    praktisch ein Mass fuer Threadlaenge. Gemessen am 19.08.2026 gingen alle
+    vier privilegierten Plaetze an die vier laengsten Threads (298 bis 410
+    Posts), waehrend die drei pro Post dichtesten (0.86/0.84/0.67 gegen 0.44
+    des Erstplatzierten) auf den Plaetzen 5, 10 und 11 lagen - genau in der
+    Mitte, die laut derselben Studie wegfaellt. Ein kompakter Thread mit hoher
+    Dichte hatte so keine Chance auf einen Randplatz. Deshalb wird abwechselnd
+    aus der Summen- und aus der Dichte-Rangliste gezogen."""
+    def summe(p: Path) -> float:
         return float(meta_nach_thread.get(p.stem, {}).get("substanz_summe") or 0.0)
-    sortiert = sorted(extrakte, key=lambda p: (-score(p), p.stem))
+
+    def posts(p: Path) -> int:
+        return int(meta_nach_thread.get(p.stem, {}).get("posts_gesamt") or 0)
+
+    def dichte(p: Path) -> float:
+        # Unterhalb der Schwelle ist die Dichte Rauschen: ein einzelner Post
+        # mit einem Link und drei Zahlen ergaebe sonst den Spitzenwert.
+        n = posts(p)
+        return summe(p) / n if n >= MIN_POSTS_DICHTE else 0.0
+
+    nach_summe = sorted(extrakte, key=lambda p: (-summe(p), p.stem))
+    nach_dichte = sorted(extrakte, key=lambda p: (-dichte(p), p.stem))
+    sortiert: list[Path] = []
+    gesehen: set[str] = set()
+    for a, b in zip(nach_summe, nach_dichte):
+        for p in (a, b):
+            if p.stem not in gesehen:
+                gesehen.add(p.stem)
+                sortiert.append(p)
     vorne: list[Path] = []
     hinten: list[Path] = []
     for i, e in enumerate(sortiert):

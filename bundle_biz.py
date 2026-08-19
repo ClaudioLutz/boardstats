@@ -32,6 +32,7 @@ Ausgabe: bundles/<thread>.txt je Thread + manifest.json auf stdout.
 import argparse
 import gzip
 import html
+import itertools
 import json
 import logging
 import re
@@ -49,6 +50,7 @@ LOKAL = ZoneInfo("Europe/Zurich")
 MAX_ZEICHEN = 40_000     # Obergrenze pro Buendel; groesste Threads haben ~61 KB
 FENSTER_AKTUELL_S = 5400  # "gerade eben" - diese Posts bleiben immer drin
 SUBSTANZ_MIN = 4.0        # ab hier gilt ein Post als inhaltlich dicht
+MIN_POSTS_DICHTE = 20     # darunter ist die Dichte je Post statistisch Rauschen
 
 # --- Delta-Modus ---
 # Unter dieser Threadgroesse lohnt der Cache nicht: gemessen war der Extrakt
@@ -358,17 +360,31 @@ def main() -> int:
 
     # A + B: alles, was der Report als auffaellig meldet - ohne Schwelle
     gesetzt = [t for t in rollen if t in threads]
-    # C: nach Substanzdichte auffuellen
-    dichte = []
+    # C: nach Substanz auffuellen. Zwei Ranglisten, abwechselnd gezogen: die
+    # Summe belohnt vor allem Laenge (ein 400-Post-General hat immer mehr
+    # dichte Posts als ein knapper Thread, der dafuer fast nur aus solchen
+    # besteht), die Dichte je Post belohnt Kompaktheit. Nur eine von beiden
+    # laesst systematisch eine ganze Sorte Thread draussen.
+    kandidaten = []
     for t, posts in threads.items():
         if t in rollen:
             continue
-        s = sum(1 for p in posts if substanz(plain(p.get("com") or "")) >= SUBSTANZ_MIN)
-        summe = sum(substanz(plain(p.get("com") or "")) for p in posts)
+        werte = [substanz(plain(p.get("com") or "")) for p in posts]
+        s = sum(1 for x in werte if x >= SUBSTANZ_MIN)
         if s:
-            dichte.append((s, summe, t))
-    dichte.sort(reverse=True)
-    auffuellen = [t for _, _, t in dichte[: max(0, args.top - len(gesetzt))]]
+            kandidaten.append((s, sum(werte), t, len(posts)))
+    nach_summe = sorted(kandidaten, key=lambda k: (k[0], k[1]), reverse=True)
+    # Unter MIN_POSTS_DICHTE ist die Dichte Rauschen - ein einzelner Post mit
+    # Link und drei Zahlen ergaebe sonst den Spitzenwert der Rangliste.
+    nach_dichte = sorted(
+        (k for k in kandidaten if k[3] >= MIN_POSTS_DICHTE),
+        key=lambda k: k[1] / k[3], reverse=True)
+    plaetze = max(0, args.top - len(gesetzt))
+    auffuellen: list[int] = []
+    for a, b in itertools.zip_longest(nach_summe, nach_dichte):
+        for k in (a, b):
+            if k and k[2] not in auffuellen and len(auffuellen) < plaetze:
+                auffuellen.append(k[2])
     gewaehlt = gesetzt + auffuellen
 
     if BUNDLES.exists():
