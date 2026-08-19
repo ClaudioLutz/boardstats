@@ -409,32 +409,69 @@ def fokus_punkt(text: str, lage: str = "left",
     return bild, x + FOKUS_RAND, oben + 24
 
 
-def detail_karte(text: str, detail: list[str], lage: str = "left",
-                 oben_min: int = STAPEL_OBEN_MIN) -> Image.Image | None:
-    """Die Stichwort-Fragmente zum gerade gesprochenen Punkt, als eigener
-    Kasten direkt unter dem Fokus-Punkt.
+def detail_teile(text: str, detail: list[str], lage: str = "left",
+                 oben_min: int = STAPEL_OBEN_MIN
+                 ) -> tuple[list[Image.Image], list[Image.Image]] | None:
+    """Der Detail-Kasten in Aufbaustufen: je Fragment ein Kasten und die
+    Zeile, die dann hinzukommt.
 
-    Eigenes Overlay statt mitgezeichnet, weil der Fokus-Punkt fliegt und
-    das Detail nicht: es blendet aus, bevor der Punkt in die Themen-Karte
-    parkt. `text` ist der Fokus-Punkt selbst - er bestimmt mit, wo der
-    Stapel sitzt. None, wenn nichts zu zeigen ist."""
-    bild = _leer()
-    d = ImageDraw.Draw(bild)
-    x, oben, _, _, h_f, bloecke, f, h_d = _stapel(d, text, detail, lage,
-                                                  oben_min)
+    Die Fragmente erscheinen nicht gemeinsam, sondern jedes dann, wenn sein
+    Inhalt gesprochen wird (video_report._detail_zeiten). Der Kasten waechst
+    dabei mit: ein Kasten in Endhoehe stuende zwei Drittel leer da und laese
+    sich als Darstellungsfehler (Render-Probe 19.08.2026). Die Stufen loesen
+    einander hart ab statt ineinander zu blenden - zwei Kaesten uebereinander
+    ergaeben zweimal KARTE_ALPHA, einen sichtbaren Dunkel-Puls. Der Sprung
+    ist nur die Unterkante; die neue Textzeile blendet weich auf.
+
+    Nach OBEN waechst der Kasten nie: seine Oberkante und der Fokus-Punkt
+    darueber stehen fest, deshalb rechnet die Geometrie IMMER mit der vollen
+    Fragmentliste - auch fuer die Kappung in _stapel. None, wenn nichts zu
+    zeigen ist."""
+    mass = ImageDraw.Draw(_leer())
+    x, oben, _, _, h_f, bloecke, f, _ = _stapel(mass, text, detail, lage,
+                                                oben_min)
     if not bloecke:
         return None
     d_oben = oben + h_f + DETAIL_LUECKE
-    d.rounded_rectangle([x, d_oben, x + FOKUS_BREITE, d_oben + h_d],
-                        radius=12, fill=(0, 0, 0, KARTE_ALPHA))
+    kaesten: list[Image.Image] = []
+    zeilen_bilder: list[Image.Image] = []
     y = d_oben + 18
-    for zeilen in bloecke:
-        d.rectangle([x + DETAIL_RAND, y + 14, x + DETAIL_RAND + 12, y + 16],
-                    fill=AKZENT)
+    for i, zeilen in enumerate(bloecke):
+        kasten = _leer()
+        dk = ImageDraw.Draw(kasten)
+        dk.rounded_rectangle(
+            [x, d_oben, x + FOKUS_BREITE,
+             d_oben + _detail_hoehe(bloecke[:i + 1])],
+            radius=12, fill=(0, 0, 0, KARTE_ALPHA))
+        kaesten.append(kasten)
+        bild = _leer()
+        dz = ImageDraw.Draw(bild)
+        dz.rectangle([x + DETAIL_RAND, y + 14, x + DETAIL_RAND + 12, y + 16],
+                     fill=AKZENT)
         for j, z in enumerate(zeilen):
-            d.text((x + DETAIL_RAND + DETAIL_TEXT_X, y + j * DETAIL_ZEILE), z,
-                   font=f, fill=KARTE_ALT)
+            dz.text((x + DETAIL_RAND + DETAIL_TEXT_X, y + j * DETAIL_ZEILE), z,
+                    font=f, fill=KARTE_ALT)
+        zeilen_bilder.append(bild)
         y += len(zeilen) * DETAIL_ZEILE + DETAIL_ABSTAND
+    return kaesten, zeilen_bilder
+
+
+def detail_karte(text: str, detail: list[str], lage: str = "left",
+                 oben_min: int = STAPEL_OBEN_MIN) -> Image.Image | None:
+    """Der fertige Detail-Kasten mit allen Fragmenten - das Bild, das am
+    Ende der Standzeit steht.
+
+    Im Video wird er aus seinen Teilen aufgebaut (detail_teile); diese
+    Funktion setzt die letzte Stufe mit allen Zeilen zusammen und ist damit
+    die Vorlage, gegen die sich die Teile pruefen lassen. None, wenn nichts
+    zu zeigen ist."""
+    teile = detail_teile(text, detail, lage, oben_min)
+    if teile is None:
+        return None
+    kaesten, zeilen_bilder = teile
+    bild = kaesten[-1]
+    for zeile in zeilen_bilder:
+        bild.alpha_composite(zeile)
     return bild
 
 
