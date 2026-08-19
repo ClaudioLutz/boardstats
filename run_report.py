@@ -470,6 +470,23 @@ def abdeckung_trennen(text: str) -> tuple[str, str]:
     return text, ""
 
 
+def abdeckung_pruefen(abdeckung: str,
+                      erwartet: list[str]) -> tuple[list[str], list[str]]:
+    """Vergleicht die Thread-Nummern im COVERAGE-Block mit denen, die der
+    Synthese tatsaechlich vorlagen. Regel 13 des Prompts verlangt jede Nummer
+    genau einmal - ohne Gegenprobe faellt es aber nicht auf, wenn ein Thread
+    stillschweigend verschwindet, und genau das ist der Fall, den der Block
+    sichtbar machen soll. Liefert (fehlend, unbekannt)."""
+    genannt = set()
+    for z in abdeckung.splitlines():
+        kopf = z.strip().lstrip("-* ").split(":", 1)[0].strip()
+        if kopf.isdigit():
+            genannt.add(kopf)
+    fehlend = [t for t in erwartet if t not in genannt]
+    unbekannt = sorted(genannt - set(erwartet))
+    return fehlend, unbekannt
+
+
 # Schoene Ueberschriften fuer die oeffentliche Markdown-Fassung. Die rohen
 # Abschnittsnamen (Vertrag mit den Extraktions-Prompts) bleiben in Grossschrift,
 # damit ABSCHNITTE weiterhin fuer beide Zwecke passt.
@@ -1706,7 +1723,8 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
     git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"], f"Bericht vom {datum}")
 
 
-def stufe3(manifest: dict, eDir: Path, arbeit: Path, datum: str) -> str:
+def stufe3(manifest: dict, eDir: Path, arbeit: Path,
+           datum: str) -> tuple[str, list[str]]:
     meta_nach_thread = {str(b["thread"]): b for b in manifest["buendel"]}
     extrakte = sandwich(sorted(eDir.glob("*.txt")), meta_nach_thread)
     anteil = len(extrakte) / max(1, len(manifest["buendel"]))
@@ -1875,6 +1893,12 @@ Rules:
 13. COMPLETENESS: every thread of the input is either used in the report
     or deliberately omitted - nothing disappears silently. You account for
     this in the COVERAGE block (see output).
+14. TOPIC FIDELITY: when you use a thread, the story you tell about it is
+    the one its extract names under Topic. A side remark from that thread
+    may of course support another topic - but then the thread's own Topic
+    is not covered, and you record it in the COVERAGE block as
+    "partly - <what you dropped>". Never present a marginal aspect as if
+    it were what the thread was about.
 
 Publication happens outside this call. Only output the report, send
 nothing and create no files.
@@ -1882,10 +1906,13 @@ nothing and create no files.
 IMPORTANT about the output, in exactly this order:
 1. The complete report.
 2. One line "COVERAGE:", then exactly one line per thread of the input:
-      <thread number>: used
+      <thread number>: used - <the extract's Topic in at most 8 words>
+   or
+      <thread number>: partly - <the Topic, and what you dropped from it>
    or
       <thread number>: omitted - <reason in a few words>
-   Every thread number of the input appears exactly once. This block is
+   Every thread number of the input appears exactly once, written as a
+   bare number at the start of the line. This block is
    NOT part of the report and does not count toward its word count.
 3. As the very last line exactly one status line:
    STATUS: DONE
@@ -1896,7 +1923,10 @@ The report itself contains no meta remarks about these instructions.
 
     log.info("Stufe 3: Synthese mit Opus (%d Extrakte, %d KB)",
              len(extrakte), len(eingabe) // 1024)
-    return claude_ruf(prompt, eingabe, "opus", TIMEOUT_SYNTH)
+    # Die Thread-Nummern der Eingabe wandern mit hinaus: nur gegen sie laesst
+    # sich der COVERAGE-Block gegenpruefen. Das Manifest taugt dafuer nicht -
+    # es kann Buendel enthalten, zu denen gar kein Extrakt entstand.
+    return claude_ruf(prompt, eingabe, "opus", TIMEOUT_SYNTH), [e.stem for e in extrakte]
 
 
 def main() -> int:
@@ -1971,7 +2001,7 @@ def main() -> int:
 
     t2 = time.time()
     try:
-        out = stufe3(manifest, eDir, arbeit, datum)
+        out, eingabe_threads = stufe3(manifest, eDir, arbeit, datum)
     except subprocess.TimeoutExpired:
         log.error("Synthese ueberschritt %ds - kein Bericht", TIMEOUT_SYNTH)
         return 1
@@ -2000,9 +2030,19 @@ def main() -> int:
         (arbeit / "abdeckung.txt").write_text(abdeckung + "\n", encoding="utf-8")
         ausgelassen = [z.strip() for z in abdeckung.splitlines()
                        if "omitted" in z.lower() or "ausgelassen" in z.lower()]
-        log.info("Abdeckung: %d Threads ausgelassen", len(ausgelassen))
-        for z in ausgelassen:
+        teilweise = [z.strip() for z in abdeckung.splitlines()
+                     if ": partly" in z.lower() or ": teilweise" in z.lower()]
+        log.info("Abdeckung: %d Threads ausgelassen, %d nur teilweise",
+                 len(ausgelassen), len(teilweise))
+        for z in ausgelassen + teilweise:
             log.info("  %s", z)
+        fehlend, unbekannt = abdeckung_pruefen(abdeckung, eingabe_threads)
+        if fehlend:
+            log.warning("COVERAGE nennt %d von %d Eingabe-Threads nicht: %s",
+                        len(fehlend), len(eingabe_threads), ", ".join(fehlend))
+        if unbekannt:
+            log.warning("COVERAGE nennt Threads, die nicht in der Eingabe "
+                        "waren: %s", ", ".join(unbekannt))
     else:
         log.warning("kein COVERAGE-Block in der Synthese-Ausgabe")
 
