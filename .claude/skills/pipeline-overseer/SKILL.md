@@ -161,6 +161,16 @@ End-to-End-Test (inkl. Clip-Zuordnung) muss der Lauf **ohne**
 der Extrakte/Berichte ist unkritisch, darf jederzeit überschrieben werden -
 kein Rückfragebedarf mehr dafür).
 
+Seit 19.08.2026 gibt es dafür ein echtes, einheitliches Dry-Run-Flag:
+`--trockenlauf`. `run_report.py --trockenlauf` erzeugt alles wie im
+Normalbetrieb (Extrakte, Bericht, Titel, `folien.json`, Motive,
+Hintergründe, Clip-Ernte) und überspringt nur `git add/commit/push` in
+`git_veroeffentlichen()` (geloggt als `[Trockenlauf] würde committen`).
+`video_report.py --trockenlauf` entspricht `--nur-video` (kein Upload,
+kein Marker); `klip_katalog.py --trockenlauf` loggt die fällige
+Retention, löscht aber nichts. `--kein-github` behält sein bisheriges
+Verhalten (ganze Markdown-Stufe aus) und hat bei Kombination Vorrang.
+
 ## Bekannte Betriebswerte (Referenz, bei Bedarf hier aktualisieren)
 
 - Google Studio-TTS-Kontingent: 1'000'000 Zeichen/Monat, geteilt zwischen

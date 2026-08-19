@@ -663,11 +663,17 @@ def markdown_index_aktualisieren() -> None:
     (EXTRAKTE / "README.md").write_text("\n".join(zeilen) + "\n", encoding="utf-8")
 
 
-def git_veroeffentlichen(pfade: list[Path], nachricht: str) -> None:
+def git_veroeffentlichen(pfade: list[Path], nachricht: str,
+                         trockenlauf: bool = False) -> None:
     """Committet und pusht nur die genannten Pfade. Ein Fehlschlag (kein
     Git-Remote, keine Anmeldung, kein Netz) darf den Bericht nicht zu Fall
-    bringen - er wird geloggt, der Lauf laeuft weiter."""
+    bringen - er wird geloggt, der Lauf laeuft weiter. Mit trockenlauf wird
+    das Repo gar nicht angefasst (auch kein git add), nur geloggt."""
     rel = [str(p.relative_to(BASE)) for p in pfade]
+    if trockenlauf:
+        log.info("[Trockenlauf] wuerde committen und pushen: '%s' (%s)",
+                 nachricht, ", ".join(rel))
+        return
     try:
         subprocess.run(["git", "-C", str(BASE), "add", *rel],
                        check=True, capture_output=True, text=True)
@@ -1792,7 +1798,7 @@ def hintergruende_waehlen(manifest: dict, datum: str) -> int:
 
 
 def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
-                             manifest: dict) -> None:
+                             manifest: dict, trockenlauf: bool = False) -> None:
     """Legt den fertigen Bericht in denselben Tagesordner wie die Extrakte
     und veroeffentlicht ihn. Getrennt von markdown_tag_schreiben(), weil der
     Bericht erst nach der Synthese existiert, die Extrakte aber schon vorher
@@ -1860,7 +1866,8 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
     (tag_dir / "README.md").write_text(
         _tag_readme_bauen(manifest, datum, tag_dir), encoding="utf-8")
     markdown_index_aktualisieren()
-    git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"], f"Bericht vom {datum}")
+    git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"],
+                         f"Bericht vom {datum}", trockenlauf)
 
 
 def stufe3(manifest: dict, eDir: Path, arbeit: Path,
@@ -2104,6 +2111,11 @@ def main() -> int:
                     help="alle Threads voll lesen (Neuaufbau des Caches)")
     ap.add_argument("--kein-github", action="store_true",
                     help="Extrakte nicht als Markdown ablegen und veroeffentlichen")
+    ap.add_argument("--trockenlauf", action="store_true",
+                    help="alles normal erzeugen (Extrakte, Bericht, Titel, "
+                         "Drehbuch, Motive, Clips), nur git add/commit/push "
+                         "ueberspringen; --kein-github hat Vorrang und "
+                         "unterdrueckt weiterhin die ganze Markdown-Stufe")
     args = ap.parse_args()
 
     setup_logging()
@@ -2159,7 +2171,7 @@ def main() -> int:
         if tag_dir is not None:
             markdown_index_aktualisieren()
             git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"],
-                                 f"Extrakte vom {datum}")
+                                 f"Extrakte vom {datum}", args.trockenlauf)
 
     t2 = time.time()
     try:
@@ -2216,7 +2228,8 @@ def main() -> int:
              time.time() - t2, ziel)
 
     if not args.kein_github:
-        bericht_veroeffentlichen(bericht, datum, tag_dir, manifest)
+        bericht_veroeffentlichen(bericht, datum, tag_dir, manifest,
+                                 args.trockenlauf)
 
     log.info("=== %s ===", status[-1].strip())
     # Eine ERROR-Statuszeile muss den Lauf als Fehler beenden, sonst faellt

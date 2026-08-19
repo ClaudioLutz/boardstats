@@ -3811,6 +3811,9 @@ def main() -> None:
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="en")
     ap.add_argument("--nur-video", action="store_true",
                     help="Video nur bauen, ohne Upload und ohne Marker (Test)")
+    ap.add_argument("--trockenlauf", action="store_true",
+                    help="einheitliches Dry-Run-Flag der Pipeline; hier "
+                         "gleichbedeutend mit --nur-video")
     ap.add_argument("--trotz-altdaten", action="store_true",
                     help=f"auch hochladen, wenn der Datenstand des Berichts "
                          f"aelter als {DATENSTAND_MAX_H:.0f} h ist")
@@ -3822,7 +3825,7 @@ def main() -> None:
                          "bauen (impliziert --nur-video, Test); nutzt "
                          "weiter volle Aufloesung, nur weniger Szenen")
     args = ap.parse_args()
-    if args.vorschau is not None:
+    if args.vorschau is not None or args.trockenlauf:
         args.nur_video = True
     if args.bett_bauen:
         # Bewusst ein eigener Aufruf und nicht "baue es, wenn die Datei

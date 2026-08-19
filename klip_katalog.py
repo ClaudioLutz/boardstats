@@ -391,7 +391,8 @@ def klip_datei(md5: str, katalog: dict, ziel_dir: Path) -> Path | None:
 
 
 def klip_bereinigen(clip_alter_stunden: float = 48.0,
-                    abgelehnt_alter_tage: float = 7.0) -> int:
+                    abgelehnt_alter_tage: float = 7.0,
+                    trockenlauf: bool = False) -> int:
     """Platzverbrauch der Clip-Ernte begrenzen (hp-ubuntu war am 17.08.2026
     zu 83% belegt): freigegebene Rohclips nach Verwendung oder
     clip_alter_stunden loeschen (der Katalog-Eintrag bleibt, siehe
@@ -399,7 +400,8 @@ def klip_bereinigen(clip_alter_stunden: float = 48.0,
     (Gegenpruefungsfenster, analog den Hintergrundbildern). Anders als
     motive.json wird katalog.json nie komplett neu geschrieben - ohne diese
     Bereinigung wuerden die Tagesordner unter arbeit/clips/ unbegrenzt
-    wachsen."""
+    wachsen. Mit trockenlauf wird nichts geloescht, nur geloggt, was faellig
+    waere; katalog.json bleibt in beiden Faellen unberuehrt."""
     if not KLIP_DIR.exists():
         return 0
     katalog = katalog_laden()
@@ -415,19 +417,42 @@ def klip_bereinigen(clip_alter_stunden: float = 48.0,
                 continue
             alter_s = jetzt - pfad.stat().st_mtime
             if pfad.name in verwendet or alter_s > clip_alter_stunden * 3600:
-                pfad.unlink()
+                if trockenlauf:
+                    rr.log.info("[Trockenlauf] wuerde Rohclip loeschen: %s",
+                                pfad.relative_to(KLIP_DIR))
+                else:
+                    pfad.unlink()
                 geloescht += 1
         ablage = tag_dir / "abgelehnt"
         if ablage.is_dir():
             for pfad in ablage.glob("*"):
                 if (jetzt - pfad.stat().st_mtime) > abgelehnt_alter_tage * 86400:
-                    pfad.unlink()
+                    if trockenlauf:
+                        rr.log.info("[Trockenlauf] wuerde abgelehnten Clip "
+                                    "loeschen: %s", pfad.relative_to(KLIP_DIR))
+                    else:
+                        pfad.unlink()
                     geloescht += 1
     return geloescht
 
 
 if __name__ == "__main__":
+    import argparse
+    import logging
     import sys
-    geloescht = klip_bereinigen()
-    print(f"Clip-Bereinigung: {geloescht} Datei(en) geloescht")
+    # Ohne Handler blieben die [Trockenlauf]-Zeilen (rr.log.info) im
+    # Standalone-Aufruf (video.sh) unsichtbar - schlicht auf stderr geben,
+    # ohne die Log-Datei von run_report anzufassen.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--trockenlauf", action="store_true",
+                    help="einheitliches Dry-Run-Flag der Pipeline: nichts "
+                         "loeschen, nur loggen, was faellig waere")
+    args = ap.parse_args()
+    geloescht = klip_bereinigen(trockenlauf=args.trockenlauf)
+    if args.trockenlauf:
+        print(f"Clip-Bereinigung (Trockenlauf): {geloescht} Datei(en) "
+              f"waeren faellig, nichts geloescht")
+    else:
+        print(f"Clip-Bereinigung: {geloescht} Datei(en) geloescht")
     sys.exit(0)
