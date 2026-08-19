@@ -221,6 +221,32 @@ Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
    Abschnittsgrenze gekappt, wobei die Thread-Links ihr Budget vorab
    bekommen. Auf das eigene Repo wird dort nicht verlinkt.
 
+## Erfolgskontrolle (YouTube Analytics)
+
+`analytics_bericht.py` fragt die YouTube Analytics API v2 ab und beantwortet
+die Frage, die sonst Gefühlssache bleibt: wirkt eine Änderung am Video? Drei
+Auswertungen — Tageszahlen (Aufrufe, Wiedergabeminuten, Ø gesehener Anteil,
+Abos), Video-Rangliste, und die **Abbruchkurve** je Video
+(`audienceWatchRatio` über `elapsedVideoTimeRatio`, 100 Stützpunkte). Weil die
+Kapitel-Startzeiten aus der Vertonung bekannt sind, lässt sich jeder Absprung
+einem Kapitel oder dem Vorspann zuordnen.
+
+Nötig ist der Scope `yt-analytics.readonly` (nur lesend, in
+`youtube_auth.SCOPE`); nach dessen Aufnahme am 19.08.2026 wurde
+`youtube_auth_setup.py` einmalig neu durchlaufen, sonst trüge der gespeicherte
+`refresh_token` nur die alten Scopes. Die YouTube Analytics API muss im selben
+Cloud-Projekt aktiviert sein wie der OAuth-Client (`boardstats-youtube`, nicht
+das TTS-Projekt). Der Zeitraum endet bewusst zwei Tage vor heute: die Daten
+laufen nach, und der letzte Tag sähe sonst wie ein Einbruch aus. Bewusst ohne
+die Marker-Dateien der Tagesläufe — die Video-Liste kommt aus der
+Analytics-API selbst, Titel und Datum aus der Data API, damit die Auswertung
+auf jedem Rechner läuft.
+
+Ein eigener Cron-Eintrag (21:30, getrennt von Crawl/Bericht/Video) legt den
+Stand täglich unter `arbeit/analytics/<datum>.json` ab, also ausserhalb des
+Repos. **Nicht** per API verfügbar sind Thumbnail-Impressionen und die
+Klickrate; die zeigt nur YouTube Studio in der Oberfläche.
+
 ## Öffentliches Archiv
 
 Unter [`extrakte/<datum>/`](extrakte/) liegt pro Tag sowohl der
@@ -253,6 +279,7 @@ offenen Fragen je Thread.
 | `thumbnail.py` | Vorschaubild: Serienrahmen + Tages-Schlagwort + Motiv |
 | `youtube_auth.py` | YouTube-OAuth-Refresh + Resumable-Upload |
 | `youtube_auth_setup.py` | Einmaliges interaktives YouTube-OAuth-Setup |
+| `analytics_bericht.py` | YouTube-Analytics: Tageszahlen, Video-Rangliste, Abbruchkurve |
 | `report.sh` / `run.sh` / `video.sh` | Cron-Wrapper für Bericht, Crawl bzw. Video |
 | `hg_nachzug.py` | Hintergrund-Sichtprüfung eines Tages nachziehen (Reparatur) |
 | `tests/` | Tests der Kulisse: `python -m unittest discover -s tests` |
