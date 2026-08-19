@@ -197,14 +197,17 @@ class AblehnungAblegen(unittest.TestCase):
                        "url": f"http://x/{n}", "md5": f"md5{i}"}
                       for i, n in enumerate(namen)]
 
-        def laden(kand, ziel_dir):
+        def laden(kand, ziel_dir, animiert_erlauben=False):
+            # Signatur und Rueckgabe folgen dem echten motiv_laden: es liefert
+            # seit den Bewegtbild-Anhaengen (kandidaten, pruefframes). Die
+            # Testbilder sind Standbilder, also bleiben die Frames leer.
             ziel_dir.mkdir(parents=True, exist_ok=True)
             pfade = []
             for k in kand:
                 ziel = ziel_dir / k["datei"]
                 ziel.write_bytes(b"bild")
                 pfade.append(ziel)
-            return pfade
+            return pfade, {}
 
         with mock.patch.object(run_report, "hintergrund_kandidaten",
                               return_value=kandidaten),              mock.patch.object(run_report, "motiv_laden", side_effect=laden),              mock.patch.object(run_report, "claude_ruf",
