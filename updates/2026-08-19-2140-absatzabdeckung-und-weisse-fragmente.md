@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: worktree-stichwort-luecke
 typ: bugfix
-commit: <folgt>
+commit: 4810739
 ---
 
 # Jeder Absatz braucht ein Stichwort; die Fragmente stehen weiss
