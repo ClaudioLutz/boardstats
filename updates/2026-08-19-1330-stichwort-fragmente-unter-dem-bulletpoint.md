@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: worktree-detail-fragmente
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 4cd6c64
 ---
 
 # Stichwort-Fragmente unter dem Fokus-Punkt
