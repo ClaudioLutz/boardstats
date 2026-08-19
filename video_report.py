@@ -2830,11 +2830,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             # _luecken_fuellen haben keine, dann bleibt die Liste leer.
             details = [_detail_liste(p) for t, p in tags if g0 <= t < g1]
             zeit = [t for t, p in tags if g0 <= t < g1]
-            # Der Themen-Titel steht oben und damit ausserhalb der Karte; sein
-            # Kasten gibt vor, wo die Stichpunktliste beginnen darf.
-            tpfad, tx0, ty0 = png(szenen.themen_titel(gtitel))
-            titel_plan.append(KartenStand(tpfad, tx0, ty0, g0, g1, "oben"))
-            karte_oben = szenen.titel_unterkante(gtitel) + 14
+            # Der Themen-Titel ist der Kopf der Randspalte. Er steht allein,
+            # bis der erste Kartenstand die Voll-Spalte (Titel + Trennlinie
+            # + Punkte) bringt - die loest ihn hart ab, denn die Titelpixel
+            # sind identisch und zwei Overlays uebereinander wuerden das
+            # Kasten-Alpha verdoppeln. Sein Zeitfenster wird deshalb erst
+            # nach der Kartenstand-Rechnung eingetragen.
+            tpfad, tx0, ty0 = png(szenen.themen_titel(gtitel, glage))
             # Landezeit je Punkt: er steht als Fokus-Karte in der freien
             # Bildhaelfte, bis der naechste ihn abloest, und fliegt dann in
             # die Themen-Karte. Der letzte Punkt parkt LETZT_HALT vor dem
@@ -2889,34 +2891,39 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 land.append(gerade)
             marken = [g0] + land
             beginn = g0
-            # Die Karte faehrt nur bei ihrem ersten Stand herein; jeder weitere
-            # Stand ist derselbe Kasten mit einem Stichpunkt mehr und muss
-            # deshalb hart an seinem Platz bleiben (sonst rutscht die Karte bei
-            # jedem Satz neu ins Bild). Nicht an stand == 0 haengen, denn ein
-            # zu kurzes erstes Fenster wird uebersprungen.
-            erster = True
+            # Jeder Kartenstand ist dieselbe Randspalte mit einem Stichpunkt
+            # mehr; er loest den vorigen (bzw. den Titel-Teil) hart an Ort
+            # und Stelle ab - einen Einflug hat nur der Titel-Teil beim
+            # Segmentbeginn. Nicht an stand == 0 haengen, denn ein zu kurzes
+            # erstes Fenster wird uebersprungen.
+            karten_start: float | None = None
             for stand in range(len(marken)):
                 bis_f = marken[stand + 1] if stand + 1 < len(marken) else g1
                 if stand == 0:
-                    # Noch kein Punkt geparkt: die Karte waere ein leerer
-                    # Kasten. Solange traegt der Themen-Titel oben allein.
+                    # Noch kein Punkt geparkt: die Spalte zeigt nur ihren
+                    # Kopf. Solange steht der Titel-Teil allein.
                     beginn = bis_f
                     continue
                 if bis_f - beginn <= 0.05 and stand + 1 < len(marken):
                     continue  # zu kurzes Fenster: der naechste Stand deckt es
                 pfad, kx, ky = png(
-                    szenen.themen_karte(texte, stand, glage, karte_oben))
-                karten_plan.append(KartenStand(
-                    pfad, kx, ky, beginn, bis_f,
-                    ("rechts" if glage == "right" else "links") if erster
-                    else ""))
-                erster = False
+                    szenen.themen_karte(gtitel, texte, stand, glage))
+                if karten_start is None:
+                    karten_start = beginn
+                karten_plan.append(KartenStand(pfad, kx, ky, beginn, bis_f))
                 beginn = bis_f
+            # Der Titel-Teil steht vom Segmentbeginn bis zur ersten
+            # Voll-Spalte (oder das ganze Segment, wenn nie ein Punkt parkt)
+            # und faehrt von seiner Bildkante herein.
+            titel_plan.append(KartenStand(
+                tpfad, tx0, ty0, g0,
+                karten_start if karten_start is not None else g1,
+                "rechts" if glage == "right" else "links"))
             for n, t_n in enumerate(zeit):
                 if not zeigt[n]:
                     continue
                 # Flugziel ist die Textecke im Kartenstand nach der Landung.
-                ziel = szenen.karte_punkt_ziel(texte, n + 1, glage, karte_oben)
+                ziel = szenen.karte_punkt_ziel(gtitel, texte, n + 1, glage)
                 if ziel is None:
                     continue
                 # Derselbe Textinhalt wie in der Karte, sonst verliert der
@@ -2957,13 +2964,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 frag_stat[0] += len(details[n])
                 frag_stat[1] += len(details[n]) - len(frag)
                 zeigt_detail = bool(frag)
+                # Der Fokus-Stapel steht in der Bildhaelfte GEGENUEBER der
+                # Randspalte - vertikal kollidiert er mit deren Titel nicht
+                # mehr, oben_min bleibt also die Bug-Unterkante (Default).
                 bild, tx, ty = szenen.fokus_punkt(
-                    punkt_text, glage, frag if zeigt_detail else None,
-                    karte_oben)
+                    punkt_text, glage, frag if zeigt_detail else None)
                 pfad, fx, fy = png(bild)
                 if zeigt_detail:
-                    teile = szenen.detail_teile(punkt_text, frag, glage,
-                                                karte_oben)
+                    teile = szenen.detail_teile(punkt_text, frag, glage)
                     if teile is not None:
                         kaesten, zeilen_bilder = teile
                         # Jedes Fragment kommt, wenn sein Inhalt gesprochen

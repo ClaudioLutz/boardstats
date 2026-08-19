@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Praesentations-Folien fuer das /biz/-Video (v6, 16.08.2026).
+"""Praesentations-Folien fuer das /biz/-Video (v7-Look, 19.08.2026).
 
 Rendert die Standbilder der Praesentation als 1280x720-Bilder im
 Design-Vokabular von thumbnail.py (dunkler Grund, Amber-Akzent, Balken,
-Kopf- und Fusszeile): Intro mit dem Tages-Aufhaenger, Agenda, je
-Berichtsabschnitt eine Themen-Folie mit Stichpunkten und optionaler
-Zahlen-Karte, eine "Numbers of the day"-Folie und ein Outro. Dazu die
-Reveal-Bilder (rohes Board-Bild mit Titelbande) und die Blend-Zwischenbilder
-fuer den Folienuebergang.
+Ecken-Bug): Intro mit dem Tages-Aufhaenger, Agenda, je Berichtsabschnitt
+eine Themen-Folie mit Stichpunkten und optionaler Zahlen-Karte, eine
+"Numbers of the day"-Folie und ein Outro. Dazu die Reveal-Bilder (rohes
+Board-Bild mit Titel-Kasten) und die Blend-Zwischenbilder fuer den
+Folienuebergang.
+
+Seit dem Designsystem vom 19.08.2026 folgen die Folien dem Broadcast-Look
+der Szenen (szenen.py) statt einem eigenen Folien-Raster: das Board-Motiv
+liegt vollflaechig und unverdunkelt, aller Text steht auf hochdeckenden
+schwarzen Kaesten (Alpha 228 wie szenen.KARTE_ALPHA), Seitenpanels sitzen
+buendig an der Bildkante mit nur bildinnern gerundeten Ecken. Nur die
+Zahlen- und die Outro-Folie dunkeln das Motiv stark ab - dort ist die
+Flaeche selbst die Buehne.
 
 video_report.py schaltet die fertigen Bilder per ffconcat zeitgesteuert um;
 Text wird auf diesem Pfad nicht mehr per ASS eingebrannt. Das Modul kennt
@@ -26,6 +34,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 import design_tokens
+import icons
 import thumbnail
 
 B = thumbnail.BREITE
@@ -34,21 +43,30 @@ GRUND = thumbnail.GRUND
 AKZENT = thumbnail.AKZENT
 HELL = thumbnail.TEXT_HELL
 GRAU = thumbnail.TEXT_GRAU
-GEDIMMT = design_tokens.NEUTRAL[5]    # inaktive Stichpunkte / Nebentext
-KARTE_BG = design_tokens.NEUTRAL[8]   # Zahlen-Karten, etwas heller als der Grund
+GEDIMMT = design_tokens.NEUTRAL[5]    # Fusszeilen / inaktive Nummern
+NEBEN = design_tokens.NEUTRAL[4]      # Nebentext auf Kaesten
+PUNKT_ALT = design_tokens.NEUTRAL[2]  # inaktive Stichpunkte
+KARTE_BG = design_tokens.NEUTRAL[8]   # opake Zahlen-Karten (Zahlen-Folie)
 LINIE = design_tokens.NEUTRAL[7]
 MARGIN = 64
 
+# Deckkraft der Text-Kaesten auf rohem Board-Motiv - derselbe Wert wie
+# szenen.KARTE_ALPHA (dort steht auch das Warum: die Feinstruktur der
+# Motive frisst Kontrast, der Kasten traegt die Lesbarkeit allein).
+KASTEN = (0, 0, 0, 228)
+ECKRADIUS = 16
+
 KOPF_TEXT = "4CHAN /biz/  ·  BOARD REPORT"
 INTRO_LABEL = "TODAY'S TOP STORY"
-AGENDA_TITEL = "In today's report"
-ZAHLEN_TITEL = "Numbers of the day"
+AGENDA_TITEL = "IN TODAY'S REPORT"
+ZAHLEN_TITEL = "NUMBERS OF THE DAY"
 OUTRO_TITEL = "/biz/ BOARD REPORT"
 OUTRO_ZEILE1 = "New every day"
 OUTRO_ZEILE2 = "Source threads and chapters in the description"
 
-VOLLBILD_DECKUNG = 0.82       # Abdunkelung vollflaechiger Hintergruende
-PUNKTE_UNTEN_MAX = 648        # Stichpunkte muessen oberhalb der Fusszeile enden
+VOLLBILD_DECKUNG = 0.82       # Abdunkelung der Zahlen-Folie
+OUTRO_DECKUNG = 0.86
+PUNKTE_UNTEN_MAX = 650        # Stichpunkt-Kasten endet ueber dem Quellen-Chip
 JPEG_QUALITAET = 90
 
 
@@ -85,23 +103,11 @@ def _umbrechen(d: ImageDraw.ImageDraw, text: str,
     return zeilen
 
 
-def _grund(motiv: Path | None) -> Image.Image:
-    """Dunkle Grundflaeche, rechts das Motiv mit weicher Kante (wie beim
-    Vorschaubild). Ohne Motiv bleibt die reine Farbflaeche."""
-    bild = Image.new("RGB", (B, H), GRUND)
-    if motiv is not None:
-        try:
-            bild.paste(thumbnail._motiv_flaeche(motiv), (B - thumbnail.MOTIV_BREITE, 0),
-                       thumbnail._blende())
-        except OSError:
-            pass  # kaputtes Bild: Farbflaeche statt Abbruch
-    return bild
-
-
-def _vollbild(motiv: Path | None, deckung: float = VOLLBILD_DECKUNG,
-              entsaettigen: float = 0.5) -> Image.Image:
-    """Vollflaechiger Bildhintergrund, hinter GRUND abgedunkelt - Karten und
-    Text dominieren, das Board-Bild gibt nur Atmosphaere."""
+def _vollbild(motiv: Path | None, deckung: float = 0.0,
+              entsaettigen: float = 1.0) -> Image.Image:
+    """Vollflaechiger Bildhintergrund. deckung=0 laesst das Motiv roh (die
+    Kaesten tragen die Lesbarkeit); die Zahlen-/Outro-Folie blendet es
+    stark gegen GRUND ab, dort ist die Flaeche selbst die Buehne."""
     if motiv is None:
         return Image.new("RGB", (B, H), GRUND)
     try:
@@ -122,202 +128,240 @@ def _vollbild(motiv: Path | None, deckung: float = VOLLBILD_DECKUNG,
     return bild
 
 
+def _verlauf_oben(bild: Image.Image) -> None:
+    """Hauch Abdunkelung hinter dem Ecken-Bug, wie szenen.vignette()."""
+    d = ImageDraw.Draw(bild, "RGBA")
+    for y in range(96):
+        d.line([(0, y), (B, y)], fill=(0, 0, 0, int(110 * (1 - y / 96))))
+
+
 def _kopfzeile(d: ImageDraw.ImageDraw, datum: str) -> None:
-    d.text((MARGIN, 42), KOPF_TEXT, font=_font(True, 26), fill=AKZENT,
-           stroke_width=2, stroke_fill=GRUND)
-    breite = d.textlength(datum, font=_font(False, 26))
-    d.text((B - MARGIN - breite, 42), datum, font=_font(False, 26), fill=GRAU,
-           stroke_width=2, stroke_fill=GRUND)
-    d.line([(MARGIN, 88), (B - MARGIN, 88)], fill=LINIE, width=2)
-
-
-def _fusszeile(d: ImageDraw.ImageDraw, text: str) -> None:
-    d.text((MARGIN, H - 58), text, font=_font(False, 22), fill=GEDIMMT,
-           stroke_width=2, stroke_fill=GRUND)
-
-
-def _titelblock(d: ImageDraw.ImageDraw, titel: str, y: int, breite: int,
-                groesse: int) -> int:
-    """Folientitel mit Amber-Balken links; schrumpft, bis er in zwei Zeilen
-    passt. Liefert die Unterkante."""
-    for gr in (groesse, groesse - 6, groesse - 12):
-        font = _font(True, gr)
-        zeilen = _umbrechen(d, titel.upper(), font, breite)
-        if len(zeilen) <= 2:
-            break
-    schritt = int(gr * 1.15)
-    d.rectangle([MARGIN, y + 6, MARGIN + 12, y + schritt * len(zeilen) - 4],
-                fill=AKZENT)
-    for i, z in enumerate(zeilen):
-        d.text((MARGIN + 36, y + i * schritt), z, font=font, fill=HELL,
-               stroke_width=3, stroke_fill=GRUND)
-    return y + schritt * len(zeilen)
+    """Ecken-Bug wie in den Szenen: Serienmarke links, Datum rechts."""
+    d.text((40, 30), KOPF_TEXT, font=_font(True, 24), fill=AKZENT,
+           stroke_width=2, stroke_fill=(0, 0, 0))
+    breite = d.textlength(datum, font=_font(False, 24))
+    d.text((B - 40 - breite, 30), datum, font=_font(False, 24), fill=GRAU,
+           stroke_width=2, stroke_fill=(0, 0, 0))
 
 
 def _zahlen_karte(d: ImageDraw.ImageDraw, karte: dict, x: int, y: int,
-                  breite: int, hoehe: int, rahmen: bool = False) -> None:
-    d.rounded_rectangle([x, y, x + breite, y + hoehe], radius=14, fill=KARTE_BG,
-                        outline=AKZENT if rahmen else None,
-                        width=2 if rahmen else 0)
-    d.rectangle([x, y + 20, x + 8, y + hoehe - 20], fill=AKZENT)
+                  breite: int, hoehe: int, rahmen: int = 0,
+                  bg: str | tuple[int, ...] | None = None,
+                  wert_groessen: tuple[int, ...] = (72, 64, 56)) -> None:
+    """Kennzahl-Karte: Amber-Balken links, Mono-Wert, Titel, Quellenzeile.
+    `rahmen` ist die Rahmenbreite in px (0 = kein Rahmen), `bg` die
+    Kartenflaeche (Default: der hochdeckende schwarze Kasten)."""
+    d.rounded_rectangle([x, y, x + breite, y + hoehe], radius=14,
+                        fill=bg if bg is not None else KASTEN,
+                        outline=AKZENT if rahmen else None, width=rahmen)
+    d.rectangle([x, y + 22, x + 8, y + hoehe - 22], fill=AKZENT)
     wert = str(karte.get("wert", ""))[:14]
-    for gr in (56, 48, 40):
-        if d.textlength(wert, font=_font_mono(gr)) <= breite - 60:
+    for gr in wert_groessen:
+        if d.textlength(wert, font=_font_mono(gr)) <= breite - 34 - 30:
             break
-    d.text((x + 36, y + 22), wert, font=_font_mono(gr), fill=AKZENT)
-    d.text((x + 36, y + hoehe - 84), str(karte.get("titel", ""))[:40],
+    d.text((x + 34, y + 24), wert, font=_font_mono(gr), fill=AKZENT)
+    d.text((x + 34, y + hoehe - 90), str(karte.get("titel", ""))[:40],
            font=_font(False, 26), fill=HELL)
-    d.text((x + 36, y + hoehe - 48), str(karte.get("sub", ""))[:44],
-           font=_font(False, 23), fill=GRAU)
+    d.text((x + 34, y + hoehe - 54), str(karte.get("sub", ""))[:44],
+           font=_font(False, 22), fill=GRAU)
 
 
 # ------------------------------------------------------------------ Folien
 
 def intro(hook: str, datum: str, motiv: Path | None) -> Image.Image:
-    bild = _grund(motiv)
-    d = ImageDraw.Draw(bild)
+    """Today's Top Story als Broadcast-Karte ueber dem rohen Vollbild-Motiv:
+    Amber-Balken, Label, grosser Aufhaenger, Abbinder-Zeile - alles in
+    einem Kasten statt frei auf der abgedunkelten Flaeche."""
+    bild = _vollbild(motiv)
+    _verlauf_oben(bild)
+    d = ImageDraw.Draw(bild, "RGBA")
     _kopfzeile(d, datum)
-    d.text((MARGIN, 160), INTRO_LABEL, font=_font(True, 28), fill=AKZENT,
-           stroke_width=2, stroke_fill=GRUND)
-    breite = 780 if motiv is not None else B - 2 * MARGIN - 40
-    for gr in (62, 54, 46):
+    kb = 860
+    breite = kb - 48 - 44
+    for gr in (64, 56, 48):
         font = _font(True, gr)
         zeilen = _umbrechen(d, hook.upper(), font, breite)
-        if len(zeilen) <= 4:
+        if len(zeilen) <= 3:
             break
     schritt = int(gr * 1.16)
-    y = 220
-    d.rectangle([MARGIN, y + 8, MARGIN + 14, y + schritt * len(zeilen) - 6],
-                fill=AKZENT)
+    ky = 218
+    kh = 34 + 32 + 16 + schritt * len(zeilen) + 24 + 30 + 36
+    d.rounded_rectangle([MARGIN, ky, MARGIN + kb, ky + kh],
+                        radius=ECKRADIUS, fill=KASTEN)
+    d.rectangle([MARGIN, ky + 28, MARGIN + 10, ky + kh - 28], fill=AKZENT)
+    d.text((MARGIN + 48, ky + 34), INTRO_LABEL, font=_font(True, 26),
+           fill=AKZENT)
+    ty = ky + 34 + 32 + 16
     for i, z in enumerate(zeilen):
-        d.text((MARGIN + 40, y + i * schritt), z, font=font, fill=HELL,
-               stroke_width=4, stroke_fill=GRUND)
-    _fusszeile(d, f"Daily report from the 4chan business board  ·  {datum}")
+        d.text((MARGIN + 48, ty + i * schritt), z, font=font, fill=HELL)
+    d.text((MARGIN + 48, ty + schritt * len(zeilen) + 24),
+           f"Daily report from the 4chan business board  ·  {datum}",
+           font=_font(False, 24), fill=NEBEN)
     return bild
 
 
 def agenda(eintraege: list[str], aktiv: int, datum: str,
            motiv: Path | None) -> Image.Image:
-    """Kapitel-Uebersicht; der gerade gesprochene Eintrag (aktiv, -1 = keiner)
-    steht hell mit Amber-Nummer, die uebrigen gedimmt."""
+    """Kapitel-Uebersicht als Seitenpanel buendig an der linken Bildkante;
+    der gerade gesprochene Eintrag (aktiv, -1 = keiner) steht hell mit
+    Amber-Nummer, die uebrigen gedimmt."""
     bild = _vollbild(motiv)
-    d = ImageDraw.Draw(bild)
+    _verlauf_oben(bild)
+    d = ImageDraw.Draw(bild, "RGBA")
     _kopfzeile(d, datum)
-    unten = _titelblock(d, AGENDA_TITEL, 124, B - 2 * MARGIN - 40, 52)
-    start = unten + 34
+    d.rounded_rectangle([0, 96, 730, H], radius=ECKRADIUS, fill=KASTEN,
+                        corners=(False, True, False, False))
+    d.rectangle([0, 142, 8, 186], fill=AKZENT)
+    d.text((MARGIN, 138), AGENDA_TITEL, font=_font(True, 44), fill=HELL)
+    start = 138 + 55 + 36
     n = max(1, len(eintraege))
-    schritt = min(54, (H - 80 - start) // n)
-    gr = 32 if schritt >= 48 else 26
+    schritt = min(60, (H - 40 - start) // n)
+    gr = 30 if schritt >= 52 else 26
     for i, eintrag in enumerate(eintraege):
         y = start + i * schritt
         hell = i == aktiv
-        d.text((MARGIN + 36, y), f"{i + 1:02d}", font=_font(True, gr),
-               fill=AKZENT if hell else GEDIMMT,
-               stroke_width=2, stroke_fill=GRUND)
-        d.text((MARGIN + 106, y), eintrag[:70], font=_font(False, gr),
-               fill=HELL if hell else GRAU,
-               stroke_width=2, stroke_fill=GRUND)
+        d.text((MARGIN, y), f"{i + 1:02d}", font=_font(True, gr),
+               fill=AKZENT if hell else GEDIMMT)
+        d.text((MARGIN + 72, y), eintrag[:60], font=_font(False, gr),
+               fill=HELL if hell else GRAU)
     return bild
 
 
 def reveal(titel: str, datum: str, motiv: Path) -> Image.Image:
-    """Kapitelwechsel: das Board-Bild vollflaechig und unverdunkelt, darueber
-    nur die Kapitel-Ueberschrift auf halbtransparenter Bande. Der Titel nutzt
-    exakt die Umbruch-Geometrie von thema() (Breite 620, gleiche
-    Schriftgroessen), damit er in der Ueberblendung deckungsgleich in den
-    Folientitel uebergeht statt doppelt zu stehen."""
-    bild = _vollbild(motiv, deckung=0.0, entsaettigen=1.0).convert("RGBA")
-    d = ImageDraw.Draw(bild)
-    for gr in (48, 42, 36):
+    """Kapitelwechsel: das Board-Bild vollflaechig und unverdunkelt,
+    darueber der Kapiteltitel in einem Kasten buendig an der linken
+    Bildkante - dieselbe Formensprache wie die Randspalte der Szenen."""
+    bild = _vollbild(motiv)
+    d = ImageDraw.Draw(bild, "RGBA")
+    for gr in (52, 46, 40):
         font = _font(True, gr)
-        zeilen = _umbrechen(d, titel.upper(), font, 620)
+        zeilen = _umbrechen(d, titel.upper(), font, 760 - 52 - 42)
         if len(zeilen) <= 2:
             break
-    schritt = int(gr * 1.15)
-    oben, unten = 124, 124 + schritt * len(zeilen)
-    bande = Image.new("RGBA", (B, H), (0, 0, 0, 0))
-    ImageDraw.Draw(bande).rectangle([0, oben - 26, B, unten + 20],
-                                    fill=(0, 0, 0, 176))
-    bild = Image.alpha_composite(bild, bande)
-    d = ImageDraw.Draw(bild)
-    d.rectangle([MARGIN, oben + 6, MARGIN + 12, unten - 4], fill=AKZENT)
+    schritt = int(gr * 1.16)
+    oben = 110
+    unten = oben + 30 + schritt * len(zeilen) + 32
+    d.rounded_rectangle([0, oben, 760, unten], radius=ECKRADIUS, fill=KASTEN,
+                        corners=(False, True, True, False))
+    d.rectangle([0, oben + 28, 10, unten - 28], fill=AKZENT)
     for i, z in enumerate(zeilen):
-        d.text((MARGIN + 36, oben + i * schritt), z, font=font, fill=HELL,
-               stroke_width=3, stroke_fill=(0, 0, 0))
-    return bild.convert("RGB")
+        d.text((52, oben + 30 + i * schritt), z, font=font, fill=HELL)
+    return bild
 
 
 def thema(titel: str, punkte: list[str], sichtbar: int, aktiv: int,
           karte: dict | None, fuss: str, datum: str,
           motiv: Path | None) -> Image.Image:
-    """Themen-Folie: Titel, bis zu `sichtbar` Stichpunkte (der Index `aktiv`
-    hell, die uebrigen gedimmt), optional die Zahlen-Karte rechts unten."""
-    bild = _grund(motiv)
-    d = ImageDraw.Draw(bild)
+    """Themen-Folie ueber rohem Vollbild-Motiv: Titel-Kasten mit
+    Lesezeichen-Icon, Stichpunkt-Kasten (der Index `aktiv` hell mit
+    Amber-Marker, die uebrigen gedimmt), optional die Zahlen-Karte rechts
+    unten und der Quellen-Chip am unteren Rand."""
+    bild = _vollbild(motiv)
+    _verlauf_oben(bild)
+    d = ImageDraw.Draw(bild, "RGBA")
     _kopfzeile(d, datum)
-    text_breite = 620 if motiv is not None else B - 2 * MARGIN - 60
-    unten = _titelblock(d, titel, 124, text_breite, 48)
 
-    # Stichpunkte: schrumpfen, bis alle in die Flaeche passen. Reicht selbst
-    # die kleinste Schrift nicht, weichen die AELTESTEN Punkte nach oben
-    # hinaus - ein neu erscheinender Punkt muss immer zu sehen sein.
-    for gr in (29, 26, 24, 22, 20):
+    # Titel-Kasten: Breite folgt dem Text, Lesezeichen-Icon als Marker.
+    for gr in (36, 32, 28):
+        tfont = _font(True, gr)
+        tzeilen = _umbrechen(d, titel.upper(), tfont, 1150 - 58 - 28)
+        if len(tzeilen) <= 1:
+            break
+    tzeilen = tzeilen[:2]
+    tschritt = int(gr * 1.22)
+    tb = max(d.textlength(z, font=tfont) for z in tzeilen)
+    kb = min(int(tb) + 58 + 28, 1150)
+    t_unten = 100 + 14 + tschritt * len(tzeilen) + 14
+    d.rounded_rectangle([MARGIN, 100, MARGIN + kb, t_unten], radius=12,
+                        fill=KASTEN)
+    d.rectangle([MARGIN, 112, MARGIN + 8, t_unten - 12], fill=AKZENT)
+    marker = icons.icon("bookmark", 20, AKZENT)
+    bild.paste(marker, (MARGIN + 24, 100 + (t_unten - 100 - 20) // 2), marker)
+    for i, z in enumerate(tzeilen):
+        d.text((MARGIN + 58, 100 + 14 + i * tschritt), z, font=tfont,
+               fill=HELL)
+
+    # Stichpunkt-Kasten: schrumpfen, bis alle in die Flaeche passen. Reicht
+    # selbst die kleinste Schrift nicht, weichen die AELTESTEN Punkte nach
+    # oben hinaus - ein neu erscheinender Punkt muss immer zu sehen sein.
+    p_oben = t_unten + 36
+    innen = 660 - 63 - 32
+    for gr in (26, 24, 22):
         font = _font(False, gr)
         zeilenhoehe = int(gr * 1.38)
         hoehe = 0
         for p in punkte:
-            hoehe += len(_umbrechen(d, p, font, text_breite - 96)) * zeilenhoehe + 14
-        if unten + 36 + hoehe <= PUNKTE_UNTEN_MAX:
+            hoehe += len(_umbrechen(d, p, font, innen)) * zeilenhoehe + 16
+        if p_oben + 28 + hoehe - 16 + 28 <= PUNKTE_UNTEN_MAX:
             break
 
     def _block_hoehe(p: str) -> int:
-        return len(_umbrechen(d, p, font, text_breite - 96)) * zeilenhoehe + 14
+        return len(_umbrechen(d, p, font, innen)) * zeilenhoehe + 16
 
     gezeigt = list(enumerate(punkte[:sichtbar]))
     while len(gezeigt) > 1 and \
-            unten + 36 + sum(_block_hoehe(p) for _, p in gezeigt) > PUNKTE_UNTEN_MAX:
+            p_oben + 28 + sum(_block_hoehe(p) for _, p in gezeigt) - 16 + 28 \
+            > PUNKTE_UNTEN_MAX:
         gezeigt.pop(0)
-    y = unten + 36
-    for i, p in gezeigt:
-        farbe = HELL if i == aktiv else GEDIMMT
-        d.rectangle([MARGIN + 36, y + 12, MARGIN + 48, y + 24],
-                    fill=AKZENT if i == aktiv else GEDIMMT)
-        for z in _umbrechen(d, p, font, text_breite - 96):
-            d.text((MARGIN + 72, y), z, font=font, fill=farbe,
-                   stroke_width=2, stroke_fill=GRUND)
-            y += zeilenhoehe
-        y += 14
+    if gezeigt:
+        box_unten = p_oben + 28 \
+            + sum(_block_hoehe(p) for _, p in gezeigt) - 16 + 28
+        d.rounded_rectangle([MARGIN, p_oben, MARGIN + 660, box_unten],
+                            radius=12, fill=KASTEN)
+        y = p_oben + 28
+        for i, p in gezeigt:
+            d.rectangle([MARGIN + 32, y + 12, MARGIN + 43, y + 23],
+                        fill=AKZENT if i == aktiv else NEBEN)
+            for z in _umbrechen(d, p, font, innen):
+                d.text((MARGIN + 63, y), z, font=font,
+                       fill=HELL if i == aktiv else PUNKT_ALT)
+                y += zeilenhoehe
+            y += 16
     if karte:
-        _zahlen_karte(d, karte, 764, 428, 452, 200, rahmen=True)
-    _fusszeile(d, fuss)
+        _zahlen_karte(d, karte, 764, 440, 452, 204, rahmen=2,
+                      wert_groessen=(64, 56, 48))
+    if fuss:
+        cf = _font(False, 22)
+        cw = d.textlength(fuss, font=cf)
+        d.rounded_rectangle([MARGIN, H - 68, MARGIN + 18 + int(cw) + 18,
+                             H - 24], radius=8, fill=KASTEN)
+        d.text((MARGIN + 18, H - 60), fuss, font=cf, fill=NEBEN)
     return bild
 
 
 def zahlen(karten: list[dict], sichtbar: int, datum: str,
            motiv: Path | None) -> Image.Image:
-    """Zahlen-des-Tages-Folie: bis zu vier Karten im Raster, die ersten
-    `sichtbar` sind zu sehen, die zuletzt erschienene traegt den Rahmen."""
-    bild = _vollbild(motiv)
-    d = ImageDraw.Draw(bild)
-    _kopfzeile(d, datum)
-    _titelblock(d, ZAHLEN_TITEL, 124, B - 2 * MARGIN - 40, 52)
+    """Zahlen-des-Tages-Folie: bis zu vier Karten im Raster auf stark
+    abgedunkelter Flaeche, die ersten `sichtbar` sind zu sehen, die
+    zuletzt erschienene traegt den Amber-Rahmen."""
+    bild = _vollbild(motiv, deckung=VOLLBILD_DECKUNG, entsaettigen=0.5)
+    d = ImageDraw.Draw(bild, "RGBA")
+    d.text((MARGIN, 36), KOPF_TEXT, font=_font(True, 24), fill=AKZENT)
+    breite = d.textlength(datum, font=_font(False, 24))
+    d.text((B - MARGIN - breite, 36), datum, font=_font(False, 24), fill=GRAU)
+    d.rectangle([MARGIN, 112, MARGIN + 12, 162], fill=AKZENT)
+    d.text((100, 106), ZAHLEN_TITEL, font=_font(True, 52), fill=HELL)
     for i, karte in enumerate(karten[:4][:sichtbar]):
-        x = MARGIN + (i % 2) * 590
-        y = 250 + (i // 2) * 210
-        _zahlen_karte(d, karte, x, y, 560, 180, rahmen=(i == sichtbar - 1))
-    _fusszeile(d, "All figures: poster claims from the source threads")
+        x = MARGIN + (i % 2) * 592
+        y = 224 + (i // 2) * 228
+        _zahlen_karte(d, karte, x, y, 560, 204,
+                      rahmen=3 if i == sichtbar - 1 else 0, bg=KARTE_BG)
+    d.text((MARGIN, 678), "All figures: poster claims from the source threads",
+           font=_font(False, 22), fill=GEDIMMT)
     return bild
 
 
 def outro(datum: str, motiv: Path | None) -> Image.Image:
-    bild = _vollbild(motiv, deckung=0.86)
+    """Abbinder: fast schwarze Flaeche, Serientitel linksbuendig mit
+    Amber-Linie darunter - ruhiges Ende statt zentrierter Tafel."""
+    bild = _vollbild(motiv, deckung=OUTRO_DECKUNG, entsaettigen=0.5)
     d = ImageDraw.Draw(bild)
-    _kopfzeile(d, datum)
-    d.text((MARGIN, 270), OUTRO_TITEL, font=_font(True, 76), fill=HELL,
-           stroke_width=4, stroke_fill=GRUND)
-    d.rectangle([MARGIN, 380, 560, 388], fill=AKZENT)
+    breite = d.textlength(datum, font=_font(False, 24))
+    d.text((B - MARGIN - breite, 42), datum, font=_font(False, 24), fill=GRAU)
+    d.text((MARGIN, 252), OUTRO_TITEL, font=_font(True, 84), fill=HELL)
+    d.rectangle([MARGIN, 376, MARGIN + 548, 386], fill=AKZENT)
     d.text((MARGIN, 420), OUTRO_ZEILE1, font=_font(False, 34), fill=GRAU)
-    d.text((MARGIN, 476), OUTRO_ZEILE2, font=_font(False, 28), fill=GEDIMMT)
+    d.text((MARGIN, 478), OUTRO_ZEILE2, font=_font(False, 28), fill=GEDIMMT)
     return bild
 
 
