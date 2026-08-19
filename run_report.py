@@ -1043,6 +1043,16 @@ DETAIL_MAX_FRAGMENTE = 3
 DETAIL_MAX_ZEICHEN = 40
 
 
+def _wortgrenze(text: str, grenze: int) -> str:
+    """Auf `grenze` Zeichen kappen, aber am letzten vollen Wort - ein Schnitt
+    mitten im Wort liest sich als Darstellungsfehler. Ueberlange Einzelwoerter
+    werden hart gekappt, sonst kaeme nichts zurueck."""
+    if len(text) <= grenze:
+        return text
+    kurz = text[:grenze].rstrip()
+    return kurz[:kurz.rfind(" ")].rstrip(" ,;:-") if " " in kurz else kurz
+
+
 def _stichwort(p: dict) -> dict:
     """Ein Stichwort des Drehbuchs auf die Anzeige zurechtstutzen.
 
@@ -1054,10 +1064,10 @@ def _stichwort(p: dict) -> dict:
     det = p.get("detail")
     if isinstance(det, str):
         det = [det]
-    frag = [str(s).strip().rstrip(".")[:DETAIL_MAX_ZEICHEN]
+    frag = [_wortgrenze(str(s).strip().rstrip("."), DETAIL_MAX_ZEICHEN)
             for s in (det if isinstance(det, list) else [])
             if str(s).strip()][:DETAIL_MAX_FRAGMENTE]
-    return {"text": str(p["text"]).strip()[:38],
+    return {"text": _wortgrenze(str(p["text"]).strip(), 38),
             "anker": str(p.get("anker") or "").strip(),
             **({"detail": frag} if frag else {})}
 
