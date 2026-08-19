@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: worktree-detail-opener-fenster
 typ: bugfix
-commit: <Hash, sobald bekannt>
+commit: e1a7cb2
 ---
 
 # Stichwort-Fragmente setzen nach dem Opener ein, statt zu entfallen
