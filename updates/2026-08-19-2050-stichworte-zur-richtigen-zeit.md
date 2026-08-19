@@ -2,7 +2,7 @@
 datum: 2026-08-19
 agent: worktree-detail-einblendzeit
 typ: feature
-commit: b28a298 (Nachtrag 0d1a1cd: Blende an Szenennaehten)
+commit: b28a298 (Nachtrag d8da7a7: Blende an Szenennaehten)
 ---
 
 # Stichwort-Fragmente erscheinen einzeln, wenn ihr Inhalt gesprochen wird
