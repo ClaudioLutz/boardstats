@@ -60,9 +60,9 @@ draufzugreift.
 `youtube_token.json`, `google_tts_key.txt`, `bett.opus`/`bett_quelle.mp3`).
 Ein lokaler Lauf ohne `--nur-video`/`--vorschau` würde also **wirklich**
 auf den Produktionskanal hochladen und den echten Google-Studio-TTS-Kontingent
-verbrauchen (Stand 19.08.2026: 12 % von 1'000'000 Zeichen/Monat, geteilt mit
-hp-ubuntu — ein voller Testlauf kostet ca. 8'700 Zeichen). Nie einen Lauf
-ohne Test-Flag lokal starten.
+verbrauchen (Stand 19.08.2026 20:41: 16.1 % von 1'000'000 Zeichen/Monat,
+geteilt mit hp-ubuntu — ein voller Testlauf kostet ca. 8'700-13'000 Zeichen).
+Nie einen Lauf ohne Test-Flag lokal starten.
 
 ## Testvideos generieren (meine Verantwortung)
 
@@ -90,6 +90,36 @@ python video_report.py --sprache en --vorschau 20
   gitignored) ansehen/anhören, bevor eine Änderung als verifiziert gilt —
   reines `ruff`/`mypy`/`pytest`-Grün beweist nur Typ-/Syntaxkorrektheit,
   nicht dass die Szene tatsächlich wie beabsichtigt aussieht/klingt.
+- **Seit 20.08.2026 (`c33885c`) sind Testlauf-Ausgaben vom produktiven Zustand
+  getrennt:** `run_report.py --trockenlauf` schreibt Thumbnail/Motive/Bericht/
+  Markdown-Extrakte nicht mehr nach `arbeit/thumbs/<datum>.*`,
+  `arbeit/motive/<datum>/`, `berichte/<datum>.txt` bzw. `extrakte/<datum>/`,
+  sondern gebündelt unter `arbeit/<stamp>-test/` (Laufverzeichnis, per Regex
+  auf den echten Zeitstempel `\d{8}-\d{6}` aufgeräumt, Test- und
+  Produktivläufe zählen getrennt gegen `LAEUFE_BEHALTEN`). Ein Testlauf ist
+  damit für den produktiven Pfad folgenlos, bleibt aber unter diesem Ordner
+  vollständig inspizierbar. Für einen worktree-lokalen Testlauf bringt
+  `testumgebung.py --kopieren` `cache/`, `berichte/`, `verwendet.json` und
+  `katalog.json` aus dem Haupt-Checkout mit (nur in diese Richtung).
+- **Seit 19./20.08.2026 (`2bb3bf6`, `43d3fac`) schreiben Testflags den
+  Delta-Zustand nicht mehr fort:** `cache_pflegen()` (`cache/status.json`,
+  `cache/<thread>.txt`), `verwendete_merken()`
+  (`arbeit/motive/verwendet.json`) und das Stempeln von `zuletzt_verwendet`
+  in `arbeit/clips/katalog.json` laufen unter `--trockenlauf`/`--nur-video`/
+  `--vorschau` nicht mehr — jeder übersprungene Schreiber loggt eine
+  "Trockenlauf - ... bleibt unberührt"-Zeile. `--kein-cache` löscht
+  `cache/status.json` in Kombination mit `--trockenlauf` ebenfalls nicht mehr.
+  Bewusst weiterhin geschrieben (gewollt kumulativ bzw. echtes Kontingent):
+  `arbeit/tts_verbrauch.json`, die Freigabe-Ergebnisse
+  (`status`/`beschreibung`) aus `motive.json` und `klip_katalog.klips_ernten()`.
+  **Hintergrund:** genau das Fehlen dieser Guards hat am 19.08.2026 durch
+  meine eigenen drei Testläufe (14:49/20:12/20:25) den Delta-Stand der
+  Pipeline ca. zwölf Stunden nach vorne geschoben und musste von Hand
+  zurückgerollt werden (`258506a`) — siehe Geklärte Fälle unten. Der Guard
+  war Stand 20.08.2026 im Feld noch nicht bestätigt: bei einem echten
+  Testlauf die mtimes von `cache/status.json`, `arbeit/motive/verwendet.json`
+  und `arbeit/clips/katalog.json` vor/nach dem Lauf vergleichen — bleiben sie
+  stehen, greift der Guard.
 - Auf hp-ubuntu lässt sich derselbe Testlauf per SSH beobachten (nützlich,
   wenn der reale Cron-Lauf gerade läuft oder ein Produktions-spezifisches
   Problem vermutet wird — z.B. venv-Paketstand, Speicher, Rechenzeit):
@@ -113,8 +143,10 @@ python video_report.py --sprache en --vorschau 20
    Wenn ein Commit das übersprungen hat und Fehler auftauchen: `git blame`
    bzw. `git log -L <start>,<end>:<datei>` nutzen, um den genauen
    verursachenden Commit zu bestimmen, statt pauschal zu vermuten.
-3. **Tests laufen lassen** (`tests/`: `test_auswahl.py`, `test_kulisse.py`,
-   `test_prosodie.py`, `test_tonmischung.py` — Stand 19.08.2026: 61 Tests):
+3. **Tests laufen lassen** (`tests/` — Stand 20.08.2026: 149 Tests über 12
+   Dateien, u.a. `test_testlauf_isolation.py` und `test_upload_metadaten.py`
+   neu dazugekommen; Dateiliste wächst, im Zweifel `ls tests/*.py` statt der
+   hier genannten Namen vertrauen):
    ```bash
    "C:\Users\claud\AppData\Local\Programs\Python\Python313\python.exe" -m pytest
    ```
@@ -175,11 +207,17 @@ Verhalten (ganze Markdown-Stufe aus) und hat bei Kombination Vorrang.
 
 - Google Studio-TTS-Kontingent: 1'000'000 Zeichen/Monat, geteilt zwischen
   hp-ubuntu-Produktion und jedem lokalen Testlauf ohne `--nur-video`/
-  `--vorschau`. Realer Tagesbericht ≈ 8'700 Zeichen/~590 s Video.
-  Stand 19.08.2026: 12 % verbraucht.
+  `--vorschau`. Realer Tagesbericht ≈ 8'700-13'000 Zeichen/~590-700 s Video.
+  Stand 19.08.2026 20:41: 16.1 % verbraucht (161'280 Zeichen).
 - Intro-Länge bis Kapitel 1: 29.6 s (Boden 10 s wegen YouTube-Kapitelregel).
   Tonwerte Sprachspur: −19.5 LUFS, Pausen −84 dBFS, 85 % Energie < 700 Hz →
   Musikbett bei −22 LU, kein Ducking (nur sidechaincompress am Bett selbst).
+- Kaltstart-Schlagwort (erster Titel, z.B. "$120K GONE"): seit `50621da`
+  Wunschdauer 3.5 s (Boden `KALTSTART_MIN` 2.0 s), adaptiv gegen die
+  Hook-Lesezeit (`HOOK_CPS`=17 + `HOOK_VORLAUF`=0.5s) verkürzt, vorher starr
+  2.0 s. Stichwort-Fragmente: Lesezeit-Boden `DETAIL_FRAG_MIN` 1.4→2.0 s,
+  `DETAIL_CPS` 12→10 (mehr Lesezeit pro Zeichen). `szenen_bauen()` loggt seither
+  die Zahl gezeigter vs. wegen zu engem Fenster gekürzter Fragmente.
 - Wiederverwendungssperre für Bilder/Clips: 5 Tage (seit `ece2f82`,
   vorher 14 Tage).
 - Clip-Katalog-Retention (`klip_katalog.py`, via `video.sh` nach jedem
@@ -190,6 +228,48 @@ Verhalten (ganze Markdown-Stufe aus) und hat bei Kombination Vorrang.
   nicht selbst alle Clips.
 
 ## Geklärte Fälle (Root-Cause gefunden, nicht mehr aktiv verfolgen)
+
+- **Eigene Testläufe haben am 19.08.2026 den Delta-Zustand der Produktion
+  verschoben, seit 20.08.2026 durch Guards behoben:** Meine drei
+  Overseer-Testläufe (14:49, 20:12, 20:25) liefen mit `--trockenlauf`/
+  `--nur-video`, das damals nur Git/Upload übersprang — `cache_pflegen()`,
+  `verwendete_merken()` und das Clip-Katalog-Stempeln liefen trotzdem mit und
+  schrieben denselben Zustand fort wie ein echter Produktivlauf. Ergebnis:
+  der Cron-Lauf am Folgetag hätte nur noch das Delta seit 20:27 statt seit
+  dem letzten YouTube-Upload gesehen, rund zwölf Stunden Board-Aktivität
+  wären im Video nie aufgetaucht. Musste von Hand zurückgerollt werden
+  (`258506a`: `cache/status.json`, `cache/<thread>.txt`,
+  `arbeit/motive/verwendet.json`, `arbeit/clips/katalog.json` und
+  `extrakte/2026-08-19/` auf den Stand nach dem Morgen-Upload zurückgesetzt).
+  Danach zwei Fixes: `2bb3bf6`/`43d3fac` stoppen das Fortschreiben des
+  Delta-Zustands unter Testflags, `c33885c` verlegt zusätzlich alle
+  Testlauf-**Ausgaben** nach `arbeit/<stamp>-test/` (Details oben unter
+  "Testvideos generieren"). **Lehre:** Ein Dry-Run-Flag, das nur Git/Upload
+  abschaltet, schützt nicht automatisch den Zustand, den der nächste Lauf
+  als Referenz liest — bei jedem neuen Test-Flag prüfen, welche
+  Zustandsschreiber (Cache, Sperrlisten, Katalog-Stempel) ausserhalb von
+  Git/Upload existieren und ob sie mitgemeint sind.
+
+- **YouTube-Uploads vom 19./20.08.2026 verloren `embeddable` und
+  `publicStatsViewable` (behoben in `e0cad36`/`57763f8`):** Seit `8c6287d`
+  (Upload erst privat, Freischaltung erst nach Thumbnail/Untertitel/Playlist)
+  schaltet `status_setzen()` das Video per `videos.update` frei und schickte
+  dabei nur `privacyStatus` im `status`-Part. YouTube ersetzt bei einem
+  Update aber den **ganzen** angegebenen Part — jedes fehlende Feld fällt auf
+  den API-Default zurück, für beide Booleans `false`. Fix:
+  `status_setzen()` liest zuerst den vorhandenen Block
+  (`status_lesen()`) und schreibt ihn inkl. aller `STATUS_FELDER` zurück, nur
+  `privacyStatus` wird ersetzt (Read-Modify-Write); `hochladen()` setzt beide
+  Felder zusätzlich explizit beim Upload. Nachträglich repariert:
+  `66TVSAMrUSw` (19.08.) und `LGhGnj75rEg` (20.08.). **Lehre, verallgemeinert
+  über `status_setzen()` hinaus:** Ein `videos.update`/`*.update`-Aufruf mit
+  einem `part`-Parameter der YouTube-Data-API ersetzt den ganzen Part —
+  jeder eigene Schreibzugriff auf einen Teilbereich zuerst lesen, dann
+  vollständig zurückschreiben (vgl. bereits bekannt aus
+  Memory `youtube-update-ersetzt-part.md`, hier jetzt auch code-seitig
+  durchgesetzt). Im selben Commit wurde nebenbei die Tag-Qualität gefixt
+  (`_titel_schlagworte()`/`STOPP_TAGS`/Ticker aus dem Bericht statt der
+  gekappten Thumbnail-Phrase als Tag-Quelle).
 
 - **`arbeit/clips/`-Verschwinden (19.08.2026, behoben in `034ae86`):** Die
   Aufräum-Logik am Ende von `run_report.py main()` sortierte alle Einträge
@@ -218,6 +298,22 @@ Verhalten (ganze Markdown-Stufe aus) und hat bei Kombination Vorrang.
   fälschlich "Regular" bzw. bei SpaceGrotesk-Bold fälschlich "Light" —
   kosmetisches Metadaten-Artefakt aus dem Variable-Font-Export, betrifft
   nicht das tatsächliche Glyphen-Rendering).
+- **Lange Strecken ohne Stichworte im Video vom 19.08. (behoben in
+  `4810739`):** Ein Kapitel lief 124.7 s, hatte aber nur 6 Stichworte, alle
+  in den ersten 32 s — danach 93 s Rede ohne ein einziges Drehbuch-Stichwort.
+  Ursache: der Abschnitt bestand aus mehreren Absätzen (mehreren Threads),
+  das Modell schrieb trotz Prompt-Regel ("one bullet for roughly EVERY
+  sentence of the WHOLE section") alle Stichworte nur für den ersten Absatz;
+  der Renderer füllte den Rest mit `detail`-losen Fallback-Bullets aus
+  `_luecken_fuellen()` — kein Renderer-Fehler, das Modell hatte die Lücke
+  schon im Drehbuch. Fix: neue Prüfung `_abdeckung_luecken()` zählt nach
+  jedem Drehbuch-Lauf, ob jeder substanzielle Absatz (≥200 Zeichen)
+  mindestens eine Anker-Phrase trägt; bei Lücken geht ein zweiter,
+  gezielter Sonnet-Nachtrag-Aufruf raus (max. 1 zusätzlicher Call/Tag,
+  scheitert er, gilt der erste Versuch). Nebenbei: Stichwort-Fragmente
+  rendern seither weiss (`HELL`) statt im Grau der geparkten Punkte.
+  Kalibrierung an echten Drehbüchern: 17.08. 0 Lücken, 18.08. 2, 19.08. 5.
+
 - **`aktivitaet.py` (Balkengrafik "Board-Aktivität", nutzt dieselben Fonts)
   ist laut eigenem Docstring noch NICHT in `video_report.py` verdrahtet** —
   Fonts sind bereit, der Chart läuft im produktiven Video noch nicht mit.
