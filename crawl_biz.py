@@ -34,13 +34,21 @@ def main() -> int:
     RAW.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M")
     target = RAW / f"{stamp}.jsonl.gz"
+    # Waehrend des Crawls (~4 Min) traegt die Datei die Endung .tmp und faellt
+    # damit aus dem glob("*.jsonl.gz") der Leser heraus. Erst der Rename am
+    # Schluss macht sie sichtbar - wer parallel liest (run_report.py,
+    # bundle_biz.py), sieht entweder den fertigen Snapshot oder den vorherigen,
+    # nie einen Torso. Bricht der Crawl ab, bleibt gar kein Snapshot zurueck.
+    tmp = RAW / f"{stamp}.jsonl.gz.tmp"
+    for rest in RAW.glob("*.jsonl.gz.tmp"):  # Reste abgebrochener Laeufe
+        rest.unlink()
 
     catalog = fetch(f"{BASE}/catalog.json")
     thread_nos = [t["no"] for page in catalog for t in page["threads"]]
     logging.info("Katalog: %d Threads", len(thread_nos))
 
     ok, failed = 0, []
-    with gzip.open(target, "wt", encoding="utf-8") as out:
+    with gzip.open(tmp, "wt", encoding="utf-8") as out:
         for i, no in enumerate(thread_nos, 1):
             time.sleep(1.0)
             data = None
@@ -63,6 +71,8 @@ def main() -> int:
             ok += 1
             if i % 50 == 0:
                 logging.info("%d/%d", i, len(thread_nos))
+
+    tmp.replace(target)
 
     meta = {
         "stamp": stamp,
