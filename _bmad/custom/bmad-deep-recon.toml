@@ -1,0 +1,10 @@
+# Team-Override fuer bmad-deep-recon (siehe .claude/skills/bmad-deep-recon/customize.toml).
+#
+# Ohne Override wuerde research_output_path zu "{planning_artifacts}/research"
+# aufloesen, und planning_artifacts faellt auf reinen Core-Installs (kein bmm-Modul)
+# auf {output_folder} zurueck -> "research/research". Hier direkt auf output_folder
+# gesetzt, damit Recherche-Runs neben den Brainstorming-Sessions unter research/
+# landen (bereits in .gitignore, siehe CLAUDE.md "Struktur").
+
+[workflow]
+research_output_path = "{output_folder}"
