@@ -2,7 +2,7 @@
 datum: 2026-08-20
 agent: worktree-agent-a44a02761f4528548
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 6509099e0ecee9fd80c49a26f81602a6bd3274cb
 ---
 
 # TL;DR-Zahlenblock direkt nach dem Cold Open, Agenda-Teaser entfallen
