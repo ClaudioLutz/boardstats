@@ -228,6 +228,35 @@ Publikums. Messung: `research/recherche-upload-zeitpunkt-2026-08-20.md`.
    Abschnittsgrenze gekappt, wobei die Thread-Links ihr Budget vorab
    bekommen. Auf das eigene Repo wird dort nicht verlinkt.
 
+5. **Tages-Shorts** (`shorts.py`, seit 20.08.2026 in `video.sh` nach dem
+   Hauptvideo, eigene Failure-Domain) — pro `##`-Story des Berichts ein
+   eigenes **YouTube-Short** (9:16, 1080×1920, 20 s bis ~3 min), damit
+   Suchanfragen zu einzelnen Storys/Tickern einen passgenauen Treffer
+   finden statt des 10-Minuten-Tagesvideos (43 von 54 Views kamen über die
+   Suche). Es wird **nicht neu vertont**: die Tonspur ist ein Ausschnitt
+   aus `video/<datum>/audio_en.mp3`, geschnitten an den Wort-Zeitstempeln
+   (`audio_en.worte.json`, das der Hauptlauf seit 20.08. immer ablegt;
+   ersatzweise aus `untertitel_en.srt` rekonstruiert), mit 150-ms-Fades an
+   den Schnittkanten und dem leisen Musikbett darunter. Die Story-Grenzen
+   werden über die Überschrift-Phrasen direkt im Wortstrom lokalisiert,
+   und ein Ähnlichkeits-Guard bricht sauber ab, wenn die Tonspur nicht zum
+   aktuellen Berichtsstand gehört (z. B. Bericht abends regeneriert, Audio
+   vom Morgenlauf). Bild: schlichtes vertikales Standbild-Layout im
+   Serien-Design (Titel oben, Stichworte aus `folien.json` progressiv über
+   ihre Anker-Zeitstempel eingeblendet, Kennzahl-Karte, Shorts-UI-Zonen
+   unten/rechts bleiben frei). Upload je Short erst privat, dann per
+   `status_setzen()` sichtbar; Titel = Kapiteltitel + Ticker +
+   ` | /biz/ <datum>` (≤100 Zeichen), Beschreibung mit Link aufs
+   Tagesvideo und den Quell-Threads des Kapitels, Tags story-spezifisch.
+   Stories ausserhalb 20–175 s werden mit Logzeile übersprungen. Der
+   Marker `extrakte/<datum>/shorts_en.json` wird nach jedem Upload sofort
+   fortgeschrieben; ein Wiederanlauf überspringt hochgeladene Storys. Ein
+   fehlgeschlagenes Short kippt weder die übrigen noch den Cron-Lauf
+   (try/except je Story, Exit-Code 0); fehlen die Tages-Assets, endet der
+   Lauf als No-Op mit Logzeile. `--trockenlauf` rendert ohne Upload,
+   `--nur N` nur eine Story, `--status unlisted` für Tests, `--datum` für
+   alte Tage.
+
 ## Erfolgskontrolle (YouTube Analytics)
 
 `analytics_bericht.py` fragt die YouTube Analytics API v2 ab und beantwortet
@@ -294,6 +323,7 @@ offenen Fragen je Thread.
 | `bericht_html.py` | Überschrift-Erkennung fürs Markdown (Rest aus der Mail-Zeit) |
 | `send_mail.py` | SMTP-Versand — seit 16.08.2026 ungenutzt (Mail abgebaut) |
 | `video_report.py` | Bericht → TTS → Szenen-Video, Upload zu YouTube |
+| `shorts.py` | je ##-Story ein 9:16-Short aus den Tages-Assets, einzeln hochgeladen |
 | `szenen.py` | Text-Overlays des Szenen-Videos (PIL, transparente PNGs) |
 | `folien.py` | v6-Präsentations-Folien — nur noch Fallback für alte `folien.json` |
 | `thumbnail.py` | Vorschaubild: Serienrahmen + Tages-Schlagwort + Motiv |

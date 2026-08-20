@@ -1053,9 +1053,12 @@ def ton_holen(text: str, ziel_mp3: Path, cfg: dict[str, str],
 
     Am Layout wird in mehreren Renderlaeufen gearbeitet, waehrend Text und
     Stimme unveraendert bleiben; jeder Lauf kostet sonst wieder die vollen
-    rund 8'500 abgerechneten TTS-Zeichen. Der Cache greift nur mit
+    rund 8'500 abgerechneten TTS-Zeichen. GELESEN wird der Cache nur mit
     --nur-video und nur, wenn Text und Stimme bitgleich sind - der
-    Cron-Lauf vertont also immer frisch."""
+    Cron-Lauf vertont also immer frisch. GESCHRIEBEN wird er seit 20.08.2026
+    immer: shorts.py schneidet die Tages-Shorts entlang genau dieser
+    Wort-Zeitstempel aus der fertigen Tonspur, und ohne die Datei bliebe ihm
+    nur die groebere SRT-Naeherung."""
     pfad = ziel_mp3.with_suffix(".worte.json")
     schluessel = hashlib.sha1(
         f"{cfg['google_stimme']}|{cfg['stimme']}|{text}".encode()).hexdigest()
@@ -1072,13 +1075,12 @@ def ton_holen(text: str, ziel_mp3: Path, cfg: dict[str, str],
         except (OSError, ValueError, TypeError, KeyError, IndexError) as e:
             print(f"Ton-Cache unbrauchbar ({e}) - vertone neu")
     worte = tts_mit_worten(text, ziel_mp3, cfg)
-    if cache:
-        try:
-            pfad.write_text(json.dumps(
-                {"schluessel": schluessel,
-                 "worte": [[w.text, w.start, w.end] for w in worte]}), "utf-8")
-        except OSError as e:
-            print(f"Ton-Cache nicht geschrieben ({e})")
+    try:
+        pfad.write_text(json.dumps(
+            {"schluessel": schluessel,
+             "worte": [[w.text, w.start, w.end] for w in worte]}), "utf-8")
+    except OSError as e:
+        print(f"Ton-Cache nicht geschrieben ({e})")
     return worte
 
 
@@ -4444,6 +4446,53 @@ def beschreibung_bauen(tag_dir: Path, markdown: str, cfg: dict[str, str],
     return text + fuss
 
 
+@dataclass
+class Drehbuch:
+    """Gemeinsame Sicht von Hauptvideo und Shorts auf den Tag: die Block-
+    Struktur des Berichts, die vertonte Blockfolge samt Rahmen-Saetzen und
+    die Drehbuch-Daten aus folien.json. In einer Funktion gebuendelt, damit
+    shorts.py exakt DENSELBEN Codepfad laeuft wie main() - eine nachgebaute
+    Kopie wuerde bei der naechsten Aenderung stumm von der Tonspur abweichen
+    und die Schnittgrenzen der Shorts verschieben."""
+    bloecke: list[Block]
+    abschnitte: list[Abschnitt]
+    bloecke_ton: list[Block]
+    fdaten: dict | None
+    zuordnung: dict[int, dict]
+    titel: str
+    hook: str
+    hook_ton: str
+
+
+def drehbuch_bauen(tag_dir: Path, markdown: str, sprache: str,
+                   datum: str) -> Drehbuch:
+    """Baut aus Bericht, titel.json und folien.json die vertonte Blockfolge -
+    identisch zu dem, was main() vor der Vertonung tut."""
+    cfg = SPRACHEN[sprache]
+    bloecke, abschnitte = abschnitte_erzeugen(markdown)
+    serien_titel = cfg["titel"].format(datum=datum)
+    titel = titel_laden(tag_dir, sprache, serien_titel)
+    hook = titel.split(" | ")[0].strip()
+    # Gesprochen wird der Aufhaenger nur, wenn er nachweislich einer ist: das
+    # Serien-Suffix " | /biz/ <datum>" muss dahinter stehen. Fehlt es, ist der
+    # Titel entweder der statische Serientitel (kein Aufhaenger) oder er wurde
+    # bei 100 Zeichen gekappt - dann waere der "Hook" ein abgeschnittener Rest.
+    hook_ton = hook if " | " in titel and titel != serien_titel else ""
+    # Praesentationsmodus (v6/v7): nur englisch und nur mit folien.json; sonst
+    # bleibt alles beim v5-Text-Layout. Die Rahmen-Saetze kommen mit in die
+    # Vertonung, damit ihre Zeitfenster die Folienwechsel steuern.
+    fdaten = folien_laden(tag_dir) if sprache == "en" else None
+    zuordnung: dict[int, dict] = {}
+    if fdaten:
+        zuordnung = folien_zuordnen(fdaten, bloecke)
+        bloecke_ton = praesentations_bloecke(bloecke, zuordnung, fdaten, datum,
+                                             hook_ton)
+    else:
+        bloecke_ton = bloecke
+    return Drehbuch(bloecke, abschnitte, bloecke_ton, fdaten, zuordnung,
+                    titel, hook, hook_ton)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sprache", choices=sorted(SPRACHEN), default="en")
@@ -4508,7 +4557,11 @@ def main() -> None:
                   f"--trotz-altdaten trotzdem hochladen.")
             return
 
-    bloecke, abschnitte = abschnitte_erzeugen(markdown)
+    d = drehbuch_bauen(tag_dir, markdown, args.sprache, datum)
+    abschnitte = d.abschnitte
+    titel, hook, bloecke_ton = d.titel, d.hook, d.bloecke_ton
+    fdaten, zuordnung = d.fdaten, d.zuordnung
+    print(f"Titel: {titel}")
 
     arbeit = VIDEO_DIR / datum
     arbeit.mkdir(parents=True, exist_ok=True)
@@ -4516,28 +4569,7 @@ def main() -> None:
     ass_datei = arbeit / f"untertitel{cfg['suffix']}.ass"
     video_mp4 = arbeit / f"video{cfg['suffix']}.mp4"
 
-    serien_titel = cfg["titel"].format(datum=datum)
-    titel = titel_laden(tag_dir, args.sprache, serien_titel)
-    print(f"Titel: {titel}")
-    hook = titel.split(" | ")[0].strip()
-    # Gesprochen wird der Aufhaenger nur, wenn er nachweislich einer ist: das
-    # Serien-Suffix " | /biz/ <datum>" muss dahinter stehen. Fehlt es, ist der
-    # Titel entweder der statische Serientitel (kein Aufhaenger) oder er wurde
-    # bei 100 Zeichen gekappt - dann waere der "Hook" ein abgeschnittener Rest.
-    hook_ton = hook if " | " in titel and titel != serien_titel else ""
     bild = vorschaubild(arbeit, tag_dir, cfg, args.sprache, datum, titel)
-
-    # Praesentationsmodus (v6): nur englisch und nur mit folien.json; sonst
-    # bleibt alles beim v5-Text-Layout. Die Rahmen-Saetze kommen mit in die
-    # Vertonung, damit ihre Zeitfenster die Folienwechsel steuern.
-    fdaten = folien_laden(tag_dir) if args.sprache == "en" else None
-    zuordnung: dict[int, dict] = {}
-    if fdaten:
-        zuordnung = folien_zuordnen(fdaten, bloecke)
-        bloecke_ton = praesentations_bloecke(bloecke, zuordnung, fdaten, datum,
-                                             hook_ton)
-    else:
-        bloecke_ton = bloecke
     text = ton_text(bloecke_ton)
 
     print("erzeuge Vertonung mit Wort-Zeitstempeln ...")
