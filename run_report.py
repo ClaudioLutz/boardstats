@@ -44,6 +44,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -1348,10 +1349,23 @@ def _snapshot_posts(threads: set[str]) -> dict[str, list[dict]]:
     wenn keiner da ist: mit --host laeuft der Crawl auf einem anderen Rechner,
     dann gibt es hier keine Rohdaten und damit kein Board-Bild."""
     snapshots = sorted((BASE / "raw").glob("*.jsonl.gz"))
-    if not snapshots:
-        return {}
+    # Seit dem atomaren Rename in crawl_biz.py kann der juengste Snapshot nicht
+    # mehr mitten im Schreiben stehen. Aeltere Torsi aus der Zeit davor - oder
+    # ein Snapshot, den ein anderer Rechner per rsync anliefert - gibt es aber
+    # weiterhin, und ohne Bild degradiert der Lauf still auf das Serienbild.
+    # Darum: laut sagen, was fehlt, und den vorherigen Snapshot nehmen.
+    for snapshot in reversed(snapshots[-2:]):
+        try:
+            return _posts_lesen(snapshot, threads)
+        except (gzip.BadGzipFile, EOFError, zlib.error) as exc:
+            log.warning("Snapshot %s unvollstaendig (%s) - weiche auf den "
+                        "vorherigen aus", snapshot.name, exc)
+    return {}
+
+
+def _posts_lesen(snapshot: Path, threads: set[str]) -> dict[str, list[dict]]:
     posts: dict[str, list[dict]] = {}
-    with gzip.open(snapshots[-1], "rt", encoding="utf-8") as f:
+    with gzip.open(snapshot, "rt", encoding="utf-8") as f:
         for zeile in f:
             try:
                 daten = json.loads(zeile)
