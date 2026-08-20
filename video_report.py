@@ -1583,6 +1583,69 @@ def motiv_zuordnung(datum: str) -> dict[str, list[Path]]:
     return aus
 
 
+class MotivWahl:
+    """Zustand der Kulissen-Motivwahl: frisches eigenes Thread-Bild vor
+    frischem Pool-Bild vor Wiederholung. Aus szenen_bauen (v7) extrahiert,
+    damit shorts.py exakt dieselbe Kapitel-Zuordnung rechnen kann - Story i
+    im Short traegt so dasselbe Motiv wie Kapitel i im Hauptvideo (die
+    Kapitel-Reservierung ist dort der erste Pool-Zugriff auf frischem
+    Zustand, eine frische MotivWahl liefert also identische Ergebnisse)."""
+
+    def __init__(self, datum: str) -> None:
+        self.zuteilung = motiv_zuordnung(datum)
+        self.werte = motiv_werte(datum)
+        motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
+        self.tages_motiv: Path | None = motive[0] if motive else None
+        self.pool: list[Path] = sorted(
+            {p for pfade in self.zuteilung.values() for p in pfade},
+            key=lambda p: (-_bild_rang(self.werte, p.name), p.name))
+        self.pool_i = 0
+        self.verwendet: set[Path] = set()
+
+    def pool_bild(self, nur_frisch: bool = False) -> Path | None:
+        if not self.pool:
+            return None if nur_frisch else self.tages_motiv
+        for k in range(len(self.pool)):
+            p = self.pool[(self.pool_i + k) % len(self.pool)]
+            if p not in self.verwendet:
+                self.pool_i = (self.pool_i + k + 1) % len(self.pool)
+                self.verwendet.add(p)
+                return p
+        if nur_frisch:
+            return None
+        self.pool_i += 1
+        return self.pool[(self.pool_i - 1) % len(self.pool)]
+
+    def eigenes_bild(self, eigene: list[Path]) -> Path | None:
+        """Erstes noch nicht gezeigtes eigenes Bild des Abschnitts; reine
+        Textwaende verlieren diesen Heimvorteil (siehe _ist_textwand)."""
+        for p in eigene:
+            if _ist_textwand(self.werte, p.name):
+                continue
+            if p not in self.verwendet:
+                self.verwendet.add(p)
+                return p
+        return None
+
+    def kapitel_reservieren(self, abschnitte: list[Abschnitt],
+                            nrs: list[int]
+                            ) -> tuple[list[list[Path]], list[Path | None]]:
+        """Kapitel-Motive vorab reservieren, in Berichtsreihenfolge (die
+        Agenda-Vorschau des Hauptvideos nutzt sie mit, ohne selbst frische
+        Bilder zu verbrauchen - wie in v6)."""
+        kapitel_eigene: list[list[Path]] = []
+        kapitel_motive: list[Path | None] = []
+        for nr in nrs:
+            eigene = [p for tid in abschnitte[nr].threads
+                      for p in self.zuteilung.get(tid, [])]
+            kapitel_eigene.append(eigene)
+            kapitel_motive.append(self.eigenes_bild(eigene)
+                                  or self.pool_bild(nur_frisch=True)
+                                  or (eigene[0] if eigene
+                                      else self.pool_bild()))
+        return kapitel_eigene, kapitel_motive
+
+
 def hintergrund_plan(bloecke: list[Block], block_worte: list[list[Wort]],
                      abschnitte: list[Abschnitt], datum: str, ende: float
                      ) -> list[tuple[Path | None, float]]:
@@ -2538,44 +2601,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     als Fokus-Karte in der freien Bildhaelfte, Zitat-Karten und Kennzahlen
     liegen als zeitlich verankerte Overlays darauf - keine Sprechsekunde
     ohne Text im Bild. Die Motiv-Auswahl folgt der v6-Logik: frisches
-    eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung."""
-    zuteilung = motiv_zuordnung(datum)
-    werte = motiv_werte(datum)
+    eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung
+    (siehe MotivWahl - shorts.py rechnet damit dieselbe Zuordnung)."""
+    wahl = MotivWahl(datum)
+    werte = wahl.werte
     typen = motiv_typen(datum)
     poster_pfade = motiv_poster_pfade(datum)
-    motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
-    tages_motiv = motive[0] if motive else None
-    pool: list[Path] = sorted(
-        {p for pfade in zuteilung.values() for p in pfade},
-        key=lambda p: (-_bild_rang(werte, p.name), p.name))
-    pool_i = 0
-    verwendet: set[Path] = set()
-
-    def pool_bild(nur_frisch: bool = False) -> Path | None:
-        nonlocal pool_i
-        if not pool:
-            return None if nur_frisch else tages_motiv
-        for k in range(len(pool)):
-            p = pool[(pool_i + k) % len(pool)]
-            if p not in verwendet:
-                pool_i = (pool_i + k + 1) % len(pool)
-                verwendet.add(p)
-                return p
-        if nur_frisch:
-            return None
-        pool_i += 1
-        return pool[(pool_i - 1) % len(pool)]
-
-    def eigenes_bild(eigene: list[Path]) -> Path | None:
-        """Erstes noch nicht gezeigtes eigenes Bild des Abschnitts; reine
-        Textwaende verlieren diesen Heimvorteil (siehe _ist_textwand)."""
-        for p in eigene:
-            if _ist_textwand(werte, p.name):
-                continue
-            if p not in verwendet:
-                verwendet.add(p)
-                return p
-        return None
+    tages_motiv = wahl.tages_motiv
+    pool_bild = wahl.pool_bild
+    eigenes_bild = wahl.eigenes_bild
 
     ov_nr = 0
     # [geplant, weggefallen] der Stichwort-Fragmente: seit die Lesezeit-Boeden
@@ -2623,15 +2657,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
     # Kapitel-Motive vorab reservieren (die Agenda-Vorschau nutzt sie mit,
     # ohne selbst frische Bilder zu verbrauchen - wie in v6).
-    kapitel_eigene: list[list[Path]] = []
-    kapitel_motive: list[Path | None] = []
-    for _, nr in koepfe:
-        eigene = [p for tid in abschnitte[nr].threads
-                  for p in zuteilung.get(tid, [])]
-        kapitel_eigene.append(eigene)
-        kapitel_motive.append(eigenes_bild(eigene)
-                              or pool_bild(nur_frisch=True)
-                              or (eigene[0] if eigene else pool_bild()))
+    kapitel_eigene, kapitel_motive = wahl.kapitel_reservieren(
+        abschnitte, [nr for _, nr in koepfe])
     titel_map = thread_titel(datum)
 
     # Freigegebene WebM/MP4-Clips inhaltlich auf Abschnitte verteilen (siehe

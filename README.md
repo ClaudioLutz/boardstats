@@ -241,10 +241,17 @@ Publikums. Messung: `research/recherche-upload-zeitpunkt-2026-08-20.md`.
    werden über die Überschrift-Phrasen direkt im Wortstrom lokalisiert,
    und ein Ähnlichkeits-Guard bricht sauber ab, wenn die Tonspur nicht zum
    aktuellen Berichtsstand gehört (z. B. Bericht abends regeneriert, Audio
-   vom Morgenlauf). Bild: schlichtes vertikales Standbild-Layout im
-   Serien-Design (Titel oben, Stichworte aus `folien.json` progressiv über
-   ihre Anker-Zeitstempel eingeblendet, Kennzahl-Karte, Shorts-UI-Zonen
-   unten/rechts bleiben frei). Upload je Short erst privat, dann per
+   vom Morgenlauf). Bild: vertikales Standbild-Layout im Serien-Design
+   (Titel oben, Stichworte aus `folien.json` progressiv über ihre
+   Anker-Zeitstempel eingeblendet, Kennzahl-Karte, Shorts-UI-Zonen
+   unten/rechts bleiben frei); dahinter liegt seit 21.08.2026 über die
+   ganze Laufzeit das **Kapitel-Motiv des Hauptvideos** (gleiche Zuordnung
+   via `video_report.MotivWahl` — Story i trägt dasselbe Bild wie
+   Kapitel i), formatfüllend zugeschnitten und per Scrim abgedunkelt
+   (60 % Grundton, oben zusätzlich bis 40 % für die Textzone); animierte
+   Motive laufen über ihr Posterframe, ohne freigegebene Tagesbilder
+   rendert das Short wie zuvor auf dem reinen Farbtheme (Logzeile, kein
+   Absturz). Upload je Short erst privat, dann per
    `status_setzen()` sichtbar; Titel = Kapiteltitel + Ticker +
    ` | /biz/ <datum>` (≤100 Zeichen), Beschreibung mit Link aufs
    Tagesvideo und den Quell-Threads des Kapitels, Tags story-spezifisch.
