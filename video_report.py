@@ -165,13 +165,18 @@ SPRACHEN: dict[str, dict[str, str]] = {
         "bericht": "bericht.md",
         "marker": "video_en.json",
         "suffix": "_en",
-        "stimme": "en-US-GuyNeural",
-        # Studio-Q klingt deutlich natuerlicher als Neural2, kennt aber kein
+        "stimme": "en-US-AriaNeural",
+        # Studio klingt deutlich natuerlicher als Neural2, kennt aber kein
         # <mark> - die Zeitachse baut der Studio-Pfad unten selbst. Scheitert
         # Studio (Quota, Netz), springt die Vertonung auf die Marken-Stimme
         # und erst danach auf edge-tts.
-        "google_stimme": "en-US-Studio-Q",
-        "google_stimme_marken": "en-US-Neural2-J",
+        # Seit 20.08.2026 die weibliche Studio-O statt Studio-Q (Hoervergleich
+        # aller en-US-Klassen, research/stimmproben/). Die Ersatzkette zieht
+        # mit: gemessene Grundfrequenz 190.5 Hz bei Studio-O, 193.5 Hz bei
+        # Neural2-G, 196.7 Hz bei AriaNeural - ein Ausfalltag klingt damit
+        # nicht ploetzlich maennlich.
+        "google_stimme": "en-US-Studio-O",
+        "google_stimme_marken": "en-US-Neural2-G",
         "titel": "/biz/ Situation Report {datum}",
         "beschreibung": (
             "Situation report from the 4chan board /biz/ (Business & "
@@ -1669,7 +1674,10 @@ PRAES_HOOK = "Today's top story: {hook}"
 PRAES_AGENDA = "Coming up:"
 AGENDA_TEASER = 3        # so viele Kapitel nennt die Agenda (von sieben)
 TOKENS_PRO_S = 2.50      # gemessene Sprechrate ohne Pausen: Studio-Q satzweise
-                         # 2.53 (Neural2-J war 2.30). Zaehlt nur fuer die
+                         # 2.53 (Neural2-J war 2.30). Studio-O spricht denselben
+                         # Absatz 2.5 % schneller (23.6 s statt 24.2 s), was die
+                         # Schaetzung minim zu lang macht - unter der Aufloesung
+                         # eines Rahmensatzes. Zaehlt nur fuer die
                          # Vorspann-Schaetzung: greift der Fallback auf
                          # Neural2, wird der Vorspann etwas kurz geschaetzt -
                          # das kostet hoechstens einen Rahmensatz.

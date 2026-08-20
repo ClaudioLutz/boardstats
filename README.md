@@ -85,7 +85,7 @@ Publikums. Messung: `research/recherche-upload-zeitpunkt-2026-08-20.md`.
 
 4. **Vertonen & Veröffentlichen auf YouTube** (`video_report.py`, eigener
    Cron-Eintrag via `video.sh`, entkoppelt von den ersten drei Schritten) —
-   vertont `bericht.md` mit der Stimme `en-US-Studio-Q`. Zuvor prüft der Lauf
+   vertont `bericht.md` mit der Stimme `en-US-Studio-O`. Zuvor prüft der Lauf
    den **Datenstand** des Berichts: dessen Kopfzeile nennt den Zeitpunkt des
    Crawl-Snapshots, und liegt der mehr als 20 Stunden zurück, endet der Lauf
    ohne Upload. Das ist der Fall, in dem das Board nicht erreichbar ist: die
@@ -163,9 +163,9 @@ Publikums. Messung: `research/recherche-upload-zeitpunkt-2026-08-20.md`.
    würde; gemessen bleibt die Abweichung über zehn Minuten unter 0.1 s. Der
    Satz-Splitter trennt nicht an Abkürzungen (`U.S.`) und nicht in Zahlen
    (`$4,467.80`). Scheitert Studio, vertont der Lauf mit der Marken-Stimme
-   `en-US-Neural2-J` über SSML-`<mark>`-Timepoints (absatzweise gestückelt
+   `en-US-Neural2-G` über SSML-`<mark>`-Timepoints (absatzweise gestückelt
    wegen des 5000-Byte-API-Limits), und ohne Key mit `edge-tts`
-   (`en-US-GuyNeural`) — abgebrochen wird nie.
+   (`en-US-AriaNeural`) — abgebrochen wird nie.
    Google gewährt das TTS-Gratiskontingent je Stimmklasse und Kalendermonat
    (Studio und Neural2 je eine Million Zeichen) und rechnet darüber hinaus
    automatisch ab. Deshalb führt der Lauf in `arbeit/tts_verbrauch.json`
