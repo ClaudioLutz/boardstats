@@ -53,6 +53,13 @@ fi
     # einzige Konfiguration (eine deutsche Berichtsfassung existiert nicht
     # mehr, seit die Synthese direkt auf Englisch laeuft).
     "$VENV_PY" video_report.py --sprache en || echo "Video fehlgeschlagen (Status $?)"
+    # Tages-Shorts (seit 20.08.2026): je ##-Story ein 9:16-Short aus den
+    # vorhandenen Tages-Assets (Audio-Schnitt an den Kapitelgrenzen), einzeln
+    # hochgeladen mit story-spezifischem Titel/Tags. Eigene Failure-Domain:
+    # ein Fehler hier darf das bereits hochgeladene Hauptvideo nicht
+    # entwerten. videos.insert hat seit 2026 ein eigenes Kontingent von 100
+    # Uploads/Tag - 8 Shorts sind unkritisch.
+    "$VENV_PY" shorts.py --sprache en || echo "Shorts fehlgeschlagen (Status $?)"
     # Rohclips des WebM/MP4-Katalogs aufraeumen (Katalog-Eintrag bleibt) -
     # an denselben Lauf gebunden, der sie zuletzt gebraucht haben koennte,
     # statt eines eigenen Cron-Eintrags. Ein Fehlschlag hier darf das
