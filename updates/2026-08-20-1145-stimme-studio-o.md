@@ -2,7 +2,7 @@
 datum: 2026-08-20
 agent: main
 typ: feature
-commit: d122cb3
+commit: cb52e17
 ---
 
 # Sprecherwechsel: en-US-Studio-O statt Studio-Q
