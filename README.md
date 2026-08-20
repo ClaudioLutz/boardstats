@@ -100,10 +100,12 @@ Publikums. Messung: `research/recherche-upload-zeitpunkt-2026-08-20.md`.
    Szenen-Layout (v7). Der Lauf
    bereinigt den Bericht für die Vertonung (`bloecke_erzeugen()`:
    Quell-/Beleg-Zeilen, nackte Thread-URLs und das GLOSSAR raus), ergänzt
-   knappe gesprochene Rahmen-Sätze (Aufhänger, drei angeteaserte Kapitel,
-   Tageszahlen, Abspann — der Vorspann ist bewusst kurz, weil YouTube die
-   ersten 30 Sekunden als eigene Kennzahl bewertet; das Video beginnt
-   stattdessen mit dem Schlagwort des Vorschaubilds gross im Bild), vertont
+   knappe gesprochene Rahmen-Sätze (Aufhänger, dann als «TL;DR» die vier
+   Tageszahlen direkt nach dem Cold Open, Abspann — die Zahlen stehen vorne
+   statt am Ende, weil die Analytics eine Abbruchwand bei 1:08 zeigten, und
+   die frühere «Coming up»-Agenda-Strecke ist dafür entfallen; das Video
+   beginnt mit dem Schlagwort des Vorschaubilds gross im Bild, und ohne
+   Tageszahlen im Drehbuch läuft als Fallback die alte Agenda), vertont
    per
    Google Cloud TTS und baut mit `ffmpeg` ein
    **Szenen-Video** (Overlays aus `szenen.py`, Design-Vokabular wie das
@@ -139,8 +141,7 @@ Publikums. Messung: `research/recherche-upload-zeitpunkt-2026-08-20.md`.
    sind (Screenshot einer Artikel- oder Suchergebnisseite, Chatverlauf,
    Kurstabelle), verlieren auch den Vorrang im eigenen Thread und kommen
    nur dran, wenn der Tag kein frisches Motiv mehr hergibt. Lange Sprechstrecken wechseln spätestens alle zwanzig Sekunden
-   die Szene, das «Coming up» zeigt zu jedem Kapitel das Motiv als
-   Vorschau, und der Kapitel-Opener nennt den Original-Betreff des
+   die Szene, und der Kapitel-Opener nennt den Original-Betreff des
    Quell-Threads (aus dem H1 der Extrakt-Seite). Ein Tag ganz ohne Bilder
    läuft auf der dunklen Grundfläche. Eine `folien.json` im alten Format
    (ohne Version) rendert weiter die v6-Folien-Präsentation (`folien.py`);
