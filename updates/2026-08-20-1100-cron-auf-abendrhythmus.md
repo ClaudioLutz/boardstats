@@ -2,7 +2,7 @@
 datum: 2026-08-20
 agent: main
 typ: infra
-commit: <Hash, sobald bekannt>
+commit: 231c51a
 ---
 
 # Bericht und Video auf den Abendrhythmus umgestellt (20:35 / 21:15 CEST)
