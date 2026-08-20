@@ -1682,7 +1682,10 @@ TOKENS_PRO_S = 2.50      # gemessene Sprechrate ohne Pausen: Studio-Q satzweise
                          # Neural2, wird der Vorspann etwas kurz geschaetzt -
                          # das kostet hoechstens einen Rahmensatz.
 INTRO_BODEN = 11.5       # Sekunden; darunter wird der Vorspann gestreckt
-PRAES_ZAHLEN = "Before we wrap up, the numbers of the day."
+# Ueberleitung in den TL;DR-Zahlenblock direkt nach dem Cold Open (seit
+# 20.08.2026 vorne statt am Videoende - die Analytics zeigten eine
+# Abbruchwand bei 1:08, die Agenda-Teaser-Strecke ist dafuer entfallen).
+PRAES_ZAHLEN = "The day in four numbers."
 PRAES_OUTRO = ("That's the board report for today. All source threads and "
                "chapter markers are in the description. New report every day.")
 MONATE_EN = ["January", "February", "March", "April", "May", "June", "July",
@@ -1785,35 +1788,58 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
     Inhaltsverzeichnis zu beginnen. Leer bleibt er beim statischen
     Serientitel, der keinen Aufhaenger hat.
 
-    Der Vorspann ist bewusst kurz: gemessen am 17.08.2026 fiel der erste
-    Inhaltssatz erst bei 34.7 s, davon 22.5 s Rahmen - und die ersten 30 s
-    sind genau das Fenster, das YouTube als "Intro" bewertet. Deshalb nennt
-    die Agenda nur die ersten AGENDA_TEASER Kapitel statt aller sieben (eine
-    vollstaendige Inhaltsangabe ist der klassische Retention-Killer), und der
-    Serien-Satz mit Datum entfaellt - Kanalname und Datum stehen im Bug, im
-    Titel und in der Beschreibung.
+    Direkt nach dem Cold Open kommt der TL;DR-Zahlenblock (zahl_kopf +
+    hoechstens vier zahl-Bloecke): die Analytics-Messung vom 19./20.08.2026
+    zeigte eine Abbruchwand bei 1:08 (50 % der Zuschauer weg bei 11 min
+    Laufzeit) - die vier Kennzahlen sind der dichteste Inhalt des Tages und
+    gehoeren deshalb in dieses Fenster, nicht ans Ende. Die fruehere
+    Agenda-Teaser-Strecke ("Coming up" + AGENDA_TEASER Kapitel) entfaellt
+    dafuer; am Videoende werden die Zahlen NICHT wiederholt. Nur wenn
+    folien.json keine brauchbaren zahlen traegt, laeuft als Fallback die
+    alte Agenda-Strecke (gemessen am 17.08.2026: erster Inhaltssatz bei
+    34.7 s, davon 22.5 s Rahmen - deshalb nur AGENDA_TEASER Kapitel statt
+    aller sieben).
 
-    Gesprochen wird er nur noch als Boden: Kapitel 1 muss mindestens 10 s
-    nach Videobeginn liegen, sonst laesst kapitel_bauen seine Marke fallen.
-    An einem Tag mit knappem Hook ("GOLD BREAKS $5,000", rund 2 s) reicht der
-    Rest dafuer nicht, und dann ist der Serien-Satz keine Floskel mehr,
-    sondern Fuellmasse mit Zweck. Geschaetzt wird vor der Vertonung, weil die
-    Blockliste vor ihr feststehen muss - mit der gemessenen Sprechrate, den
-    Absatzpausen und der langen Kapitelpause."""
+    Der Serien-Satz mit Datum ist nur noch ein Boden: Kapitel 1 muss
+    mindestens 10 s nach Videobeginn liegen, sonst laesst kapitel_bauen
+    seine Marke fallen. Mit vier Zahlen-Saetzen vorne ist der Boden
+    faktisch tot (der TL;DR-Block spricht allein rund 30 s), aber er bleibt
+    als Sicherung: im Agenda-Fallback mit knappem Hook ("GOLD BREAKS
+    $5,000", rund 2 s) reicht der Rest sonst nicht. Geschaetzt wird vor der
+    Vertonung, weil die Blockliste vor ihr feststehen muss - mit der
+    gemessenen Sprechrate, den Absatzpausen und der langen Kapitelpause."""
     aus: list[Block] = []
     satz = _hook_gesprochen(hook)
-    nummern = [b.abschnitt for b in bloecke if b.art == "ueberschrift"]
-    titel_saetze = [_folien_titel(zuordnung, bloecke, nr).rstrip(".") + "."
-                    for nr in nummern[:AGENDA_TEASER]]
-    rahmen = [PRAES_HOOK.format(hook=satz) if satz else "",
-              PRAES_AGENDA, *titel_saetze]
-    # Die Blockgrenze vor dem Agenda-Kopf kostet GOOGLE_ABSATZ_PAUSE, die vor
-    # jedem Agenda-Eintrag GOOGLE_AGENDA_PAUSE, die zur ersten
-    # Kapitel-Ueberschrift GOOGLE_KAPITEL_PAUSE.
-    geschaetzt = (sum(len(t.split()) for t in rahmen) / TOKENS_PRO_S
-                  + _pause_sekunden(GOOGLE_ABSATZ_PAUSE)
-                  + _pause_sekunden(GOOGLE_AGENDA_PAUSE) * len(titel_saetze)
-                  + _pause_sekunden(GOOGLE_KAPITEL_PAUSE))
+    karten = [k for k in fdaten.get("zahlen") or []
+              if isinstance(k, dict) and k.get("wert")][:4]
+    if karten:
+        # TL;DR-Pfad: Blockgrenze vor dem Zahlen-Kopf und vor jeder Zahl
+        # kostet GOOGLE_ABSATZ_PAUSE, die zur ersten Kapitel-Ueberschrift
+        # GOOGLE_KAPITEL_PAUSE.
+        zahl_saetze = [str(k.get("satz")
+                           or f"{k.get('titel', '')}: {k['wert']}.").strip()
+                       for k in karten]
+        rahmen = [PRAES_HOOK.format(hook=satz) if satz else "",
+                  PRAES_ZAHLEN, *zahl_saetze]
+        geschaetzt = (sum(len(t.split()) for t in rahmen) / TOKENS_PRO_S
+                      + _pause_sekunden(GOOGLE_ABSATZ_PAUSE)
+                      * (1 + len(zahl_saetze))
+                      + _pause_sekunden(GOOGLE_KAPITEL_PAUSE))
+    else:
+        # Fallback ohne Zahlen: die alte Agenda-Teaser-Strecke.
+        nummern = [b.abschnitt for b in bloecke if b.art == "ueberschrift"]
+        zahl_saetze = []
+        titel_saetze = [_folien_titel(zuordnung, bloecke, nr).rstrip(".") + "."
+                        for nr in nummern[:AGENDA_TEASER]]
+        # Die Blockgrenze vor dem Agenda-Kopf kostet GOOGLE_ABSATZ_PAUSE, die
+        # vor jedem Agenda-Eintrag GOOGLE_AGENDA_PAUSE, die zur ersten
+        # Kapitel-Ueberschrift GOOGLE_KAPITEL_PAUSE.
+        rahmen = [PRAES_HOOK.format(hook=satz) if satz else "",
+                  PRAES_AGENDA, *titel_saetze]
+        geschaetzt = (sum(len(t.split()) for t in rahmen) / TOKENS_PRO_S
+                      + _pause_sekunden(GOOGLE_ABSATZ_PAUSE)
+                      + _pause_sekunden(GOOGLE_AGENDA_PAUSE) * len(titel_saetze)
+                      + _pause_sekunden(GOOGLE_KAPITEL_PAUSE))
     if not satz or geschaetzt < INTRO_BODEN:
         # format() bewusst nur auf der eigenen Konstante: der Hook ist
         # Modelltext und darf geschweifte Klammern enthalten.
@@ -1823,19 +1849,30 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
         print(f"Vorspann geschaetzt {geschaetzt:.1f}s - Serien-Satz bleibt "
               f"drin, damit Kapitel 1 nicht unter 10s rutscht")
     aus.append(Block("absatz", rahmen[0], 0, rolle="intro"))
-    aus.append(Block("absatz", PRAES_AGENDA, 0, rolle="agenda_kopf"))
-    for t in titel_saetze:
-        aus.append(Block("absatz", t, 0, rolle="agenda"))
-    aus.extend(bloecke)
-    karten = [k for k in fdaten.get("zahlen") or []
-              if isinstance(k, dict) and k.get("wert")]
     if karten:
         aus.append(Block("absatz", PRAES_ZAHLEN, 0, rolle="zahl_kopf"))
-        for k in karten[:4]:
-            satz = str(k.get("satz") or f"{k.get('titel', '')}: {k['wert']}.")
-            aus.append(Block("absatz", satz.strip(), 0, rolle="zahl"))
+        for z in zahl_saetze:
+            aus.append(Block("absatz", z, 0, rolle="zahl"))
+    else:
+        aus.append(Block("absatz", PRAES_AGENDA, 0, rolle="agenda_kopf"))
+        for t in titel_saetze:
+            aus.append(Block("absatz", t, 0, rolle="agenda"))
+    aus.extend(bloecke)
     aus.append(Block("absatz", PRAES_OUTRO, 0, rolle="outro"))
     return aus
+
+
+def zahlen_vorne(bloecke: list[Block]) -> bool:
+    """True, wenn der TL;DR-Zahlenblock vor dem ersten Kapitel steht (die
+    Blockfolge seit 20.08.2026). False im Agenda-Fallback ohne Zahlen und
+    bei einer Blockliste alter Ordnung (Zahlen am Ende) - die Renderpfade
+    bleiben damit fuer beide Ordnungen korrekt."""
+    for b in bloecke:
+        if b.rolle == "zahl_kopf":
+            return True
+        if b.art == "ueberschrift":
+            return False
+    return False
 
 
 def _anker_spanne(anker: str, worte: list[Wort]) -> tuple[float, float] | None:
@@ -2245,9 +2282,38 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
         zeigen(folien.agenda(eintraege, k, datum, m or agenda_motiv),
                start_von(i))
 
-    # Abschnitte: Reveal (Ueberschrift-Sprechzeit) -> Blend -> Stichpunkte
+    # Zahlen des Tages: seit 20.08.2026 als TL;DR direkt nach dem Cold Open
+    # (vorne), bei einer Blockliste alter Ordnung wie frueher vor dem Outro.
+    # Die Ereignisliste muss chronologisch bleiben (die ffconcat-Zeiten
+    # unten werden monoton geklemmt), deshalb entscheidet die Blockfolge,
+    # wo dieser Aufruf faellt.
+    karten = [k for k in fdaten.get("zahlen") or []
+              if isinstance(k, dict) and k.get("wert")][:4]
+    zk_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "zahl_kopf"),
+                  None)
+    zahlen_motiv: Path | None = None
+
+    def zahlen_folien() -> None:
+        nonlocal zahlen_motiv
+        zahlen_motiv = pool_bild()
+        if zk_idx is not None and karten:
+            zeigen(folien.zahlen(karten, 0, datum, zahlen_motiv),
+                   start_von(zk_idx))
+            for j, i in enumerate(zahl_idx[:len(karten)]):
+                zeigen(folien.zahlen(karten, j + 1, datum, zahlen_motiv),
+                       start_von(i))
+
+    vorne = zahlen_vorne(bloecke)
+    if vorne:
+        zahlen_folien()
+
+    # Abschnitte: Reveal (Ueberschrift-Sprechzeit) -> Blend -> Stichpunkte.
+    # Der Index-Filter schuetzt davor, den vorgezogenen TL;DR-Block als
+    # Kapitel-Schluss zu treffen.
+    letzter_kopf = koepfe[-1][0] if koepfe else -1
     schluss = next((start_von(i) for i, b in enumerate(bloecke)
-                    if b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
+                    if i > letzter_kopf
+                    and b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
                    ende)
     for k, (kopf, nr) in enumerate(koepfe):
         kopf_start = start_von(kopf)
@@ -2320,17 +2386,9 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
             akt = punkt_motiv(akt)
             zeigen(folie(j + 1, j, akt), t)
 
-    # Zahlen des Tages und Outro
-    karten = [k for k in fdaten.get("zahlen") or []
-              if isinstance(k, dict) and k.get("wert")][:4]
-    zahlen_motiv = pool_bild()
-    zk_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "zahl_kopf"),
-                  None)
-    if zk_idx is not None and karten:
-        zeigen(folien.zahlen(karten, 0, datum, zahlen_motiv), start_von(zk_idx))
-        for j, i in enumerate(zahl_idx[:len(karten)]):
-            zeigen(folien.zahlen(karten, j + 1, datum, zahlen_motiv),
-                   start_von(i))
+    # Zahlen des Tages (nur bei alter Ordnung noch hier) und Outro
+    if not vorne:
+        zahlen_folien()
     outro_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "outro"),
                      None)
     if outro_idx is not None:
@@ -2595,8 +2653,17 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     # (fade=0): ein Cold Open, der einblendet, ist keiner.
     kopf_idx = next((i for i, b in enumerate(bloecke)
                      if b.rolle == "agenda_kopf"), None)
+    zk_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "zahl_kopf"),
+                  None)
+    outro_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "outro"),
+                     None)
+    vorne = zahlen_vorne(bloecke)
     erster_kopf = start_von(koepfe[0][0]) if koepfe else ende
-    intro_bis = start_von(kopf_idx) if kopf_idx is not None else erster_kopf
+    # Nach dem Cold Open kommt seit 20.08.2026 der TL;DR-Zahlenblock; nur im
+    # Agenda-Fallback (keine Zahlen im Drehbuch) steht dort die Agenda.
+    intro_bis = (start_von(kopf_idx) if kopf_idx is not None
+                 else start_von(zk_idx) if vorne and zk_idx is not None
+                 else erster_kopf)
     s = neu(klip_zuordnung.get(INTRO_KLIP_KEY) or tages_motiv or pool_bild(),
            0.0)
     hook_ab = 0.4
@@ -2636,9 +2703,44 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                                    gross=False),
                 t + 0.15, bis, einflug="unten"))
 
-    # Kapitel
+    # Zahlen des Tages: je Kennzahl eine eigene Gross-Zahl-Szene mit
+    # Count-up. Als TL;DR direkt nach dem Cold Open (vorne) oder - bei einer
+    # Blockliste alter Ordnung - vor dem Outro; die Szenenliste muss
+    # chronologisch bleiben (szenen_video haengt die Kanten an s.start auf),
+    # deshalb entscheidet die Blockfolge, wo dieser Aufruf faellt.
+    karten = [z for z in fdaten.get("zahlen") or []
+              if isinstance(z, dict) and z.get("wert")][:4]
+
+    def zahlen_szenen(zahl_schluss: float, kopf_titel: str,
+                      kopf_label: str) -> None:
+        if zk_idx is None or not karten:
+            return
+        t0 = start_von(zk_idx)
+        z = neu(pool_bild(), t0)
+        z.overlays.append(ov(szenen.titel_karte(kopf_titel, label=kopf_label),
+                             t0 + 0.2,
+                             start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
+                             einflug="unten"))
+        genutzt = zahl_idx[:len(karten)]
+        for j, i in enumerate(genutzt):
+            t = start_von(i)
+            bis = start_von(genutzt[j + 1]) if j + 1 < len(genutzt) \
+                else zahl_schluss
+            z = neu(pool_bild(), t)
+            _countup_overlays(z, karten[j], t + 0.2, bis, ov)
+
+    if vorne:
+        # Karte und Ansage sagen dasselbe: der gesprochene Kopf ist
+        # PRAES_ZAHLEN ("The day in four numbers.").
+        zahlen_szenen(erster_kopf, "The day in four numbers", "TL;DR")
+
+    # Kapitel. Das Ende des letzten Kapitels ist der erste Rahmen-Block NACH
+    # den Kapiteln (Outro; bei alter Ordnung der Zahlen-Kopf) - der
+    # Index-Filter schuetzt davor, den vorgezogenen TL;DR-Block zu treffen.
+    letzter_kopf = koepfe[-1][0] if koepfe else -1
     schluss = next((start_von(i) for i, b in enumerate(bloecke)
-                    if b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
+                    if i > letzter_kopf
+                    and b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
                    ende)
     for k, (kopf, nr) in enumerate(koepfe):
         kopf_start = start_von(kopf)
@@ -3104,28 +3206,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 else:
                     _countup_overlays(sz, px, von + 0.2, bis, ov)
 
-    # Zahlen des Tages: je Kennzahl eine eigene Gross-Zahl-Szene mit Count-up
-    karten = [z for z in fdaten.get("zahlen") or []
-              if isinstance(z, dict) and z.get("wert")][:4]
-    zk_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "zahl_kopf"),
-                  None)
-    outro_idx = next((i for i, b in enumerate(bloecke) if b.rolle == "outro"),
-                     None)
-    if zk_idx is not None and karten:
-        t0 = start_von(zk_idx)
-        s = neu(pool_bild(), t0)
-        s.overlays.append(ov(szenen.titel_karte("Numbers of the day",
-                                                label="THE NUMBERS"),
-                             t0 + 0.2,
-                             start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
-                             einflug="unten"))
-        genutzt = zahl_idx[:len(karten)]
-        for j, i in enumerate(genutzt):
-            t = start_von(i)
-            bis = start_von(genutzt[j + 1]) if j + 1 < len(genutzt) \
-                else (start_von(outro_idx) if outro_idx is not None else ende)
-            s = neu(pool_bild(), t)
-            _countup_overlays(s, karten[j], t + 0.2, bis, ov)
+    if not vorne:
+        # Blockliste alter Ordnung: Zahlen wie frueher vor dem Outro.
+        zahlen_szenen(start_von(outro_idx) if outro_idx is not None else ende,
+                      "Numbers of the day", "THE NUMBERS")
 
     if outro_idx is not None:
         t = start_von(outro_idx)
@@ -4175,7 +4259,12 @@ def kapitel_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     dem Start ihres ersten gesprochenen Worts. YouTube zeigt sie als Kapitel
     und in der Suche als Schluesselmomente, verlangt aber eine erste Marke
     bei 00:00, mindestens drei Marken und 10 s Mindestabstand - sonst lieber
-    gar keine Liste als eine halb wirksame."""
+    gar keine Liste als eine halb wirksame.
+
+    intro ist der Titel der 00:00-Marke: "TL;DR", wenn der Zahlenblock
+    vorne gesprochen wird (er deckt dann Cold Open + Zahlen ab; eine eigene
+    Marke bekommt der Zahlenblock nicht, sie laege <10 s nach 00:00), sonst
+    das kapitel_intro der Sprache ("Intro")."""
     zeilen = [f"00:00 {intro}"]
     letzte = 0
     for block, worte in zip(bloecke, block_worte):
@@ -4487,7 +4576,11 @@ def main() -> None:
 
     kurz = cfg["beschreibung"].format(datum=datum)
     try:
-        kapitel = kapitel_bauen(bloecke_ton, block_worte, cfg["kapitel_intro"])
+        # Mit dem TL;DR-Zahlenblock vorne heisst die 00:00-Marke "TL;DR"
+        # (sie deckt Cold Open + Zahlen ab), sonst wie bisher "Intro".
+        kapitel = kapitel_bauen(bloecke_ton, block_worte,
+                                "TL;DR" if zahlen_vorne(bloecke_ton)
+                                else cfg["kapitel_intro"])
         beschreibung = beschreibung_bauen(tag_dir, markdown, cfg, datum, kapitel)
     except Exception as e:
         # Ein Fehler beim Zusammenbau darf den Upload nie verhindern.
