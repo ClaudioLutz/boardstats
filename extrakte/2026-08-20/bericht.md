@@ -1,104 +1,124 @@
 # /biz/ Situation Report 2026-08-20
 
-*Data as of: 20.08.2026 07:18 local time (Europe/Zurich), 15 threads analyzed.*
+*Data as of: 20.08.2026 20:19 local time (Europe/Zurich), 17 threads analyzed.*
 
 [Extracts and source threads of the day](README.md)
 
 ---
 
-## STOCKS: MODERNA IS THE DAY'S PUMP
+## STOCKS: WALMART BEATS, ANTHROPIC FILES, KLARNA KEEPS BLEEDING
 
-Moderna (MRNA) ran hard on reports of progress toward a cancer vaccine, and both /smg/ threads spent the day arguing about the second day, not the first. Numbers, all self-reported and unsourced:
+The one piece of hard data today is Walmart's Q2, posted as raw numbers into /smg/:
 
-- "up 200% today because of some melanoma vaccine", per one poster in the live /smg/
-- market cap around 60 billion against roughly 2 billion yearly revenue, compared to Pfizer at roughly 160 billion cap, close to 50 billion revenue and a 6% dividend
-- $250 named as tomorrow's target by one poster, $200 named by another as a reasonable floor because it is "still biotech"
+- Adjusted EPS 81 cents against 74 cents expected
+- Revenue 187.94 billion dollars against 186.87 billion expected
+- US comparable sales ex-gas +2.6 percent against +3.67 percent expected
+- Q3 guidance 62 to 64 cents against 68 cents expected, full-year raised to 2.80–2.87 dollars from 2.75–2.85
 
-The best line of the pricing debate answers the board's standing complaint that everything is already priced in: "it was priced in. Then new information came out which is now in the process of being priced in." The skeptics' frame is the canon one, baggie, the board's word for whoever is left holding the loss: "MRNA baggie generals will be shitting up this board 5 years from now." A practical caution came with it, "never trust AH shit", meaning do not read after-hours prints as real price.
+The board's verdict on that mix is four words: "Beats despite missing," attributed to "tariff refunds."
 
-Other named positions from the two stock generals, each a single poster with no analysis attached:
+Second item, unlinked but specific: a report quoted in the live /smg/ says "Anthropic Said To Prepare IPO Filing As Soon As End-August," expected to match or top SpaceX's record IPO size, briefings "Led By CFO Rao." Posters immediately turned it into a liquidity-drain theory for the same day's selloff, unsourced: "QUICK, BRING IT TO THE MARKET BEFORE WE DUMP." A 10 percent market tank was predicted while "people liquidating to ape anthropic IPO."
 
-- HOOD shilled as "the best bank... best trading platform and best prediction market on the planet", with the poster admitting he sold at +5%
-- sector rotation case for XLI and XLF over XLE and XLV, citing XLF at a PE near 17, with the poster flagging that financials also fell with the market in 2022
-- MU following an uptrend with "around 1k being resistance", and a warning that a test of 800 means "it'd be actually over for the rest of the year"
-- RARE with catalyst dates Aug 23 and Sep 19 and a dip target of 25; CAPR a take-profit call; 20% levered with 900 SOXL and 350 TQQQ
-- covered calls warned against on runaway names, because they cap the upside you bought the volatility for
+Klarna, yesterday's body count, is now just a running joke: "Only down another 5% today," a stated -38 P/E, and Jim Cramer on CNBC telling viewers "Just go buy Wells Fargo and JPMorgan... over Klarna, over PayPal." The bit that carries it is the fake regiment — "Klarna marine let me hear your ooorah!!" — the board's habit of roleplaying military solidarity around a losing position, since a "bagholder" is anyone still holding one.
 
-Reliability: no referral links, and in both /smg/ threads the loudest ID holds only 5% and 11% of posts at 3.3 and 2.8 posts per ID, so this is broad chatter rather than one voice pushing a ticker.
+Smaller single-poster calls, all unverified: NCLH at "10 p/e" as an oil-driven rebound play, SCHD "up 28% ytd" (countered as "mostly oil and UNH recovering"), Moderna's melanoma trial dismissed as "one trial with a miracle result in a sector notorious for pump and dumps," and SOXL allegedly held at exactly 0.00 percent by Jane Street.
 
-## MACRO: SOVEREIGN YIELDS AT MULTI-DECADE HIGHS
+## PRACTICAL: TWO THINGS YOU CAN ACTUALLY USE
 
-The day's hard macro item is an OP image of yields at levels not seen in years: US 30-year highest since 2007, France 10-year since 2009, Germany 10-year since 2011, Japan 10-year since 1996. The thread's conclusion, unsourced, is that "once you understand USA is broke financially, everything Trump does makes sense." The only trade ideas offered were silver and short-dated treasuries, the latter answered with the claim that demographic decline makes real estate "worth pennies on the dollar."
+The clearest usable technique today is an options-income recipe: sell 4–7 DTE iron condors for 5–10 percent premium against collateral, then buy back at 70–90 percent of premium once the position "collapses in value in 1-2 hours." One poster, no counterargument.
 
-The set-piece was a demographic doom loop: politicians answer falling birth rates by making people poorer, which lowers birth rates further. Its punchline, "MAKE EVERYONE POORER... surely people will reproduce harder." Nobody argued against it. The board's reflex arrived immediately anyway: "How do I profit off of this? (Unironically)"
+Also today:
 
-The older /smg/ carried the matching dollar argument, with US 30-year yields quoted at 5.27%, bond buybacks doubling to $4 billion, and $1.4 trillion in annual interest costs, all unsourced. Conclusion: "Own assets or be left behind." A long-cycle counterpart claims 2008 was never allowed to clear, on a 35-year credit cycle running to about 2045: "a dead body was kept on life support."
+- A Seeking Alpha piece, "Leveraged ETFs: The Scary Drift Of SPXL," shared as the caution against 30-year DCA into leveraged funds
+- An earnings tactic: ride the pre-earnings run-up, sell hours before the report, buy the dump back — "works best on bluechips"
+- A hazard: one poster offered to double any bitcoin sent to a "special address," opening with "I see you are intelligent man Sir." Classic advance-fee scam
+- An extended claim that Claude/Anthropic models degraded over 2-3 weeks, based on one poster's informal trading-signal test against GPT and DeepSeek: "It is not the same model it was 3 weeks ago." Anecdote, no data
 
-## CRYPTO: THE MONERO TOR SCARE GETS TESTED
+## MACRO: YIELDS AT LEVELS NOT SEEN SINCE 2007
 
-Yesterday's "Monero over Tor has been de-anonymized" claim was actually checked this round, and it did not survive. A poster ran the linked examiner tool and found it "just seems like bs that tells you any info you can get from a txid." Another notes the tool "requires that you give him the view key and the private key" to demonstrate traceability, which proves nothing. Multiple posters independently landed on the same verdict: "Lmao this looks like satire."
+New today, from an OP quoting yield records: US 30-year highest since 2007, France 10-year since 2009, Germany 10-year since 2011, Japan 10-year since 1996. A separate thread runs off a CNBC report that yields climbed Thursday morning after a Treasury intervention meant to relieve long-dated debt.
 
-The new bull post claims Monero has no structural obstacles left and "I literally see no ceiling on this asset", answered with the canon dismissal for price-only posters: "Moonfags sure do say the darndest things!" One aside worth keeping: Polkadot's market cap now about one fifth of Monero's, unsourced. The thread has been re-founded elsewhere and is winding down; the CARROT view-key fight and Kraken's 27x fee hike are unchanged background.
-https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-19/bericht.md
+The arguments, all unsourced:
 
-The board's agorist self-image, in one line: "I sell my bread, I bake my bread, I haggle over 0.0001 XMR." Verbatim: "I sell my cheese, I bake my bread, I haggle over 0.0001 XMR."
+- Buybacks fix nothing because the problem is "lack of confidence in the long term fiscal situation of the US"
+- A debasement loop: monetization signalled, holders dump dollar assets, yields rise, government buys more, "repeat until hyperinflation"
+- Debt at 40 trillion versus 20 trillion ten years ago, with "pay the debt? nah we are just gonna spend more lmao"
+- The counter: "FUD," the board's label for recycled fear-mongering, last run in 2019
 
-## BBBYQ: A GUARANTOR APPEARS, THE TAX CODE ANSWERS
+Tone runs fatalistic — "you might as well use what time is left to steal everything that isn't nailed down" — with a mock slide deck reading "OUR PLAN IS WORKING." One poster closes with "a total reset. A great reset, if you will." The board's standing complaint that "boomers betrayed us all" carries the debt subthread.
 
-The new claim is that BBBYQ bonds (24s, 33s, 44s) now show a "Gallant Guarant0r" tying the estate to DK Butterfly and NXH, pushed as "It is 100% PROVEN FACT" with no source beyond go look on Twitter. The direct rebuttal: "the bonds are defaulted and there is no guarantor," and asked whether retail equity gets anything, the same poster says Class 9 gets nothing.
+## CRYPTO: A 200-DAY BREAK NOBODY BELIEVES
 
-More useful, the thread cited actual law against itself. Two posters argue the 50% continuity-of-ownership test for preserving tax losses can be satisfied by giving equity to creditors alone, and that retail-held bonds likely fail the qualified-indebtedness definition unless held 18 months before filing, citing 26 CFR 1.382-9 via law.cornell.edu. That is the first primary source this thesis has been measured against in days. The mood, with the canon jab at forever-deferred payoffs: "2 more weeks" still frames every timeline, alongside "The closer we get to the FIGI Finale the harder it is to wait."
+A new thread claims BTC closing above its 200-day moving average has preceded every prior bull run and that it just happened, so go all in. The thread refused. The developed counter-thesis, from one ID that wrote a quarter of the posts, is the "octoBEAR" case: the break needs confirmation, a flattening macro curve makes the average "an easier target," and BTC could still "crab at 70k for a couple months." A second poster endorsed it: "OctoBEAR is happening with 100% certainty."
 
-## THE DAY-TRADER AMA MEETS A BROKERAGE STATEMENT
+Concrete positions: buying MSTR at 91 dollars, a prior BTC buy at 59K staked on Babylon, DCA preferred over all-in. Best line on leverage discipline: "I can't go all in because I am already all in, including maxing out my lines of credit." The verdict on the rally itself: "This pump smells like a bull trap."
 
-The eight-year day trader's AMA turned into a credibility contest he lost on paper. He now claims 0.25-0.5% compounded daily on a $20,000 account and "400 wins in 1 day and 10 losers", still with no statement. A skeptic posted an actual account summary, $112,510.80 gained and 41.91% cumulative from Aug 19 2025 to Aug 18 2026, plus a disclosed GRND January 2028 $15 call position: "That's a bad year for me. Please sit down."
+A parallel thread asks why it keeps pumping and lands on Trump's pro-crypto conference and the "Clarity act" as the drivers, against a claim Trump "single handedly ruined the market." Both unsourced, and the exchange ends in the board's shortest dismissal, "huge cope."
 
-Critics settled on two findings: that he underperformed the index, and that the Fidelity ban was likely pattern-day-trader or unsettled-funds violations, not excess success. A self-described allocator adds the only transferable idea in the thread: "The key to outsized return is not risk, the key is high conviction high concentration." Verdict, in canon: "OP is delusional and NGMI", not gonna make it. Treat every number here, including the screenshots, as unverified.
+## XRP AND CHAINLINK: THE GENERALS DELIVERED A NUMBER
 
-## TIMESHARES AND LABOR
+/XSG/, iteration 2556 of the XRP general, finally got movement: a pump from roughly 1.00 dollars to 1.15 and then 1.33, up 10 percent overnight, before losing 1.30 again. The bottom-calling ritual continues unchanged — "I really feel like $1.00 is the bottom" against 0.589 — but there is one genuinely analytical new argument: Ripple's escrow release schedule structurally caps price, so bulls are being asked to "wait ten years while Ripple bleeds escrow into the market and just hope that demand outruns it." Self-awareness intact: "This time i'm going to sell for real this time kek." Background on the same thread's cycle math: https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-19/bericht.md
 
-The timeshare fight produced one genuinely usable fact: every timeshare purchase carries a 5-business-day rescission window, and resale contracts are given away for near nothing on the TUG forum, so buying direct from the developer is the expensive path. A calmer poster describes trading a sales presentation for 5 nights at a hotel he normally pays $99 a night for, with rising maintenance fees as the catch. The skeptic's summary: "You don't own shit with a time share besides the right to occupy." Demands for proof, "Receipts buddy", got a blurry membership card.
+LINK actually reached and held above 10 dollars, the exact event a 72-post thread was built to wait for. The reaction was flat: "The magic is gone, the memes are stale, the shills have been uncovered." Behind it, a two-poster date-by-date fight over whether BTC dumps on LINK milestones (CCIP go-live, Staking v0.2, DTCC 2023-09-16, Robinhood listing) was answered with actual price data: 0.1 percent moves, a +5 percent same-day recovery, and LINK +0.30 percent versus BTC -0.25 percent on the chart the bull himself posted. The most useful remark came from a bystander: the correlation "should be really easy to backtest" and nobody has, in years. Reliability: 19 percent of posts from the loudest ID, essentially a private dispute, not board consensus.
 
-The pizza-party thread is the day's wagie lament, wagie being the board's term for a wage earner, and its best line is a trade: "having a job is like shorting your life / limited upside / unlimited downside."
+## PRECIOUS METALS
+
+Silver moved 6 dollars in two days, called "bonkers," and /pmg/ is running 3.2x its own hourly average. The headline claim is a dated collapse schedule: silver dips to about 90 dollars in January/February, boomers sell, then it "skyrocket[s] almost instantly to at least $500, never going down again." Unsourced, and mocked in-thread with "why don't they use it to profit?"
+
+Also new: a gemstones-as-stack debate settled by "We stack metals, not rocks," and one genuinely practical estate tip — hold PM exposure in an account with a transfer-on-death beneficiary, because heirs otherwise undersell physical silver, as in two shared pawn-shop videos (a widow selling at spot near 50, an old man arriving with 100k+ at spot near 30). Reliability flag: the loudest ID (11 percent) is the one pushing SLV over physical and is called a shill for it by name.
+
+## BBBYQ: THE WARRANTS MOVED
+
+The three-year Teddy thesis got its first price event in a while. Claimed today: BBBY warrants up 200 percent in a session, volume of 6.31 million against a prior high of 1.62 million on 15 October 2025, a cost basis of 0.52 dollars sold at 1.30, and a need for roughly 3x more to be in the money. Warrant expiries are stated as 7 October (BBBY) and 30 October (GME), with the CUSIP migration to 902116 as the ticker becomes NXH — that migration is what skeptics say kills the thesis: "This confirms there is no relation between the warrants for BBBY/ NXH and BBBYQ/ DK-Butterfly."
+
+New bull claim: a "Gallant Guarant0r" attached to BBBYQ bonds makes Class 6 whole, asserted as "100% PROVEN FACT," rebutted flatly with "the bonds are defaulted and there is no guarantor... Class 9 gets nothing." The sharpest thing said all day came from the skeptic side, reframing the whole complex: "you guys are the value of the stock... Overstock didn't just buy BBBYQ, They bought your trust in RC which is worth billions." Perpetual deferral remains the running gag — "Just a few weeks away from Tendy Town." Reliability: 6.4 posts per ID, a small long-tenured circle, and "The cope required to justify this behavior could power a small city" is a participant's own assessment. Background: https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-19/bericht.md
+
+## LABOR: THE PIZZA PARTY
+
+An anon whose company closed a deal worth "hundreds of millions" got a pizza party costing "a few hundred bucks at most." The thread's dominant answer is contractual: "did you sign any piece of writing saying that a percentage... were going to be offered to you?" The usable advice is the opposite of grievance:
+
+- Don't work hard without a commission or bonus scheme
+- Negotiate percent-based commission into the contract up front
+- Turn a proven big win into a resume line and sell it to another employer, since "your own company will not appreciate that because 'it's your job'"
+
+Anecdotes offered as pattern, all unsourced: a game studio whose stock went "$2.5 to $10+ and then to $100+" while staff earned "below $1k per month"; a friend who took half a million as signing bonus on a 50-million-dollar contract; a company freezing pay three years while CEO comp rose "by million" and soliciting PAC donations. Best line, and the whole thread in one: "having a job is like shorting your life / limited upside / unlimited downside." A "wagie" is a wage worker, and the board's optimism chant gets used as a knife: "this is why you will never WAGMI."
 
 ## FILLING FAST
 
-- Sovereign yields thread: 10 posts in the last hour, 3.8x its own 2.6 average. Content is the yield table and doom loop above.
-- Korean zoomers: 7 posts in the last hour, 1.3x its average, and nothing beyond the subject line. One poster claims a -15% KOSPI move margin-called "1 in 7" Koreans last month, revised down from a quarter, sourced to a complaint "in a niche mmo". The thread's real interest: "Did Faker get rugged?"
-- "Will BTC dump when Link hits $10": 4 posts an hour, 1.7x its average, one poster holding 22% of it. The claim is that LINK news, CCIP in early 2022, SWIFT in 2023, live trials with HSBC and Citi in January 2026, always precedes dumps: "Every single bit of seminal news put out by Link got massively dumped on." The rebuttal dates the same dips to SEC lawsuits and macro stress: "you are just statistically illiterate and ignorant of global macro and economics in general." A bystander's exit line: "I feel disgusted with myself for engaging with this shit again."
-- /BBBYQ/ at 2.0x its own average, content above.
+- /XSG/ #2556: 20 posts in the last hour, 8.7x its own 2.3 per hour. Content is the XRP pump to 1.33 and the escrow argument above.
+- /pmg/: 19 posts, 3.2x its 6.0 per hour. Content is the 6-dollar silver move and the 90-then-500 schedule.
+- The live /smg/ did 57 posts in 42 minutes on an intraday selloff. Content is the Anthropic IPO theory and "shit we really crashing now."
+- Three macro threads all run 2.5x their own averages (the 30-year yield record, the CNBC bond-buyback story, the 200-day MA thread). Covered above.
+- "life for real estate fraud" is 4 posts and 0.4 hours old with nothing in the OP but its subject line. Replies supply the Evergrande context, one arguing "this guy was the patsy" for the Chinese state, another noting China "also ban cryptocurrency, which is definitely a mark of intelligence." No numbers, no asset.
 
-## UNCHANGED OR NEARLY SO
+## UNCHANGED FROM YESTERDAY
 
-/XSG/ XRP Schizo General is on iteration 2556 again, with the same $1.00-versus-$0.589 bottom-call as yesterday; the one new argument reads politics off a photo, Garlinghouse standing next to Trump while Chainlink's founder is off-camera, "Clear why Brad is right next to Trump", answered with "they'd eat his diapers if they thought it would get them some attention."
+Housing (frozen market, 2 percent mortgages, Redfin data only since 2013, the K-shaped argument that the top 20 percent props up demand): three new posts, no new numbers.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-19/bericht.md
 
-Housing: frozen-market debate unchanged, except one new unsourced claim that a 50 to 80 percent crash is coming because institutional owners hold vast empty inventory, "general population dont understand how many empty houses/apartments/flats/sheds is sitting empty."
+Bitcoin's 17th-birthday thread (3x-4x remaining upside, 60 percent gain since ETF approval, Babylon staking versus ETFs after the Coldcard hack): unchanged, and the Babylon push comes from the OP himself at 14 percent of posts.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-19/bericht.md
 
-Bitcoin at 17 (3x-4x remaining upside, 60 percent since ETF approval, Babylon staking versus ETFs after the Coldcard hack): no new argument.
-https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-19/bericht.md
-
-"40 is the new 60. simple as." still never explains itself; the Chili's price joke remains the only market reading.
+The timeshare thread (35k up front or 20k for 20 years, then 2,400 dollars a week all-in, 100k income screening, 5 business days to rescind): unchanged, and 45 percent of its posts come from the single owner making every claim.
 https://github.com/ClaudioLutz/boardstats/blob/main/extrakte/2026-08-19/bericht.md
 
 ## GLOSSARY
 
-- Agorist - someone who believes in building a parallel, untaxed/unregulated economy outside state systems.
-- AH - "after hours," trading that occurs after the regular market session closes.
-- bagholder/baggie - someone stuck holding a losing position, unable or unwilling to sell.
-- Bake/baker - slang for creating (and posting) a new general thread; a "late bake" means posting the new thread too slowly or without proper formatting.
-- CARROT - a proposed Monero protocol change involving new view-key mechanics, central to the thread's relisting/privacy debate.
-- CCIP - Chainlink's Cross-Chain Interoperability Protocol, a product feature referenced as a past "news" milestone.
-- checked - acknowledgment that a post's number contains a notable repeating digit pattern, treated as a good omen.
-- Class 6 / Class 9 - creditor classes in the BBBYQ bankruptcy plan; Class 6 refers to certain bondholders, Class 9 to retail equity holders, with differing (disputed) recovery outcomes.
-- covered calls - an options strategy of selling call options against owned shares to collect premium, capping upside.
-- FIGI - Financial Instrument Global Identifier, a securities identifier referenced in the "FIGI Finale" phrase for the thesis's hoped-for resolution.
-- general - a recurring, numbered thread dedicated to one topic/asset that continues across many threads.
-- Guarant0r - a third party that backs (guarantees) a bond's repayment; posters dispute whether one newly appears on BBBYQ bonds.
-- ID - a per-thread poster identifier (e.g. "ID YNQOZ2uH") shown next to each post so replies to the same person can be tracked within one thread only.
-- NGMI - board slang, "not gonna make it," predicting someone's financial failure.
-- OP - "original poster," the person who started the thread with the first post.
-- PE - price-to-earnings ratio, a stock valuation multiple.
-- rescission window - the legally mandated period (5 business days per one poster) during which a timeshare buyer can cancel the contract without penalty.
-- rug pull / rugged - a sudden collapse or scam that leaves holders with losses; here used loosely for a market crash.
+- anon - the default anonymous handle used to address or refer to posters.
+- backtest - testing a trading/correlation hypothesis against historical price data, which qn25twUU says no one has actually done here.
+- bagholder - someone still holding a losing position, unable or unwilling to sell
+- Bagholder/baggie - someone still holding an asset that has lost significant value.
+- bagholder/baggot/baggie - someone still holding a losing investment position, typically mocked for refusing to sell.
+- Based - an approving/respect reaction to a post or opinion.
+- bull trap - a price move that looks like the start of a rally but reverses into a decline, trapping buyers
+- calls/puts - options contracts giving the right to buy (call) or sell (put) a stock at a set price.
+- CCIP - Chainlink's Cross-Chain Interoperability Protocol, cited both for its 2021 technical blogpost and its early-2022 go-live.
+- Clarity act - referenced US crypto market-structure legislation one poster claims is "nearly about to pass."
+- Class 9 / Class 6 - creditor priority tiers in a bankruptcy plan; higher-numbered classes are typically paid after senior classes.
+- collateral/collateralized - assets (here, real estate) pledged to back a loan; central to the bank-exposure argument.
+- cope - board slang for rationalizing away a losing position or bad prediction instead of admitting it.
+- Cope/coping - board slang for rationalizing a bad outcome to feel better about it.
+- crab / crabbing - board slang for a market moving sideways without clear trend
+- CUSIP - a unique identifier code for a security; the thread's central "CUSIP-6 conundrum" theory hinges on whether two different securities share matching digits.
+- DCA - dollar-cost averaging, buying a fixed amount at regular intervals regardless of price rather than timing a lump-sum entry
+- DTCC - Depository Trust & Clearing Corporation, a US financial market infrastructure firm whose Chainlink collaboration is cited as a past news event.
