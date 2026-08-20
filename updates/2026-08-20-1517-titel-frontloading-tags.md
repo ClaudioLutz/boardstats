@@ -2,7 +2,7 @@
 datum: 2026-08-20
 agent: worktree-agent-a6efd0c4caee62612
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 7f90c51
 ---
 
 # Titel-Frontloading (Hook ≤55) und Tag-Phrasen statt Fragmente
