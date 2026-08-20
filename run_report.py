@@ -820,6 +820,10 @@ def bericht_zu_markdown(bericht: str, datum: str) -> str:
 # Die Hooks sind bewusst reisserisch (Entscheid 14.08.2026: voll Clickbait,
 # Hook + Serien-Suffix, keine Emoji, keine Wiederholung ueber die Tage).
 # Seit 16.08.2026 nur noch englisch, im nativen Jargon des Boards.
+# Seit 20.08.2026 frontloaded: 43 von 54 Views kamen ueber die Suche, aber
+# YouTube kappt Titel dort bei rund 60-70 Zeichen - die Suchbegriffe muessen
+# deshalb vorn stehen und der Hook unter 55 Zeichen bleiben
+# (research/messung-metadaten-upload-2026-08-20.md, Abschnitt 4).
 TITEL_PROMPT = """\
 You get today's /biz/ situation report (Markdown, English), possibly
 followed by a block TITLES ALREADY USED.
@@ -829,12 +833,20 @@ Write one sensational title hook for today's YouTube video.
 Rules:
 - Pick the ONE most compelling story of the report: the biggest
   development, the largest number or the sharpest conflict.
+- FRONT-LOAD the search terms: the hook STARTS with what people type
+  into YouTube search - the ticker, company or asset name, or the core
+  topic. The twist, number or verdict follows after it. Never put
+  generic hype filler ("This Is INSANE", "You Won't Believe") before
+  the search terms.
 - Full clickbait: pointed, urgent, one or two words in CAPITAL LETTERS.
+  The CAPS go on a search term or its number, never on a filler word.
   No emoji. Invent nothing: every statement of the hook must be backed by
   the report.
 - Write in the native voice of the board /biz/ - its jargon and meme
   language are welcome where the report supports them.
-- At most 75 characters, no period at the end.
+- At most 55 characters, no period at the end. Search results and the
+  mobile app cut titles at roughly 60 characters: everything important
+  must sit before that cut.
 - No em dash in the hook: use a colon or comma instead.
 - If a block TITLES ALREADY USED is present, none of those hooks and no
   close paraphrase of them may return. If the topic of the day is the
@@ -850,6 +862,10 @@ Output ONLY one JSON object, no preamble, no postscript, no code fence:
 """
 
 TITEL_SUFFIX = " | /biz/ "
+# Suche und Mobile-App kappen Titel bei rund 60-70 Zeichen: 55 Zeichen Hook
+# bleiben dort sichtbar, und mit Suffix+Datum (19 Zeichen) liegt der
+# Gesamttitel bei hoechstens 74 - weit unter dem 100-Zeichen-API-Limit.
+HOOK_MAX_ZEICHEN = 55
 THUMB_MAX_ZEICHEN = 20  # Schlagwort fuers Vorschaubild, Handy-Lesbarkeit
 
 
@@ -878,10 +894,11 @@ def bisherige_titel(datum: str, tage: int = 14) -> list[str]:
 
 def _hook_bereinigen(hook: str) -> str:
     # "<" und ">" sind in YouTube-Titeln verboten; der lange Gedankenstrich
-    # ist im Titel unerwuenscht (Schreibstil-Vorgabe fuer externe Texte);
-    # 75 Zeichen lassen dem Serien-Suffix Platz unter dem 100-Zeichen-Limit.
+    # ist im Titel unerwuenscht (Schreibstil-Vorgabe fuer externe Texte).
+    # Gekappt wird auf HOOK_MAX_ZEICHEN an der Wortgrenze: ein Schnitt mitten
+    # im Wort saehe im Suchergebnis wie ein Darstellungsfehler aus.
     hook = hook.replace("<", "").replace(">", "").replace(" — ", ": ").replace("—", "-")
-    return re.sub(r"\s+", " ", hook).strip()[:75].rstrip()
+    return _wortgrenze(re.sub(r"\s+", " ", hook).strip(), HOOK_MAX_ZEICHEN)
 
 
 def _thumb_bereinigen(schlagwort: str, hook: str) -> str:

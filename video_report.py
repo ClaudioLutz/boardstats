@@ -1767,7 +1767,12 @@ def _hook_gesprochen(hook: str) -> str:
     Satzzeichen. Die Grossschreibung bleibt, wie der Titel sie hat - gemessen
     am 17.08.2026 spricht Google TTS (Neural2-J) "IMPOSSIBLE" und
     "Impossible" gleich lang, buchstabiert also nichts, und Kuerzel wie NVDA
-    erkennt es von selbst (0.70 s gegen 0.29 s fuer GOLD)."""
+    erkennt es von selbst (0.70 s gegen 0.29 s fuer GOLD).
+
+    Ein Klammer-Ticker ("Moderna (MRNA) PUMPS") faellt fuer die Sprechfassung
+    weg: gesprochen ist er nur die Wiederholung des Firmennamens - im Titel
+    steht er seit dem Frontloading (20.08.2026) fuer die Suche."""
+    hook = re.sub(r"\s*\([A-Z0-9.]{1,6}\)", "", hook)
     satz = re.sub(r"\s+", " ", hook.replace(":", ",")).strip()
     satz = re.sub(r"\s+([,.])", r"\1", satz).rstrip(",;:- ")
     if satz and satz[-1] not in ".!?":
@@ -4184,6 +4189,8 @@ STOPP_TAGS = frozenset({
     "why", "you", "your", "its", "but", "not", "out", "off", "who", "was",
     # Fachkuerzel und Ticker, die als Wort zu mehrdeutig sind, um zu treffen
     "cusip", "app", "link", "ceo", "cfo", "etf", "faq", "usd", "eur", "chf",
+    # Rubrikenkoepfe, die als Suchbegriff nichts eingrenzen
+    "macro", "glossary", "board life",
 })
 
 
@@ -4207,38 +4214,85 @@ def _titel_schlagworte(titel: str) -> list[str]:
     return aus
 
 
+TAG_MAX_LAENGE = 44  # laengster Kapiteltitel aus folien.json
+
+
+def _tag_saeubern(roh: str) -> str:
+    """Ein Tag-Kandidat in Upload-Form: klein, ohne Satzzeichen-Rauschen.
+    Apostrophe fallen ersatzlos weg ("day's" -> "days"), sonst wuerde die
+    Zeichenklasse daraus das Fragment "day s" machen."""
+    t = roh.replace("'", "").replace("’", "")
+    t = re.sub(r"[^0-9A-Za-zÄÖÜäöü$&. -]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def _phrase_kuerzen(roh: str) -> str:
+    """Eine Themen-Phrase auf ihren suchbaren Kern bringen: der Teil vor dem
+    ersten Komma (dahinter beginnt ein zweiter Gedanke), ohne fuehrenden
+    Artikel."""
+    p = roh.split(",")[0].strip()
+    for artikel in ("the ", "a ", "an "):
+        if p.lower().startswith(artikel):
+            p = p[len(artikel):]
+            break
+    return p
+
+
 def tags_bauen(sprache: str, titel: str, bloecke: list[Block],
-               markdown: str = "") -> list[str]:
-    """Tag-Liste fuer den Upload: feste Serien-Tags plus die Tagesthemen
-    (die Eigennamen des Titels, die im Bericht genannten Ticker und der
-    Themenkopf jeder ##-Ueberschrift, also der Teil vor dem Doppelpunkt).
+               markdown: str = "", fdaten: dict | None = None) -> list[str]:
+    """Tag-Liste fuer den Upload: die Tagesthemen als vollstaendige
+    Suchphrasen, danach die festen Serien-Tags. Quellen, spezifisch vor
+    generisch: die Eigennamen des Titels, Firmennamen samt Ticker aus dem
+    Bericht, der ##-Ueberschriften-Teil NACH dem Doppelpunkt als Phrase,
+    die Kapiteltitel aus folien.json und zuletzt die Themenkoepfe.
+    Vorher (gemessen 20.08.2026) blieben nur 108 von 450 Zeichen genutzt,
+    darunter Rauschen wie "moderna pumps" (gekapptes Titelfragment).
     Konservativ unter dem 500-Zeichen-Limit gekappt, das YouTube auf die
-    Gesamtliste rechnet."""
-    tags = list(FESTE_TAGS[sprache])
+    Gesamtliste rechnet; die Serien-Tags haben ihr Budget immer sicher."""
     kandidaten = _titel_schlagworte(titel)
     # Ticker stehen im Bericht in Klammern hinter dem Firmennamen
-    # ("Klarna (KLAR)") - das sind die praezisesten Suchbegriffe des Tages.
+    # ("Klarna (KLAR)") - Name und Ticker sind die praezisesten
+    # Suchbegriffe des Tages.
+    for name, ticker in re.findall(r"([A-Z][A-Za-z&.-]{2,29})\s+\(([A-Z]{2,5})\)",
+                                   markdown):
+        kandidaten += [name, ticker]
     kandidaten += re.findall(r"\(([A-Z]{2,5})\)", markdown)
-    # Nur Ueberschriften mit Doppelpunkt tragen vorne ein echtes Thema
+    # Nur Ueberschriften mit Doppelpunkt tragen ein echtes Thema
     # ("MONERO: ..."); die ohne sind generische Serienrubriken
-    # ("UNVERAENDERT SEIT GESTERN") und als Suchbegriff wertlos.
-    kandidaten += [b.text.split(":")[0] for b in bloecke
-                   if b.art == "ueberschrift" and ":" in b.text]
-    for roh in kandidaten:
-        t = re.sub(r"[^0-9A-Za-zÄÖÜäöü$&. -]+", " ", roh)
-        t = re.sub(r"\s+", " ", t).strip().lower()
-        if t in STOPP_TAGS:
-            continue  # gilt fuer jede Quelle, auch fuer Ticker wie "(CUSIP)"
-        if t and t not in tags and 2 <= len(t) <= 30:
-            tags.append(t)
+    # ("UNVERAENDERT SEIT GESTERN") und als Suchbegriff wertlos. Der Teil
+    # NACH dem Doppelpunkt ist die Suchphrase, der Kopf davor nur Beiwerk.
+    koepfe: list[str] = []
+    for b in bloecke:
+        if b.art == "ueberschrift" and ":" in b.text:
+            kopf, thema = b.text.split(":", 1)
+            phrase = _phrase_kuerzen(thema)
+            if " " in phrase:
+                # Ein einzelnes Restwort ("HOUSING: FROZEN, ..." -> "FROZEN")
+                # ist keine Suchphrase mehr, nur ein Adjektiv.
+                kandidaten.append(phrase)
+            koepfe.append(kopf)
+    # Die Kapiteltitel aus folien.json (<= 44 Zeichen) sind bereits sauber
+    # formulierte Tagesthemen; uebernommen nur fuer Abschnitte, deren
+    # ##-Ueberschrift per Doppelpunkt ein echtes Thema traegt.
+    for a in (fdaten or {}).get("abschnitte") or []:
+        if isinstance(a, dict) and ":" in str(a.get("ueberschrift") or ""):
+            kandidaten.append(_phrase_kuerzen(str(a.get("titel") or "")))
+    kandidaten += koepfe
+    fest = list(FESTE_TAGS[sprache])
+    budget = TAGS_MAX_ZEICHEN - sum(len(t) + 2 for t in fest)
     aus: list[str] = []
     laenge = 0
-    for t in tags:
-        laenge += len(t) + 2  # Mehrwort-Tags zaehlen bei YouTube mit Quotes
-        if laenge > TAGS_MAX_ZEICHEN:
-            break
+    for roh in kandidaten:
+        t = _tag_saeubern(roh)
+        if not t or t in STOPP_TAGS or t in aus or t in fest:
+            continue  # STOPP_TAGS gilt fuer jede Quelle, auch Ticker "(CUSIP)"
+        if not 2 <= len(t) <= TAG_MAX_LAENGE:
+            continue
+        if laenge + len(t) + 2 > budget:
+            continue  # Mehrwort-Tags zaehlen bei YouTube mit Quotes
+        laenge += len(t) + 2
         aus.append(t)
-    return aus
+    return aus + fest
 
 
 def kapitel_eins_start(bloecke: list[Block],
@@ -4587,7 +4641,7 @@ def main() -> None:
         print(f"Beschreibung nicht aufgebaut ({e}) - nehme nur die Kopfzeile")
         beschreibung = kurz
     print("lade auf YouTube hoch ...")
-    tags = tags_bauen(args.sprache, titel, bloecke_ton, markdown)
+    tags = tags_bauen(args.sprache, titel, bloecke_ton, markdown, fdaten)
     try:
         video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
                                                privacy_status="private",
