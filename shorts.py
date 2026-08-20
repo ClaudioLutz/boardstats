@@ -24,10 +24,13 @@ gehoert (z. B. Bericht abends regeneriert, Audio vom Morgenlauf).
 
 Bild: eigenes, schlichtes 1080x1920-Layout (Titel oben, Stichworte gross
 und progressiv ueber die Anker-Zeitstempel aus folien.json eingeblendet,
-Kennzahl-Karte falls vorhanden) - bewusst ohne Hintergrund-Clips (v1
-lesbar und ruhig). Farb- und Schrift-Vokabular kommt aus design_tokens.py
-und thumbnail.py, die Shorts-UI-Zonen (untere ~420 px, rechte ~190 px)
-bleiben frei.
+Kennzahl-Karte falls vorhanden). Dahinter liegt ueber die ganze Laufzeit
+das Kapitel-Motiv des Hauptvideos (arbeit/motive/, Zuordnung ueber
+vr.MotivWahl - Story i traegt dasselbe Motiv wie Kapitel i), formatfuellend
+zugeschnitten und per Scrim abgedunkelt; ohne freigegebene Bilder rendert
+das Short wie bisher auf dem Farbtheme. Farb- und Schrift-Vokabular kommt
+aus design_tokens.py und thumbnail.py, die Shorts-UI-Zonen (untere ~420 px,
+rechte ~190 px) bleiben frei.
 
 Marker extrakte/<datum>/shorts_en.json haelt die hochgeladenen Storys fest
 (inkrementell nach jedem Upload geschrieben); ein Wiederanlauf ueberspringt
@@ -368,6 +371,82 @@ def short_beschreibung(story: Story, kap_titel: str, ticker: str | None,
     return text.replace("<", "").replace(">", "")
 
 
+# ----------------------------------------------------------- Motiv-Hintergrund
+
+SCRIM = 0.60        # Anteil GRUND-Farbe ueber dem ganzen Motiv
+SCRIM_OBEN = 0.40   # zusaetzliche Abdunkelung am oberen Rand (Titel/Stichworte)
+SCRIM_BODEN = 1250  # bis hier klingt der Zusatz-Scrim linear auf 0 ab
+
+
+def story_motive(datum: str, bloecke: list[vr.Block],
+                 abschnitte: list[vr.Abschnitt]) -> dict[int, Path]:
+    """Kapitel-Motiv je Abschnittsindex - exakt die Zuordnung, mit der das
+    Hauptvideo seine Kapitel belegt (vr.MotivWahl: die Kapitel-Reservierung
+    ist dort der erste Pool-Zugriff auf frischem Zustand, eine frische
+    MotivWahl liefert also identische Motive). Animierte Motive (GIF/WebM/
+    MP4) werden durch ihr Posterframe ersetzt - die Shorts sind eine reine
+    Standbild-Pipeline; die Clip-Zuteilung des Hauptvideos (Kapitel mit
+    WebM-Clip als Opener) bleibt bewusst aussen vor.
+
+    Leer, wenn der Tag keine freigegebenen Hintergrundbilder hat - dann
+    rendern die Shorts wie bisher auf dem Farbtheme (der tages_motiv-
+    Rueckfall des Hauptvideos gilt hier absichtlich nicht: das Vorschaubild
+    passt inhaltlich auf keine einzelne Story)."""
+    wahl = vr.MotivWahl(datum)
+    if not wahl.pool:
+        print("keine freigegebenen Hintergrundbilder - Shorts auf Farbtheme")
+        return {}
+    nrs = [nr for _, _, nr in story_grenzen(bloecke)]
+    _, motive = wahl.kapitel_reservieren(abschnitte, nrs)
+    typen = vr.motiv_typen(datum)
+    poster = vr.motiv_poster_pfade(datum)
+    aus: dict[int, Path] = {}
+    for nr, m in zip(nrs, motive):
+        if m is None:
+            continue
+        if typen.get(m.name) == "animiert":
+            p = poster.get(m.name)
+            if p is None:
+                print(f"animiertes Motiv {m.name} ohne Posterframe - "
+                      f"Story {nr} auf Farbtheme")
+                continue
+            m = p
+        aus[nr] = m
+    return aus
+
+
+def hintergrund_bauen(motiv: Path) -> Image.Image | None:
+    """Formatfuellender 1080x1920-Hintergrund aus dem Kapitel-Motiv:
+    leicht skalierter Center-Crop plus Scrim (GRUND-Abdunkelung), damit
+    Titel, Stichworte und Kennzahl-Karte lesbar bleiben. None, wenn das
+    Motiv nicht lesbar ist (dann Farbtheme wie bisher)."""
+    try:
+        with Image.open(motiv) as roh:
+            bild = roh.convert("RGB")
+    except (OSError, ValueError) as e:
+        print(f"Motiv {motiv.name} nicht lesbar ({e}) - Farbtheme")
+        return None
+    faktor = max(B / bild.width, H / bild.height)
+    bild = bild.resize((max(B, round(bild.width * faktor)),
+                        max(H, round(bild.height * faktor))),
+                       Image.Resampling.LANCZOS)
+    x = (bild.width - B) // 2
+    y = (bild.height - H) // 2
+    bild = bild.crop((x, y, x + B, y + H))
+    grund = Image.new("RGB", (B, H), GRUND)
+    bild = Image.blend(bild, grund, SCRIM)
+    # Die Titel-/Stichwort-Zone oben braucht mehr Deckung als der Rest:
+    # helle Motivpartien (weisse Meme-Flaechen) fressen sonst die gedimmten
+    # grauen Stichworte. Linear abklingender Zusatz-Scrim statt mehr
+    # Uniform-Scrim, damit das Motiv in der unteren Haelfte sichtbar bleibt.
+    verlauf = Image.new("L", (1, H))
+    verlauf.putdata([
+        round(255 * SCRIM_OBEN * max(0.0, 1.0 - zeile / SCRIM_BODEN))
+        for zeile in range(H)])
+    bild.paste(grund, (0, 0), verlauf.resize((B, H)))
+    return bild
+
+
 # ----------------------------------------------------------- Bildaufbau
 
 def _wrap(d: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
@@ -445,9 +524,13 @@ def _karte_zeichnen(d: ImageDraw.ImageDraw, karte: dict) -> None:
 
 
 def frame_bauen(kicker: str, titel: str, punkte: list[str], sichtbar: int,
-                karte: dict | None, karte_an: bool, datum: str) -> Image.Image:
-    """Ein Standbild-Zustand des Shorts (1080x1920)."""
-    bild = Image.new("RGB", (B, H), GRUND)
+                karte: dict | None, karte_an: bool, datum: str,
+                hintergrund: Image.Image | None = None) -> Image.Image:
+    """Ein Standbild-Zustand des Shorts (1080x1920). Mit hintergrund liegt
+    das abgedunkelte Kapitel-Motiv unter dem Text (siehe hintergrund_bauen),
+    sonst die Farbflaeche wie bisher."""
+    bild = (hintergrund.copy() if hintergrund is not None
+            else Image.new("RGB", (B, H), GRUND))
     d = ImageDraw.Draw(bild)
 
     # Kopfzeile: Serienmarke links, Datum rechts, Amber-Linie darunter.
@@ -583,9 +666,14 @@ def marker_schreiben(pfad: Path, eintraege: list[dict]) -> None:
 
 def short_rendern(story: Story, kap: dict, datum: str, arbeit: Path,
                   start_schnitt: float, dauer: float,
-                  bett: Path | None) -> Path:
+                  bett: Path | None, motiv: Path | None = None) -> Path:
     """Rendert ein Short (Audio-Ausschnitt + Standbild-Folge) und gibt den
     MP4-Pfad zurueck."""
+    hintergrund = hintergrund_bauen(motiv) if motiv is not None else None
+    if motiv is None:
+        print("  kein Kapitel-Motiv - Farbtheme")
+    elif hintergrund is not None:
+        print(f"  Motiv: {motiv.name}")
     kicker = story.bloecke[0].text.split(":")[0] if story.bloecke else ""
     titel = str(kap.get("titel") or story.bloecke[0].text.capitalize())
     stichworte = [str(s.get("text") or "") for s in kap.get("stichworte") or []
@@ -614,7 +702,7 @@ def short_rendern(story: Story, kap: dict, datum: str, arbeit: Path,
     frames: list[tuple[Path, float]] = []
     for i, e in enumerate(folge):
         bild = frame_bauen(kicker, titel, stichworte, e.stichworte,
-                           karte, e.karte, datum)
+                           karte, e.karte, datum, hintergrund)
         pfad = arbeit / f"short_{story.nr:02d}_f{i:02d}.png"
         bild.save(pfad, "PNG")
         naechste = folge[i + 1].zeit if i + 1 < len(folge) else dauer
@@ -674,6 +762,7 @@ def main() -> None:
 
     stories = stories_finden(d.bloecke_ton, worte)
     print(f"{len(stories)} Storys in der Tonspur lokalisiert")
+    motive = story_motive(datum, d.bloecke_ton, d.abschnitte)
 
     marker_pfad = tag_dir / f"shorts{cfg['suffix']}.json"
     eintraege = marker_laden(marker_pfad)
@@ -702,7 +791,7 @@ def main() -> None:
             print(f"Story {story.nr}: {kap_titel} "
                   f"({story.start:.1f}-{story.ende:.1f}s, {dauer:.1f}s)")
             mp4 = short_rendern(story, kap, datum, arbeit, start_schnitt,
-                                dauer, bett)
+                                dauer, bett, motive.get(story.nr))
             if args.trockenlauf:
                 print(f"  gerendert (kein Upload): {mp4}")
                 continue

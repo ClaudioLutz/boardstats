@@ -8,7 +8,11 @@ aelteren Codestand (andere Rahmen-Reihenfolge) stammen kann.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
+from PIL import Image
 
 import shorts
 import video_report as vr
@@ -182,6 +186,90 @@ def test_einblendungen_anker_ohne_fund_folgt_vorgaenger() -> None:
     folge = shorts.einblendungen([None, None], None, 30.0)
     assert folge[-1].stichworte == 2
     assert all(e.zeit < 30.0 for e in folge)
+
+
+# ----------------------------------------------------------- Motiv-Hintergrund
+
+DATUM = "2026-08-20"
+
+
+def _motiv_tag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+               threads: dict[str, list[str]],
+               werte: dict | None = None,
+               typ: dict | None = None) -> Path:
+    """Fake-Tag unter arbeit/motive/<datum>/ mit echten Mini-Bildern."""
+    tag = tmp_path / "motive" / DATUM
+    tag.mkdir(parents=True)
+    for namen in threads.values():
+        for n in namen:
+            Image.new("RGB", (40, 30), (180, 60, 60)).save(tag / n)
+    (tag / "motive.json").write_text(json.dumps(
+        {"threads": threads, "werte": werte or {}, "typ": typ or {}}),
+        encoding="utf-8")
+    monkeypatch.setattr(vr, "HINTERGRUND_DIR", tmp_path / "motive")
+    monkeypatch.setattr(vr, "MOTIV_DIR", tmp_path / "thumbs")  # leer
+    return tag
+
+
+def test_story_motive_folgt_kapitel_zuordnung(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Story i traegt das eigene Thread-Bild ihres Abschnitts - dieselbe
+    Reservierung, mit der das Hauptvideo (vr.MotivWahl) seine Kapitel belegt."""
+    tag = _motiv_tag(tmp_path, monkeypatch,
+                     {"111": ["a.png"], "222": ["b.png"]})
+    abschnitte = [vr.Abschnitt([]), vr.Abschnitt(["111"]),
+                  vr.Abschnitt(["222"])]
+    motive = shorts.story_motive(DATUM, _bloecke(), abschnitte)
+    assert motive == {1: tag / "a.png", 2: tag / "b.png"}
+    # und identisch zur direkten Kapitel-Reservierung des Hauptvideos
+    _, kapitel = vr.MotivWahl(DATUM).kapitel_reservieren(abschnitte, [1, 2])
+    assert kapitel == [motive[1], motive[2]]
+
+
+def test_story_motive_ohne_bilder_leer_und_ohne_tagesmotiv(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ohne freigegebene Bilder KEIN Rueckfall auf das Vorschaubild-Motiv -
+    die Shorts rendern dann wie bisher auf dem Farbtheme."""
+    monkeypatch.setattr(vr, "HINTERGRUND_DIR", tmp_path / "motive")
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    Image.new("RGB", (40, 30)).save(thumbs / f"{DATUM}.jpg")
+    monkeypatch.setattr(vr, "MOTIV_DIR", thumbs)
+    assert shorts.story_motive(DATUM, _bloecke(), [vr.Abschnitt([])] * 3) == {}
+
+
+def test_story_motive_animiert_nur_mit_poster(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Animierte Motive laufen ueber ihr Posterframe; ohne Poster faellt die
+    Story aufs Farbtheme zurueck (Standbild-Pipeline, kein Absturz)."""
+    tag = _motiv_tag(tmp_path, monkeypatch,
+                     {"111": ["a.gif"], "222": ["b.gif"]},
+                     typ={"a.gif": "animiert", "b.gif": "animiert"})
+    Image.new("RGB", (40, 30)).save(tag / "a_poster.png")
+    (tag / "motive.json").write_text(json.dumps(
+        {"threads": {"111": ["a.gif"], "222": ["b.gif"]},
+         "typ": {"a.gif": "animiert", "b.gif": "animiert"},
+         "poster": {"a.gif": "a_poster.png"}}), encoding="utf-8")
+    abschnitte = [vr.Abschnitt([]), vr.Abschnitt(["111"]),
+                  vr.Abschnitt(["222"])]
+    motive = shorts.story_motive(DATUM, _bloecke(), abschnitte)
+    assert motive == {1: tag / "a_poster.png"}
+
+
+def test_hintergrund_bauen_croppt_formatfuellend(tmp_path: Path) -> None:
+    quer = tmp_path / "quer.png"
+    Image.new("RGB", (400, 100), (250, 250, 250)).save(quer)
+    bild = shorts.hintergrund_bauen(quer)
+    assert bild is not None and bild.size == (shorts.B, shorts.H)
+    # Scrim drueckt helle Motivpartien deutlich Richtung GRUND
+    px = bild.getpixel((540, 1900))
+    assert isinstance(px, tuple) and max(px[:3]) < 200
+
+
+def test_hintergrund_bauen_unlesbar_gibt_none(tmp_path: Path) -> None:
+    kaputt = tmp_path / "kaputt.webm"
+    kaputt.write_bytes(b"kein bild")
+    assert shorts.hintergrund_bauen(kaputt) is None
 
 
 # ----------------------------------------------------------- Marker
