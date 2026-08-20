@@ -2,7 +2,7 @@
 datum: 2026-08-20
 agent: worktree-agent-a50edd5dd83449881
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 2e2d63a
 ---
 
 # Abbruchkurven fliessen automatisch in Bericht und Drehbuch ein
