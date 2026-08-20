@@ -1195,10 +1195,12 @@ def _abdeckung_nachtrag(luecken: list[tuple[str, str]]) -> str:
             "these paragraphs as well - keep the rest of the coverage.")
 
 
-def _folien_versuch(bericht_md: str, zusatz: str = "") -> dict:
+def _folien_versuch(bericht_md: str, zusatz: str = "",
+                    befund: str = "") -> dict:
     """Ein Drehbuch-Versuch: Sonnet-Aufruf, geparst und auf die Anzeige
-    zurechtgestutzt. `zusatz` haengt eine Nachforderung an den Prompt."""
-    out = claude_ruf(FOLIEN_PROMPT + zusatz, bericht_md, "sonnet",
+    zurechtgestutzt. `zusatz` haengt eine Nachforderung an den Prompt,
+    `befund` den Retention-Kontext (leer = Prompt byte-gleich wie bisher)."""
+    out = claude_ruf(FOLIEN_PROMPT + befund + zusatz, bericht_md, "sonnet",
                      TIMEOUT_FOLIEN)
     out = _json_schneiden(out.strip())
     try:
@@ -1248,7 +1250,7 @@ def _folien_versuch(bericht_md: str, zusatz: str = "") -> dict:
     return daten
 
 
-def folien_generieren(bericht_md: str) -> dict:
+def folien_generieren(bericht_md: str, befund: str = "") -> dict:
     """Szenen-Drehbuch fuer das Video (Sonnet-Aufruf auf den fertigen
     Bericht). Liefert das geprueft geparste JSON-Objekt mit version=2;
     video_report.py erkennt daran das v7-Szenen-Layout.
@@ -1258,14 +1260,15 @@ def folien_generieren(bericht_md: str) -> dict:
     Mechanik wie beim wiederholten Titel-Hook. Bleibt auch der zweite
     Versuch darunter, gewinnt der bessere von beiden: ein Drehbuch mit
     Luecken ist immer noch ein Video, ein Abbruch waere keines."""
-    daten = _folien_versuch(bericht_md)
+    daten = _folien_versuch(bericht_md, befund=befund)
     luecken = _abdeckung_luecken(bericht_md, daten)
     if not luecken:
         return daten
     print(f"Drehbuch: {len(luecken)} Absaetze ohne Anker "
           f"({', '.join(u for u, _ in luecken[:4])}) - fordere nach")
     try:
-        zweit = _folien_versuch(bericht_md, _abdeckung_nachtrag(luecken))
+        zweit = _folien_versuch(bericht_md, _abdeckung_nachtrag(luecken),
+                                befund)
     except (RuntimeError, OSError) as e:
         print(f"Drehbuch-Nachforderung fehlgeschlagen ({e}) - "
               f"bleibe beim ersten Versuch")
@@ -1989,8 +1992,174 @@ def hintergruende_waehlen(manifest: dict, datum: str,
     return len(frei)
 
 
+# -------------------------------- Retention-Rueckkopplung aus den Analytics
+
+# Der Analytics-Cron (23:30) legt taeglich arbeit/analytics/<datum>.json ab,
+# seit 20.08.2026 mit den Abbruchkurven der juengsten Uploads im Feld
+# "kurven" (analytics_bericht.kurven_erheben). retention_befund() verdichtet
+# sie zu einem kurzen englischen Kontextblock, der an den Synthese-Prompt
+# (stufe3) und den Drehbuch-Prompt (FOLIEN_PROMPT) angehaengt wird - so
+# fliesst die gemessene Abbruchkurve automatisch in Laenge und Aufbau des
+# naechsten Videos ein, statt einmalig von Hand nachgezogen zu werden.
+# Ohne brauchbare Daten liefert die Funktion "" und beide Prompts bleiben
+# byte-gleich zum bisherigen Stand.
+ANALYTICS_ABLAGE = ARBEIT / "analytics"
+ANALYTICS_MAX_ALTER_TAGE = 3    # aeltere Messungen speisen nichts mehr ein
+RETENTION_VIDEOS = 5            # so viele juengste auswertbare Videos zaehlen
+# Das bestehende Wortbudget des Synthese-Prompts (Regel 3: 700 bis 1000
+# Woerter). Die gemessenen Laufzeiten entstanden aus genau diesem Budget,
+# also skaliert Ziellaufzeit/Ist-Laufzeit das Budget proportional mit -
+# keine erfundenen Richtwerte, nur der Dreisatz aus den eigenen Daten.
+WORTBUDGET = (700, 1000)
+
+
+def _mmss(sekunden: float) -> str:
+    return f"{int(sekunden) // 60}:{int(sekunden) % 60:02d}"
+
+
+def _retention_kennwerte(video: dict) -> dict | None:
+    """Deterministische Kennwerte einer Abbruchkurve; None wenn unauswertbar
+    (fehlende Laufzeit, leere oder zu duenne Kurve)."""
+    laufzeit = int(video.get("laufzeit_s") or 0)
+    punkte = sorted(
+        (float(p.get("elapsedVideoTimeRatio", 0.0)),
+         float(p.get("audienceWatchRatio", 0.0)))
+        for p in (video.get("kurve") or []) if isinstance(p, dict))
+    if laufzeit <= 0 or len(punkte) < 10:
+        return None
+    anteile = [w for _, w in punkte]
+    # Steilste Abbruchzone: groesster Verlust ueber ein Fenster von einem
+    # Zehntel der Stuetzpunkte (bei 100 Punkten also 10 % der Laufzeit).
+    fenster = max(1, len(punkte) // 10)
+    steil = max(range(len(punkte) - fenster),
+                key=lambda i: anteile[i] - anteile[i + fenster])
+    return {
+        "laufzeit_s": laufzeit,
+        "views": int(video.get("views") or 0),
+        # Mittel der Kurve = mittlere Wiedergabedauer relativ zur Laufzeit
+        "mittel": sum(anteile) / len(anteile),
+        # Anteil der Laufzeit, ab dem weniger als 50 % bzw. 30 % noch schauen
+        "unter_05": next((x for x, w in punkte if w < 0.5), None),
+        "unter_03": next((x for x, w in punkte if w < 0.3), None),
+        "steil_von": punkte[steil][0],
+        "steil_bis": punkte[steil + fenster][0],
+        "steil_verlust": anteile[steil] - anteile[steil + fenster],
+    }
+
+
+def _median(werte: list[float]) -> float:
+    w = sorted(werte)
+    m = len(w) // 2
+    return w[m] if len(w) % 2 else (w[m - 1] + w[m]) / 2
+
+
+def _retention_block(kennwerte: list[dict]) -> str:
+    """Der englische Kontextblock fuer die Prompts, beginnend mit einem
+    Zeilenumbruch (er wird direkt an einen Prompt angehaengt)."""
+    laufzeit = _median([float(k["laufzeit_s"]) for k in kennwerte])
+    mittel = _median([k["mittel"] for k in kennwerte])
+    views = [k["views"] for k in kennwerte if k.get("views")]
+    stichprobe = (f"; only {min(views)}-{max(views)} views each, treat as "
+                  "directional" if views else "")
+    zeilen = [
+        "",
+        f"RETENTION FEEDBACK (measured on the last {len(kennwerte)} uploads, "
+        f"YouTube Analytics{stichprobe}):",
+        f"- median runtime {_mmss(laufzeit)} min; average view duration "
+        f"{_mmss(mittel * laufzeit)} ({mittel * 100:.0f}% of runtime).",
+    ]
+    halb = [k["unter_05"] * k["laufzeit_s"] for k in kennwerte
+            if k["unter_05"] is not None]
+    drittel = [k["unter_03"] * k["laufzeit_s"] for k in kennwerte
+               if k["unter_03"] is not None]
+    if halb:
+        zeilen.append(
+            f"- half the audience is gone by {_mmss(_median(halb))} "
+            f"(median, {_median(halb) / laufzeit * 100:.0f}% of runtime).")
+    steilster = max(kennwerte, key=lambda k: k["steil_verlust"])
+    zeilen.append(
+        f"- steepest drop-off: {_mmss(steilster['steil_von'] * steilster['laufzeit_s'])}"
+        f"-{_mmss(steilster['steil_bis'] * steilster['laufzeit_s'])} "
+        f"(loses {steilster['steil_verlust'] * 100:.0f} points of audience).")
+    zeilen.append("Act on this:")
+    if drittel:
+        # Ziellaufzeit: der Median-Zeitpunkt, ab dem weniger als 30 % noch
+        # schauen - aber nie weniger als die halbe Median-Laufzeit. Die
+        # /2-Klausel ist Schleifendaempfung, kein Richtwert: bricht die
+        # Bindung schon im Intro ein (gemessen 20.08.2026: unter 30 % nach
+        # 0:45 von 10:54), misst t30 das Opening-Problem, nicht die richtige
+        # Laenge - ein rohes t30-Ziel wuerde den Bericht auf 50 Woerter
+        # eindampfen und der Loop (kuerzer -> frueheres t30 -> noch kuerzer)
+        # liefe gegen null. So halbiert sich die Laenge pro Iteration
+        # hoechstens; die naechste Messung justiert nach.
+        ziel_s = max(_median(drittel), laufzeit / 2)
+        zeilen.append(
+            f"- fewer than 30% of viewers are left after "
+            f"{_mmss(_median(drittel))} "
+            f"(median) - target a total runtime of about {ziel_s / 60:.1f} "
+            "minutes. Under the current reading pace that is roughly "
+            f"{round(WORTBUDGET[0] * ziel_s / laufzeit / 10) * 10} to "
+            f"{round(WORTBUDGET[1] * ziel_s / laufzeit / 10) * 10} words "
+            "of report body; where this prompt states another word budget, "
+            "this measured target overrides it.")
+    zeilen += [
+        "- front-load the strongest material: the first minute decides who "
+        "stays, so open with the day's single best story, not with "
+        "housekeeping.",
+        "- tighten every section: cut background and repetition first, keep "
+        "concrete numbers and the board's voice.",
+    ]
+    return "\n".join(zeilen)
+
+
+def retention_befund(ablage: Path = ANALYTICS_ABLAGE) -> str:
+    """Kontextblock aus der juengsten Analytics-Messung, "" wenn keine
+    brauchbare vorliegt. Der Bericht darf nie an den Analytics scheitern:
+    jede Stoerung endet als stiller No-Op mit genau einer Logzeile."""
+    try:
+        dateien = sorted(ablage.glob("*.json"), reverse=True)
+        if not dateien:
+            log.info("Retention: keine Analytics-Messung unter %s - "
+                     "Prompts unveraendert", ablage)
+            return ""
+        # Juengste brauchbare Messung im Frischefenster: ein kaputter oder
+        # kurvenloser Messtag (z.B. transienter Data-API-Fehler bei der
+        # Erhebung, beobachtet 20.08.2026) soll nicht das Feedback kappen,
+        # solange eine aeltere brauchbare Messung noch frisch genug ist.
+        for datei in dateien:
+            try:
+                daten = json.loads(datei.read_text(encoding="utf-8"))
+                alter = (date.today() - date.fromisoformat(
+                    str(daten.get("erstellt", "")))).days
+            except (ValueError, OSError):
+                continue
+            if alter > ANALYTICS_MAX_ALTER_TAGE:
+                continue
+            videos = sorted(daten.get("kurven") or [],
+                            key=lambda v: str(v.get("veroeffentlicht", "")),
+                            reverse=True)
+            kennwerte = [k for k in map(_retention_kennwerte, videos)
+                         if k is not None][:RETENTION_VIDEOS]
+            if not kennwerte:
+                continue
+            log.info("Retention: Befund aus %s eingespeist (%d Videos, "
+                     "Median-Laufzeit %s)", datei.name, len(kennwerte),
+                     _mmss(_median([float(k["laufzeit_s"])
+                                    for k in kennwerte])))
+            return _retention_block(kennwerte)
+        log.info("Retention: keine auswertbare Messung der letzten %d Tage "
+                 "unter %s - Prompts unveraendert",
+                 ANALYTICS_MAX_ALTER_TAGE, ablage)
+        return ""
+    except Exception as e:
+        log.warning("Retention: Befund fehlgeschlagen (%s) - "
+                    "Prompts unveraendert", e)
+        return ""
+
+
 def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
-                             manifest: dict, trockenlauf: bool = False) -> None:
+                             manifest: dict, trockenlauf: bool = False,
+                             befund: str = "") -> None:
     """Legt den fertigen Bericht in denselben Tagesordner wie die Extrakte
     und veroeffentlicht ihn. Getrennt von markdown_tag_schreiben(), weil der
     Bericht erst nach der Synthese existiert, die Extrakte aber schon vorher
@@ -2014,7 +2183,7 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
                     "statischen Serientitel): %s", e)
     try:
         log.info("Erzeuge Video-Drehbuch (Sonnet) ...")
-        daten = folien_generieren(bericht_md)
+        daten = folien_generieren(bericht_md, befund)
         (tag_dir / "folien.json").write_text(
             json.dumps(daten, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")
@@ -2064,7 +2233,7 @@ def bericht_veroeffentlichen(bericht: str, datum: str, tag_dir: Path | None,
 
 
 def stufe3(manifest: dict, eDir: Path, arbeit: Path,
-           datum: str) -> tuple[str, list[str]]:
+           datum: str, befund: str = "") -> tuple[str, list[str]]:
     meta_nach_thread = {str(b["thread"]): b for b in manifest["buendel"]}
     extrakte = sandwich(sorted(eDir.glob("*.txt")), meta_nach_thread)
     anteil = len(extrakte) / max(1, len(manifest["buendel"]))
@@ -2282,6 +2451,8 @@ or, if something prevented a complete report:
    STATUS: ERROR - short cause in a few words
 The report itself contains no meta remarks about these instructions.
 """
+    # Retention-Rueckkopplung: leerer Befund laesst den Prompt byte-gleich.
+    prompt += befund
 
     log.info("Stufe 3: Synthese mit Opus (%d Extrakte, %d KB)",
              len(extrakte), len(eingabe) // 1024)
@@ -2404,9 +2575,13 @@ def main() -> int:
                 git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"],
                                      f"Extrakte vom {datum}", args.trockenlauf)
 
+    # Retention-Rueckkopplung einmal erheben und an Synthese und Drehbuch
+    # weiterreichen; "" heisst: keine brauchbare Messung, Prompts unveraendert.
+    befund = retention_befund()
+
     t2 = time.time()
     try:
-        out, eingabe_threads = stufe3(manifest, eDir, arbeit, datum)
+        out, eingabe_threads = stufe3(manifest, eDir, arbeit, datum, befund)
     except subprocess.TimeoutExpired:
         log.error("Synthese ueberschritt %ds - kein Bericht", TIMEOUT_SYNTH)
         return 1
@@ -2467,7 +2642,7 @@ def main() -> int:
 
     if not args.kein_github:
         bericht_veroeffentlichen(bericht, datum, tag_dir, manifest,
-                                 args.trockenlauf)
+                                 args.trockenlauf, befund)
 
     log.info("=== %s ===", status[-1].strip())
     # Eine ERROR-Statuszeile muss den Lauf als Fehler beenden, sonst faellt

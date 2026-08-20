@@ -251,8 +251,21 @@ auf jedem Rechner läuft.
 
 Ein eigener Cron-Eintrag (23:30, getrennt von Crawl/Bericht/Video) legt den
 Stand täglich unter `arbeit/analytics/<datum>.json` ab, also ausserhalb des
-Repos. **Nicht** per API verfügbar sind Thumbnail-Impressionen und die
+Repos. Seit 20.08.2026 erhebt `--speichern` dabei automatisch die
+Abbruchkurven aller Uploads der letzten 10 Tage mit (Feld `kurven`).
+**Nicht** per API verfügbar sind Thumbnail-Impressionen und die
 Klickrate; die zeigt nur YouTube Studio in der Oberfläche.
+
+**Rückkopplung in die Generierung:** `run_report.retention_befund()` liest
+vor der Synthese die jüngste brauchbare Messung (maximal 3 Tage alt),
+verdichtet die Kurven der letzten Uploads zu Kennwerten (mittlere
+Wiedergabedauer, Zeitpunkt unter 50 %/30 % Bindung, steilste Abbruchzone)
+und hängt einen kurzen englischen Kontextblock an den Synthese-Prompt und
+den Drehbuch-Prompt — mit einer aus den Daten abgeleiteten Ziellaufzeit
+(Median-t30, gedämpft auf mindestens die halbe Median-Laufzeit, damit der
+Loop nicht gegen null schrumpft) samt Wortbudget. Ohne brauchbare Messung
+bleiben beide Prompts byte-gleich; eine Logzeile im Cron-Log
+(`Retention: ...`) sagt jeweils, was eingespeist wurde oder warum nicht.
 
 ## Öffentliches Archiv
 

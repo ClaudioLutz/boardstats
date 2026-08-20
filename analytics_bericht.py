@@ -48,6 +48,11 @@ ABLAGE = Path(__file__).parent / "arbeit" / "analytics"
 # letzte Tag mit halben Zahlen in der Auswertung und sieht nach Einbruch aus.
 NACHLAUF_TAGE = 2
 
+# So weit zurueck werden bei --speichern die Abbruchkurven der juengsten
+# Uploads miterhoben. Die Kurven fliessen als Rueckkopplung in die naechste
+# Bericht-/Drehbuch-Generierung ein (run_report.retention_befund).
+KURVEN_TAGE = 10
+
 
 def _abfrage(token: str, params: dict[str, str]) -> dict:
     """Ein Analytics-Report. Fehler werden mit Klartext aus der API gemeldet."""
@@ -150,6 +155,47 @@ def abbruchkurve(token: str, video_id: str, tage: int = 90) -> list[dict]:
     return _zeilen(antwort)
 
 
+def kurven_erheben(token: str, tage: int = KURVEN_TAGE) -> list[dict]:
+    """Abbruchkurven aller Uploads der letzten `tage` Tage.
+
+    Eigene je_video-Abfrage mit kurzem Fenster statt der grossen Rangliste:
+    die ist Top-50 nach Aufrufen, und genau die juengsten Uploads haben die
+    wenigsten Aufrufe - sie wuerden dort als erste rausfallen. zeitraum()
+    endet ohnehin NACHLAUF_TAGE vor heute, juengere Videos ohne belastbare
+    Kurve tauchen also gar nicht erst auf.
+
+    Fehler je Video (geloescht, keine Bindungsdaten) kosten nur dieses eine
+    Video, nie die ganze Erhebung.
+    """
+    heute = date.today()
+    aus: list[dict] = []
+    for v in sorted(je_video(token, tage=tage),
+                    key=lambda v: v.get("veroeffentlicht", ""), reverse=True):
+        try:
+            alter = (heute - date.fromisoformat(v.get("veroeffentlicht", ""))).days
+        except ValueError:
+            continue    # Meta fehlt (z.B. geloeschtes Video) - keine Kurve
+        if alter > tage or alter < NACHLAUF_TAGE:
+            continue
+        try:
+            kurve = abbruchkurve(token, v["video"], tage)
+        except RuntimeError as e:
+            log.warning("Abbruchkurve %s nicht abrufbar: %s", v["video"], e)
+            continue
+        if not kurve:
+            log.info("Abbruchkurve %s leer - zu wenige Aufrufe", v["video"])
+            continue
+        aus.append({"video_id": v["video"], "titel": v.get("titel", ""),
+                    "veroeffentlicht": v.get("veroeffentlicht", ""),
+                    "laufzeit_s": _sekunden(v.get("laufzeit", "")),
+                    # Stichprobengroesse gehoert zum Befund: bei einer
+                    # Handvoll Aufrufen ist die Kurve Richtungs-, kein
+                    # Praezisionssignal - der Konsument sagt das dazu.
+                    "views": int(v.get("views", 0)),
+                    "kurve": kurve})
+    return aus
+
+
 def _sekunden(iso_dauer: str) -> int:
     """ISO-8601-Dauer der Data API (PT11M4S) in Sekunden."""
     zahl, gesamt = "", 0
@@ -240,12 +286,21 @@ def main() -> None:
         kurve_zeigen(kurve, laufzeit)
 
     if args.speichern:
+        # Kurven der juengsten Uploads immer miterheben: sie sind die
+        # Rueckkopplung an run_report.py (retention_befund) und duerfen nicht
+        # davon abhaengen, dass der Cron-Aufruf --kurve mitgibt.
+        try:
+            kurven = kurven_erheben(token)
+        except RuntimeError as e:
+            log.warning("Kurven-Erhebung fehlgeschlagen: %s", e)
+            kurven = []
         ABLAGE.mkdir(parents=True, exist_ok=True)
         ziel_datei = ABLAGE / f"{date.today().isoformat()}.json"
         ziel_datei.write_text(json.dumps(
             {"erstellt": date.today().isoformat(), "tage": tage,
-             "videos": videos, "kurve": kurve}, indent=2), encoding="utf-8")
-        print(f"\ngespeichert: {ziel_datei}")
+             "videos": videos, "kurve": kurve, "kurven": kurven},
+            indent=2), encoding="utf-8")
+        print(f"\ngespeichert: {ziel_datei} ({len(kurven)} Abbruchkurven)")
 
 
 if __name__ == "__main__":
