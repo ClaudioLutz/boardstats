@@ -11,7 +11,13 @@ Jargon und Boardhumor. Der frühere E-Mail-Versand ist abgebaut.
 
 ## Architektur
 
-Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu:
+Dreistufige Pipeline (`run_report.py`), läuft per Cron auf hp-ubuntu. Der
+Tagesrhythmus liegt seit dem 20.08.2026 am Abend: Crawl 07:20/13:20/20:20,
+Bericht 20:35, Video 21:15, Analytics 23:30 (alles CEST). Redaktionsschluss ist
+damit der Abend-Crawl, kurz nach dem US-Handelstag — dort entsteht die
+Substanz (13–21 UTC tragen 52 % aller Posts), und die Veröffentlichung fällt
+in die Abendstunden des europäischen und den Nachmittag des amerikanischen
+Publikums. Messung: `research/recherche-upload-zeitpunkt-2026-08-20.md`.
 
 1. **Bündeln** — `bundle_biz.py` wählt die Top-15-Threads nach Substanzdichte
    aus dem jüngsten Crawl-Snapshot (`crawl_biz.py`, 3x täglich) und schneidet
@@ -242,7 +248,7 @@ die Marker-Dateien der Tagesläufe — die Video-Liste kommt aus der
 Analytics-API selbst, Titel und Datum aus der Data API, damit die Auswertung
 auf jedem Rechner läuft.
 
-Ein eigener Cron-Eintrag (21:30, getrennt von Crawl/Bericht/Video) legt den
+Ein eigener Cron-Eintrag (23:30, getrennt von Crawl/Bericht/Video) legt den
 Stand täglich unter `arbeit/analytics/<datum>.json` ab, also ausserhalb des
 Repos. **Nicht** per API verfügbar sind Thumbnail-Impressionen und die
 Klickrate; die zeigt nur YouTube Studio in der Oberfläche.
