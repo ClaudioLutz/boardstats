@@ -101,8 +101,14 @@ def hochladen(video_pfad: Path, titel: str, beschreibung: str,
         snippet["defaultAudioLanguage"] = sprache
     # selfDeclaredMadeForKids=False deklariert "nicht speziell fuer Kinder" -
     # sonst verlangt YouTube Studio die Angabe bei jedem Video von Hand.
+    # embeddable und publicStatsViewable stehen hier ausdruecklich, obwohl die
+    # API sie ohnehin auf True setzt: status_setzen() liest den Block spaeter
+    # zurueck und schreibt ihn komplett neu - fehlt ein Feld schon hier, faellt
+    # es dort auf den Default.
     metadaten = {"snippet": snippet,
                  "status": {"privacyStatus": privacy_status,
+                            "embeddable": True,
+                            "publicStatsViewable": True,
                             "selfDeclaredMadeForKids": False}}
     metadaten_bytes = json.dumps(metadaten).encode("utf-8")
     groesse = video_pfad.stat().st_size
@@ -140,16 +146,54 @@ def hochladen(video_pfad: Path, titel: str, beschreibung: str,
     return video_id, f"https://youtu.be/{video_id}"
 
 
+# Beschreibbare Felder des status-Blocks. videos.update ersetzt den ganzen
+# angegebenen part: was hier fehlt, faellt beim Schreiben auf den API-Default
+# zurueck. Genau daran gingen am 19./20.08.2026 embeddable und
+# publicStatsViewable verloren - der Aufruf schickte nur privacyStatus.
+# uploadStatus und madeForKids sind nur lesbar und duerfen nicht mit.
+STATUS_FELDER = ("privacyStatus", "embeddable", "publicStatsViewable",
+                 "selfDeclaredMadeForKids", "license", "publishAt")
+
+
+def status_lesen(video_id: str) -> dict[str, object]:
+    """Liest den status-Block eines Videos (videos.list part=status)."""
+    token = access_token()
+    req = urllib.request.Request(
+        f"https://www.googleapis.com/youtube/v3/videos?part=status&id={video_id}",
+        headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            antwort = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise RuntimeError(f"Status-Abfrage fehlgeschlagen ({e.code}): {detail}") from e
+    posten = antwort.get("items") or []
+    if not posten:
+        raise RuntimeError(f"Video {video_id} nicht gefunden")
+    return dict(posten[0].get("status") or {})
+
+
 def status_setzen(video_id: str, privacy_status: str) -> None:
     """Setzt den privacyStatus eines bestehenden Videos (videos.update).
 
     Dient dazu, ein zunaechst privat hochgeladenes Video erst nach Thumbnail,
     Untertiteln und Playlist-Eintrag auf oeffentlich zu schalten - so sieht
     niemand ein Video ohne Vorschaubild oder Beschreibung. Braucht den
-    force-ssl-Scope."""
+    force-ssl-Scope.
+
+    Read-Modify-Write: der vorhandene status-Block wird gelesen und mitsamt
+    allen beschreibbaren Feldern zurueckgeschrieben, nur privacyStatus wird
+    ersetzt. Sonst loescht das Update die uebrigen Felder."""
     token = access_token()
-    daten = json.dumps({"id": video_id,
-                        "status": {"privacyStatus": privacy_status}}).encode("utf-8")
+    vorher = status_lesen(video_id)
+    status: dict[str, object] = {k: vorher[k] for k in STATUS_FELDER if k in vorher}
+    status["privacyStatus"] = privacy_status
+    # Fallback, falls YouTube die Felder gar nicht zurueckgibt: der Kanal will
+    # einbettbare Videos mit sichtbarer Aufrufzahl.
+    status.setdefault("embeddable", True)
+    status.setdefault("publicStatsViewable", True)
+    status.setdefault("selfDeclaredMadeForKids", False)
+    daten = json.dumps({"id": video_id, "status": status}).encode("utf-8")
     req = urllib.request.Request(
         "https://www.googleapis.com/youtube/v3/videos?part=status",
         data=daten, method="PUT",
