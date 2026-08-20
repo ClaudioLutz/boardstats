@@ -78,8 +78,20 @@ NEUAUFBAU_ANTEIL = 0.5  # kumulierte neue Posts im Verhaeltnis zur Voll-Basis
 MIN_POSTS_DICHTE = 20
 CACHE_TAGE = 10         # Extrakte laenger nicht gesehener Threads wegraeumen
 LAEUFE_BEHALTEN = 5
+TEST_SUFFIX = "-test"   # Ausgaben eines Trockenlaufs tragen ihn im Ordnernamen
 
 log = logging.getLogger("report")
+
+
+def ausgabe_tag(datum: str, trockenlauf: bool) -> str:
+    """Tagesschluessel fuer Ausgabeordner, die der Video-Lauf spaeter liest.
+
+    Ein Trockenlauf schreibt unter <datum>-test. Sonst raeumt er die Bilder
+    des produktiven Laufs desselben Tages weg (motiv_waehlen() loescht
+    arbeit/thumbs/<datum>.*, hintergruende_waehlen() ueberschreibt
+    arbeit/motive/<datum>/) - video_report.py liest die aber erst um 08:10,
+    also lange nachdem der Bericht um 07:50 fertig ist."""
+    return f"{datum}{TEST_SUFFIX}" if trockenlauf else datum
 
 
 def setup_logging() -> None:
@@ -612,16 +624,22 @@ def _tag_readme_bauen(manifest: dict, datum: str, tag_dir: Path) -> str:
     return "\n".join(zeilen) + "\n"
 
 
-def markdown_tag_schreiben(manifest: dict, eDir: Path, datum: str) -> Path | None:
+def markdown_tag_schreiben(manifest: dict, eDir: Path, datum: str,
+                           ziel: Path | None = None) -> Path | None:
     """Persistiert die Extrakte des laufenden Tages als Markdown im Repo
-    (`extrakte/<datum>/`), zusammen mit einer Tages-Uebersicht. eDir enthaelt
-    zu diesem Zeitpunkt den vollen aktuellen Stand aller Buendel-Threads,
+    (`extrakte/<datum>/`), zusammen mit einer Tages-Uebersicht. Mit ziel
+    schreibt ein Trockenlauf stattdessen in sein eigenes Laufverzeichnis:
+    `extrakte/<datum>/` ist die oeffentliche Fassung, die zum hochgeladenen
+    Video gehoert, und der einzige getrackte Pfad, den ein Testlauf sonst
+    anfasst (dirty Working Tree bricht spaeter `git pull --ff-only`).
+
+    eDir enthaelt zu diesem Zeitpunkt den vollen Stand aller Buendel-Threads,
     auch der unveraenderten (ein_extrakt() kopiert die aus dem Cache).
     Persistieren macht die Extrakte, nicht nur den fertigen Bericht,
     nachvollziehbar - inklusive der Abschnitte, die aus der Synthese-Eingabe
     herausgefiltert wurden (Glossar, offene Fragen bleiben hier erhalten)."""
     meta_nach_thread = {str(b["thread"]): b for b in manifest["buendel"]}
-    tag_dir = EXTRAKTE / datum
+    tag_dir = ziel if ziel is not None else EXTRAKTE / datum
     tag_dir.mkdir(parents=True, exist_ok=True)
 
     geschrieben = False
@@ -1583,10 +1601,13 @@ def motiv_waehlen(manifest: dict, datum: str, thema: str,
     Bildmaterial gehoert nicht ins oeffentliche Archiv. Findet sich keins,
     nimmt video_report.py das Serienbild aus assets/. Mit trockenlauf bleibt
     die Bildsperre (verwendet.json) aus - ein Testlauf darf kein Bild fuer
-    die naechsten produktiven Laeufe sperren."""
+    die naechsten produktiven Laeufe sperren - und das Ergebnis landet unter
+    <datum>-test, damit das Vorschaubild des produktiven Laufs stehen
+    bleibt."""
     thumbs = ARBEIT / "thumbs"
     thumbs.mkdir(parents=True, exist_ok=True)
-    for alt in thumbs.glob(f"{datum}.*"):
+    tag = ausgabe_tag(datum, trockenlauf)
+    for alt in thumbs.glob(f"{tag}.*"):
         alt.unlink()  # Rest eines frueheren Laufs nicht weiterverwenden
     # Frische Bilder bevorzugen; liefern die Threads nur schon gezeigte,
     # duerfen die noch einmal ran - lieber Wiederholung als Serienbild.
@@ -1607,7 +1628,7 @@ def motiv_waehlen(manifest: dict, datum: str, thema: str,
                      "unberuehrt)")
         else:
             verwendete_merken([md5], datum)
-    ziel = thumbs / f"{datum}{gewaehlt.suffix}"
+    ziel = thumbs / f"{tag}{gewaehlt.suffix}"
     shutil.copy2(gewaehlt, ziel)
     return ziel
 
@@ -1863,7 +1884,9 @@ def hintergruende_waehlen(manifest: dict, datum: str,
     Mit trockenlauf werden die Bilder weiterhin geprueft und bereitgelegt
     (motive.json ist ein Freigabe-Ergebnis, kein Fortschritt), nur die
     Bildsperren in verwendet.json bleiben aus - ein Testlauf darf dem
-    naechsten produktiven Lauf keine Bilder wegsperren.
+    naechsten produktiven Lauf keine Bilder wegsperren - und der Zielordner
+    heisst <datum>-test, damit die Kulisse des produktiven Laufs desselben
+    Tages nicht ueberschrieben wird.
 
     Abgelehnte Bilder werden nicht mehr geloescht, sondern nach
     arbeit/motive/<datum>/abgelehnt/ verschoben, mit dem Grund im Dateinamen
@@ -1879,7 +1902,7 @@ def hintergruende_waehlen(manifest: dict, datum: str,
     unter dem Hauptordner statt im geloeschten vorschau/-Zwischenordner),
     damit der Video-Lauf ueber den zoompan-d=1-Renderpfad rendert und bei
     Bedarf (Crossfade, Fallback bei Renderfehler) ein Standbild zur Hand hat."""
-    ziel_dir = ARBEIT / "motive" / datum
+    ziel_dir = ARBEIT / "motive" / ausgabe_tag(datum, trockenlauf)
     gesperrt = set(verwendete_bilder(datum))
     kandidaten = hintergrund_kandidaten(manifest, gesperrt)
     if not kandidaten:
@@ -2258,7 +2281,11 @@ def main() -> int:
                          "Laesst den Delta-Zustand unberuehrt: cache/ "
                          "(status.json, <thread>.txt) und die Bildsperren in "
                          "arbeit/motive/verwendet.json werden nicht "
-                         "fortgeschrieben")
+                         "fortgeschrieben. Alle Ausgaben landen im eigenen "
+                         "Laufverzeichnis arbeit/<stamp>-test/ (Bericht, "
+                         "Markdown) bzw. unter <datum>-test (Vorschaubild, "
+                         "Kulisse); berichte/ und extrakte/ bleiben, wie der "
+                         "produktive Lauf sie hinterlassen hat")
     args = ap.parse_args()
 
     setup_logging()
@@ -2275,7 +2302,11 @@ def main() -> int:
             (CACHE / "status.json").unlink(missing_ok=True)
             log.info("Cache-Status verworfen - alle Threads werden voll gelesen")
 
+    # Das Laufverzeichnis eines Testlaufs traegt -test im Namen: so bleiben
+    # produktive und Test-Laeufe beim Aufraeumen unten getrennt zaehlbar.
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if args.trockenlauf:
+        stamp += TEST_SUFFIX
     arbeit = ARBEIT / stamp
     bDir, eDir = arbeit / "bundles", arbeit / "extrakte"
     bDir.mkdir(parents=True, exist_ok=True)
@@ -2327,11 +2358,20 @@ def main() -> int:
     datum = datetime.now().strftime("%Y-%m-%d")
     tag_dir = None
     if not args.kein_github:
-        tag_dir = markdown_tag_schreiben(manifest, eDir, datum)
-        if tag_dir is not None:
-            markdown_index_aktualisieren()
-            git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"],
-                                 f"Extrakte vom {datum}", args.trockenlauf)
+        # Ein Trockenlauf legt die Markdown-Fassung in sein eigenes
+        # Laufverzeichnis: inspizierbar wie sonst auch, aber ohne
+        # extrakte/<datum>/ zu ueberschreiben und ohne den Index anzufassen.
+        if args.trockenlauf:
+            tag_dir = markdown_tag_schreiben(manifest, eDir, datum,
+                                             arbeit / "extrakte-md")
+            log.info("Trockenlauf - Markdown liegt unter %s, "
+                     "extrakte/%s/ bleibt unberuehrt", tag_dir, datum)
+        else:
+            tag_dir = markdown_tag_schreiben(manifest, eDir, datum)
+            if tag_dir is not None:
+                markdown_index_aktualisieren()
+                git_veroeffentlichen([tag_dir, EXTRAKTE / "README.md"],
+                                     f"Extrakte vom {datum}", args.trockenlauf)
 
     t2 = time.time()
     try:
@@ -2340,15 +2380,22 @@ def main() -> int:
         log.error("Synthese ueberschritt %ds - kein Bericht", TIMEOUT_SYNTH)
         return 1
 
-    BERICHTE.mkdir(parents=True, exist_ok=True)
-    ziel = BERICHTE / f"{datetime.now().strftime('%Y-%m-%d')}.txt"
+    # Ein Testlauf darf berichte/<datum>.txt nicht ueberschreiben: die Datei
+    # ist nicht nur das Tagesergebnis, sie geht am Folgetag als "gestern" in
+    # den Themenverlauf der Synthese ein (VERLAUF_TAGE). Ein Testbericht
+    # dort verfaelscht den naechsten produktiven Bericht.
+    if args.trockenlauf:
+        ziel = arbeit / "bericht.txt"
+    else:
+        BERICHTE.mkdir(parents=True, exist_ok=True)
+        ziel = BERICHTE / f"{datetime.now().strftime('%Y-%m-%d')}.txt"
 
     # Die STATUS-Zeile ist der Vertrag: fehlt sie, ist die Ausgabe kein Bericht,
     # sondern eine Fehlermeldung des CLI. Die darf nie als Tagesbericht unter
     # ziel landen und einen echten Bericht ueberschreiben.
     status = [z for z in out.splitlines() if z.startswith("STATUS:")]
     if not status:
-        (BERICHTE / f"{ziel.name}.fehler").write_text(out, encoding="utf-8")
+        (ziel.parent / f"{ziel.name}.fehler").write_text(out, encoding="utf-8")
         log.error("keine STATUS-Zeile - Rohausgabe in %s.fehler", ziel.name)
         return 1
 
@@ -2408,11 +2455,19 @@ def main() -> int:
     # jedem Lauf geloescht (gefunden 19.08.2026 beim Overseer-Testlauf, als
     # der frisch geerntete Clip-Katalog direkt nach dem Speichern wieder weg
     # war).
-    datums_muster = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    # Das Muster muss auf den stamp passen (20260820-073501), nicht auf ein
+    # Datum mit Bindestrichen - sonst raeumt die Schleife gar nichts und die
+    # Laufverzeichnisse wachsen unbegrenzt (so seit der Korrektur oben).
+    # Test- und produktive Laeufe werden getrennt gezaehlt, sonst verdraengen
+    # fuenf Testlaeufe alle produktiven Verzeichnisse.
+    lauf_muster = re.compile(r"^\d{8}-\d{6}(" + re.escape(TEST_SUFFIX) + r")?$")
     alte_laeufe = [p for p in ARBEIT.iterdir()
-                  if p.is_dir() and datums_muster.match(p.name)]
-    for alt in sorted(alte_laeufe, reverse=True)[LAEUFE_BEHALTEN:]:
-        shutil.rmtree(alt, ignore_errors=True)
+                   if p.is_dir() and lauf_muster.match(p.name)]
+    for ist_test in (False, True):
+        gruppe = [p for p in alte_laeufe
+                  if p.name.endswith(TEST_SUFFIX) is ist_test]
+        for alt in sorted(gruppe, reverse=True)[LAEUFE_BEHALTEN:]:
+            shutil.rmtree(alt, ignore_errors=True)
     log.info("Gesamtdauer %d min", (time.time() - t0) / 60)
     return 0
 
