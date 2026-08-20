@@ -86,3 +86,40 @@ def test_tags_bleiben_unter_dem_zeichenlimit() -> None:
     markdown = "\n".join(f"Firma{i} (AB{i})" for i in range(200))
     tags = v.tags_bauen("en", "AAAA BBBB CCCC | /biz/ 2026-08-19", [], markdown)
     assert sum(len(t) + 2 for t in tags) <= v.TAGS_MAX_ZEICHEN
+    # Die Serien-Tags haben ein reserviertes Budget und ueberleben auch
+    # einen Bericht voller Ticker
+    for fest in v.FESTE_TAGS["en"]:
+        assert fest in tags
+
+
+def test_tags_nehmen_die_themenphrase_nach_dem_doppelpunkt() -> None:
+    bloecke = [_block("STOCKS: MODERNA IS THE DAY'S PUMP"),
+               _block("FILLING FAST")]
+    tags = v.tags_bauen("en", "X | /biz/ 2026-08-20", bloecke)
+    # Volle Phrase, Apostroph ersatzlos entfernt (kein "day s"-Fragment)
+    assert "moderna is the days pump" in tags
+    assert not any(" s " in t or t.endswith(" s") for t in tags)
+
+
+def test_tags_nehmen_kapiteltitel_aus_folien_json() -> None:
+    fdaten = {"abschnitte": [
+        {"ueberschrift": "MACRO: SOVEREIGN YIELDS AT MULTI-DECADE HIGHS",
+         "titel": "Yields hit multi-decade highs"},
+        {"ueberschrift": "FILLING FAST",
+         "titel": "Threads filling faster than usual"}]}
+    tags = v.tags_bauen("en", "X | /biz/ 2026-08-20", [], "", fdaten)
+    assert "yields hit multi-decade highs" in tags
+    # Serienrubriken ohne Doppelpunkt-Thema bleiben draussen
+    assert "threads filling faster than usual" not in tags
+
+
+def test_tags_nehmen_firmennamen_vor_dem_ticker() -> None:
+    markdown = "Klarna (KLAR) fiel weiter.\n"
+    tags = v.tags_bauen("en", "X | /biz/ 2026-08-19", [], markdown)
+    assert "klarna" in tags and "klar" in tags
+
+
+def test_hook_gesprochen_laesst_klammer_ticker_weg() -> None:
+    satz = v._hook_gesprochen("Moderna (MRNA) PUMPS 200%: Cancer Vaccine Hype")
+    assert "(" not in satz and "MRNA" not in satz
+    assert satz == "Moderna PUMPS 200%, Cancer Vaccine Hype."
