@@ -4081,13 +4081,52 @@ def vorschaubild(arbeit: Path, tag_dir: Path, cfg: dict[str, str], sprache: str,
         return THUMBNAIL if THUMBNAIL.exists() else None
 
 
-def tags_bauen(sprache: str, titel: str, bloecke: list[Block]) -> list[str]:
+# Schlagzeilenwoerter, die im Titel gross stehen, aber als Suchbegriff nichts
+# taugen. Ohne diese Liste landeten Tags wie "crashes" oder "impossible" beim
+# Upload (gemessen 20.08.2026 an den Uploads vom 16.-20.08.).
+STOPP_TAGS = frozenset({
+    "crashes", "crash", "pumps", "pump", "dumps", "dump", "impossible",
+    "vanish", "vanishes", "hits", "cuts", "sets", "same", "day", "days",
+    "watch", "only", "about", "their", "own", "the", "and", "for", "with",
+    "from", "into", "over", "under", "now", "new", "big", "all", "how",
+    "why", "you", "your", "its", "but", "not", "out", "off", "who", "was",
+    # Fachkuerzel und Ticker, die als Wort zu mehrdeutig sind, um zu treffen
+    "cusip", "app", "link", "ceo", "cfo", "etf", "faq", "usd", "eur", "chf",
+})
+
+
+def _titel_schlagworte(titel: str) -> list[str]:
+    """Die Eigennamen des Titels als Tag-Kandidaten: die grossgeschriebenen
+    Woerter vor dem Serien-Suffix, einzeln.
+
+    Frueher lieferte hier _thumb_aus_titel() die Vorlage - das ist aber der
+    Text fuers Vorschaubild und damit eine gekappte Phrase ("klarna crashes
+    $120k"), die als Suchbegriff niemand eingibt. Einzelne Namen wie "klarna"
+    oder "moderna" treffen dagegen echte Suchen."""
+    ohne_suffix = titel.split(" | ")[0]
+    aus: list[str] = []
+    for wort in ohne_suffix.split():
+        rein = re.sub(r"[^0-9A-Za-zÄÖÜäöü&.-]+", "", wort)
+        if len(rein) <= 2 or not rein.isupper() or not rein[0].isalpha():
+            continue
+        if not rein.isalpha() or rein.lower() in STOPP_TAGS:
+            continue  # "120K", "250B" sind Schlagzeilen-Zahlen, keine Suchbegriffe
+        aus.append(rein)
+    return aus
+
+
+def tags_bauen(sprache: str, titel: str, bloecke: list[Block],
+               markdown: str = "") -> list[str]:
     """Tag-Liste fuer den Upload: feste Serien-Tags plus die Tagesthemen
-    (Titel-Schlagwort und der Themenkopf jeder ##-Ueberschrift, also der
-    Teil vor dem Doppelpunkt). Konservativ unter dem 500-Zeichen-Limit
-    gekappt, das YouTube auf die Gesamtliste rechnet."""
+    (die Eigennamen des Titels, die im Bericht genannten Ticker und der
+    Themenkopf jeder ##-Ueberschrift, also der Teil vor dem Doppelpunkt).
+    Konservativ unter dem 500-Zeichen-Limit gekappt, das YouTube auf die
+    Gesamtliste rechnet."""
     tags = list(FESTE_TAGS[sprache])
-    kandidaten = [_thumb_aus_titel(titel)]
+    kandidaten = _titel_schlagworte(titel)
+    # Ticker stehen im Bericht in Klammern hinter dem Firmennamen
+    # ("Klarna (KLAR)") - das sind die praezisesten Suchbegriffe des Tages.
+    kandidaten += re.findall(r"\(([A-Z]{2,5})\)", markdown)
     # Nur Ueberschriften mit Doppelpunkt tragen vorne ein echtes Thema
     # ("MONERO: ..."); die ohne sind generische Serienrubriken
     # ("UNVERAENDERT SEIT GESTERN") und als Suchbegriff wertlos.
@@ -4096,6 +4135,8 @@ def tags_bauen(sprache: str, titel: str, bloecke: list[Block]) -> list[str]:
     for roh in kandidaten:
         t = re.sub(r"[^0-9A-Za-zÄÖÜäöü$&. -]+", " ", roh)
         t = re.sub(r"\s+", " ", t).strip().lower()
+        if t in STOPP_TAGS:
+            continue  # gilt fuer jede Quelle, auch fuer Ticker wie "(CUSIP)"
         if t and t not in tags and 2 <= len(t) <= 30:
             tags.append(t)
     aus: list[str] = []
@@ -4445,7 +4486,7 @@ def main() -> None:
         print(f"Beschreibung nicht aufgebaut ({e}) - nehme nur die Kopfzeile")
         beschreibung = kurz
     print("lade auf YouTube hoch ...")
-    tags = tags_bauen(args.sprache, titel, bloecke_ton)
+    tags = tags_bauen(args.sprache, titel, bloecke_ton, markdown)
     try:
         video_id, url = youtube_auth.hochladen(video_mp4, titel, beschreibung,
                                                privacy_status="private",
