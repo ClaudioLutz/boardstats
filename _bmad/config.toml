@@ -1,0 +1,13 @@
+# Zentrale BMad-Konfiguration fuer boardstats.
+# Wird von _bmad/scripts/resolve_config.py gelesen (core-Layer, required).
+# Team-weite Overrides -> _bmad/custom/config.toml, persoenliche -> config.user.toml
+# (beide optional, nicht Teil dieses Commits).
+
+[core]
+user_name = "Claudio Lutz"
+communication_language = "Deutsch"
+document_output_language = "Deutsch"
+# research/ ist bereits in .gitignore gelistet - Brainstorming-Output bleibt lokal,
+# analog zu Messungen/Recherchen (siehe CLAUDE.md "Struktur").
+output_folder = "research"
+project_name = "boardstats"
