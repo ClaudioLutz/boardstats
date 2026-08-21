@@ -1733,9 +1733,12 @@ def hintergrund_liste(plan: list[tuple[Path | None, float]], arbeit: Path,
 # laeuft vorerst nur fuer das englische Video.
 PRAES_INTRO = "This is the 4chan business board report for {datum_lang}."
 # Der Titel-Aufhaenger kauft den Klick, also muss ihn die Eroeffnung auch
-# einloesen: gesprochen steht er vor dem Serien-Satz, passend zur Titel-Karte
-# der Szene (Label "TODAY'S TOP STORY").
-PRAES_HOOK = "Today's top story: {hook}"
+# einloesen - und zwar als ERSTES gesprochenes Wort. Bis 21.08.2026 stand
+# "Today's top story:" davor; das sind rund 1.5 s Ansage vor der Zahl, in
+# genau dem Fenster, in dem die Abbruchkurve am steilsten faellt. Der Hook
+# selbst eroeffnet jetzt, die Titel-Karte der Szene traegt das Label
+# ("TODAY'S TOP STORY") weiterhin im Bild.
+PRAES_HOOK = "{hook}"
 PRAES_AGENDA = "Coming up:"
 AGENDA_TEASER = 3        # so viele Kapitel nennt die Agenda (von sieben)
 TOKENS_PRO_S = 2.50      # gemessene Sprechrate ohne Pausen: Studio-Q satzweise
@@ -1747,12 +1750,34 @@ TOKENS_PRO_S = 2.50      # gemessene Sprechrate ohne Pausen: Studio-Q satzweise
                          # Neural2, wird der Vorspann etwas kurz geschaetzt -
                          # das kostet hoechstens einen Rahmensatz.
 INTRO_BODEN = 11.5       # Sekunden; darunter wird der Vorspann gestreckt
+INTRO_DECKEL = 15.0      # Sekunden; darueber wird er gekuerzt. Bis 21.08.2026
+                         # gab es nur den Boden und keine Decke - der Vorspann
+                         # wuchs von 29.6 s (20.08.) ueber 37.0 s auf 48.9 s im
+                         # produktiven Lauf vom 21.08. Gegen die gemessene
+                         # Abbruchkurve (50 % weg nach 1:08) verbrannte er
+                         # damit drei Viertel der mittleren Verweildauer,
+                         # bevor der erste Kapitelinhalt begann. Der Boden hat
+                         # Vorrang: er sichert die YouTube-Kapitelregel
+                         # (Kapitel 1 nicht vor 10 s), die Decke greift nur
+                         # oberhalb davon.
+ZAHLEN_GESPROCHEN = 2    # so viele der vier TL;DR-Zahlen werden VORGELESEN;
+                         # im Bild stehen weiterhin alle vier (siehe
+                         # zahlen_szenen). Vier gesprochene Zahlensaetze
+                         # kosteten allein rund 30 s vor der ersten Story.
+ZAHL_SATZ_WORTE = 12     # laengere Zahlensaetze werden am Satzende gekappt:
+                         # das Feld "satz" war unbegrenzt und produktiv voll
+                         # ausgeschriebene Fliesssaetze ("one dollar and fifty
+                         # three cents") sind die Hauptursache des
+                         # 48.9-s-Vorspanns gewesen - nicht die Anzahl Zahlen.
 # Ueberleitung in den TL;DR-Zahlenblock direkt nach dem Cold Open (seit
 # 20.08.2026 vorne statt am Videoende - die Analytics zeigten eine
 # Abbruchwand bei 1:08, die Agenda-Teaser-Strecke ist dafuer entfallen).
-PRAES_ZAHLEN = "The day in four numbers."
-PRAES_OUTRO = ("That's the board report for today. All source threads and "
-               "chapter markers are in the description. New report every day.")
+# Bewusst ohne Zahlwort: gesprochen werden ZAHLEN_GESPROCHEN, im Bild stehen
+# vier - eine Ansage, die sich auf eine Anzahl festlegt, waere fuer eine der
+# beiden Seiten falsch.
+PRAES_ZAHLEN = "Today's numbers."
+ZAHLEN_LABEL = "Today's numbers"   # dieselbe Ansage als Bild-Karte
+PRAES_OUTRO = ("That's the board report. Sources in the description.")
 MONATE_EN = ["January", "February", "March", "April", "May", "June", "July",
              "August", "September", "October", "November", "December"]
 BLEND_SCHRITTE = 6       # Zwischenbilder je Ueberblendung Reveal -> Folie
@@ -1845,6 +1870,26 @@ def _hook_gesprochen(hook: str) -> str:
     return satz
 
 
+def _zahl_satz(karte: dict) -> str:
+    """Der gesprochene Satz einer TL;DR-Zahl, auf Vorspann-Mass gekappt.
+
+    Das Drehbuch-Feld "satz" ist Modelltext und war bis 21.08.2026 in der
+    Laenge unbegrenzt - produktiv standen dort voll ausgeschriebene
+    Fliesssaetze, die den Vorspann auf 48.9 s trieben. Gekappt wird in zwei
+    Stufen: erst auf den ERSTEN Satz (mehr als einer ist im Vorspann nie
+    gemeint), dann auf ZAHL_SATZ_WORTE Woerter. Das Kappen laesst die Zahl
+    selbst unberuehrt, weil sie am Satzanfang steht."""
+    roh = str(karte.get("satz")
+              or f"{karte.get('titel', '')}: {karte.get('wert', '')}").strip()
+    erster = re.split(r"(?<=[.!?])\s+", roh)[0].strip() if roh else ""
+    worte = erster.split()
+    if len(worte) > ZAHL_SATZ_WORTE:
+        erster = " ".join(worte[:ZAHL_SATZ_WORTE]).rstrip(",;:- ")
+    if erster and erster[-1] not in ".!?":
+        erster += "."
+    return erster
+
+
 def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
                            fdaten: dict, datum: str,
                            hook: str = "") -> list[Block]:
@@ -1886,15 +1931,32 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
         # TL;DR-Pfad: Blockgrenze vor dem Zahlen-Kopf und vor jeder Zahl
         # kostet GOOGLE_ABSATZ_PAUSE, die zur ersten Kapitel-Ueberschrift
         # GOOGLE_KAPITEL_PAUSE.
-        zahl_saetze = [str(k.get("satz")
-                           or f"{k.get('titel', '')}: {k['wert']}.").strip()
-                       for k in karten]
+        zahl_saetze = [_zahl_satz(k) for k in karten[:ZAHLEN_GESPROCHEN]]
+
+        def schaetzen() -> float:
+            worte = sum(len(t.split())
+                        for t in [PRAES_HOOK.format(hook=satz) if satz else "",
+                                  PRAES_ZAHLEN, *zahl_saetze])
+            return (worte / TOKENS_PRO_S
+                    + _pause_sekunden(GOOGLE_ABSATZ_PAUSE)
+                    * (1 + len(zahl_saetze))
+                    + _pause_sekunden(GOOGLE_KAPITEL_PAUSE))
+
+        # Decke durchsetzen: der letzte gesprochene Zahlensatz faellt weg,
+        # solange der Vorspann zu lang bleibt - seine Karte steht im Bild
+        # weiterhin (zahlen_szenen zeigt alle vier, unabhaengig davon, wie
+        # viele davon vorgelesen werden). Ein Zahlensatz ist immer der
+        # letzte, der geopfert wird: ohne ihn bliebe der Zahlen-Kopf eine
+        # Ansage ohne Inhalt.
+        geschaetzt = schaetzen()
+        while geschaetzt > INTRO_DECKEL and len(zahl_saetze) > 1:
+            weg = zahl_saetze.pop()
+            geschaetzt = schaetzen()
+            print(f"Vorspann geschaetzt ueber {INTRO_DECKEL:.0f}s - "
+                  f"Zahlensatz {weg[:40]!r} nur noch im Bild, jetzt "
+                  f"{geschaetzt:.1f}s")
         rahmen = [PRAES_HOOK.format(hook=satz) if satz else "",
                   PRAES_ZAHLEN, *zahl_saetze]
-        geschaetzt = (sum(len(t.split()) for t in rahmen) / TOKENS_PRO_S
-                      + _pause_sekunden(GOOGLE_ABSATZ_PAUSE)
-                      * (1 + len(zahl_saetze))
-                      + _pause_sekunden(GOOGLE_KAPITEL_PAUSE))
     else:
         # Fallback ohne Zahlen: die alte Agenda-Teaser-Strecke.
         nummern = [b.abschnitt for b in bloecke if b.art == "ueberschrift"]
@@ -2369,8 +2431,13 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
         if zk_idx is not None and karten:
             zeigen(folien.zahlen(karten, 0, datum, zahlen_motiv),
                    start_von(zk_idx))
-            for j, i in enumerate(zahl_idx[:len(karten)]):
-                zeigen(folien.zahlen(karten, j + 1, datum, zahlen_motiv),
+            genutzt = zahl_idx[:len(karten)]
+            for j, i in enumerate(genutzt):
+                # Beim letzten gesprochenen Zahlensatz klappen die restlichen
+                # Karten mit auf: gesprochen werden seit 21.08.2026 nur
+                # ZAHLEN_GESPROCHEN, im Bild stehen weiterhin alle.
+                sichtbar = len(karten) if j + 1 == len(genutzt) else j + 1
+                zeigen(folien.zahlen(karten, sichtbar, datum, zahlen_motiv),
                        start_von(i))
 
     vorne = zahlen_vorne(bloecke)
@@ -2761,12 +2828,32 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             bis = start_von(genutzt[j + 1]) if j + 1 < len(genutzt) \
                 else zahl_schluss
             z = neu(pool_bild(), t)
-            _countup_overlays(z, karten[j], t + 0.2, bis, ov)
+            # Das letzte Sprechfenster teilt sich, sobald Karten uebrig sind,
+            # die nicht mehr vorgelesen werden (ZAHLEN_GESPROCHEN < 4): erst
+            # laeuft der Count-up der gesprochenen Zahl, danach steht die
+            # stille Uebersicht mit allen vieren. So kostet keine der
+            # ungesprochenen Zahlen Vorspannzeit und trotzdem hat der
+            # Zuschauer sie alle gesehen.
+            rest = len(karten) - len(genutzt)
+            if j + 1 == len(genutzt) and rest > 0 \
+                    and bis - t >= ZAHL_COUNTUP_MIN + ZAHL_UEBERSICHT_MIN:
+                schnitt = bis - ZAHL_UEBERSICHT_MIN
+                _countup_overlays(z, karten[j], t + 0.2, schnitt, ov)
+                z.overlays.append(ov(szenen.zahlen_uebersicht(karten),
+                                     schnitt, bis, einflug="unten"))
+                print(f"TL;DR: {len(genutzt)} von {len(karten)} Zahlen "
+                      f"gesprochen, alle vier im Bild "
+                      f"({ZAHL_UEBERSICHT_MIN:.1f}s Uebersicht)")
+            else:
+                _countup_overlays(z, karten[j], t + 0.2, bis, ov)
+                if j + 1 == len(genutzt) and rest > 0:
+                    print(f"TL;DR: Fenster zu kurz ({bis - t:.1f}s) - "
+                          f"{rest} Zahl(en) nur als Karte, keine Uebersicht")
 
     if vorne:
         # Karte und Ansage sagen dasselbe: der gesprochene Kopf ist
-        # PRAES_ZAHLEN ("The day in four numbers.").
-        zahlen_szenen(erster_kopf, "The day in four numbers", "TL;DR")
+        # PRAES_ZAHLEN.
+        zahlen_szenen(erster_kopf, ZAHLEN_LABEL, "TL;DR")
 
     # Kapitel. Das Ende des letzten Kapitels ist der erste Rahmen-Block NACH
     # den Kapiteln (Outro; bei alter Ordnung der Zahlen-Kopf) - der
@@ -3350,6 +3437,12 @@ HOOK_CPS = 17.0          # Lesetempo der Hook-Karte: sie wird woertlich
                          # mitgesprochen, deshalb Untertitel-Norm statt des
                          # konservativen Nebenher-Tempos (FOKUS_CPS)
 AKTIVITAET_MIN_SEC = 3.5  # kuerzer lohnt sich die Balkengrafik im Outro nicht
+ZAHL_COUNTUP_MIN = 1.8   # so lange muss der Count-up der letzten gesprochenen
+                         # Zahl mindestens stehen bleiben, bevor die stille
+                         # Uebersicht sein Fenster uebernehmen darf
+ZAHL_UEBERSICHT_MIN = 2.2  # Lesezeit der Uebersichtstafel mit allen vier
+                           # Zahlen; passt das Fenster nicht, entfaellt sie
+                           # ersatzlos statt aufzublitzen
                          # (Balken + Titel brauchen einen Moment zum Lesen)
 AUSKLANG = 5.0        # stummer Nachlauf hinter dem letzten gesprochenen Wort:
                       # so lange steht das Schlussbild noch, ohne dass Text

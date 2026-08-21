@@ -833,6 +833,12 @@ Write one sensational title hook for today's YouTube video.
 Rules:
 - Pick the ONE most compelling story of the report: the biggest
   development, the largest number or the sharpest conflict.
+- CARRY A HARD NUMBER: the hook must contain the day's most striking
+  concrete figure (a price, a percentage, a sum) whenever the report
+  offers one. The hook is also spoken as the video's very first sentence,
+  and a first sentence that states a number is the strongest reason to
+  keep watching that this format has. Only where the day genuinely has no
+  such figure may the hook rest on the sharpest conflict instead.
 - FRONT-LOAD the search terms: the hook STARTS with what people type
   into YouTube search - the ticker, company or asset name, or the core
   topic. The twist, number or verdict follows after it. Never put
@@ -855,7 +861,10 @@ Rules:
 Also write the keyword for the video's thumbnail: at most three words and
 20 characters, the core of the hook (like "CHAIN SPLIT" or "$2 TRILLION").
 It is printed on the image in large letters and must stay readable on a
-phone, so no full sentences and no punctuation.
+phone, so no full sentences and no punctuation. Every word of it must
+appear IN THE HOOK, copied not paraphrased: the hook is spoken as the
+video's first sentence while the keyword stands on screen, so a viewer
+reads and hears the same words.
 
 Output ONLY one JSON object, no preamble, no postscript, no code fence:
 {"hook": "...", "thumb": "..."}
@@ -905,12 +914,21 @@ def _thumb_bereinigen(schlagwort: str, hook: str) -> str:
     """Schlagwort fuers Vorschaubild: Grossbuchstaben, keine Satzzeichen,
     hoechstens THUMB_MAX_ZEICHEN. Fehlt es oder bleibt nichts uebrig, wird es
     aus dem Hook abgeleitet - dessen grossgeschriebene Woerter sind genau die
-    Zuspitzung, die aufs Bild gehoert."""
+    Zuspitzung, die aufs Bild gehoert.
+
+    Seit 21.08.2026 muss jedes Wort des Schlagworts auch IM HOOK stehen. Der
+    Hook ist seit demselben Tag der erste gesprochene Satz des Videos
+    (PRAES_HOOK), und das Schlagwort steht in Sekunde 0 gross im Bild - wer
+    ein Wort liest, das er nicht hoert, erlebt einen Bruch genau in dem
+    Fenster, in dem die Abbruchkurve am steilsten faellt. Bleibt nach dem
+    Filter nichts uebrig, greift dieselbe Ableitung aus dem Hook wie bei
+    fehlendem Schlagwort."""
     def saeubern(roh: str) -> str:
         return re.sub(r"\s+", " ",
                       re.sub(r"[^0-9A-Za-zÄÖÜäöü %$&+.-]+", " ", roh)).strip().upper()
 
-    kandidat = saeubern(schlagwort)
+    im_hook = set(saeubern(hook).split())
+    kandidat = " ".join(w for w in saeubern(schlagwort).split() if w in im_hook)
     if not kandidat:
         gross = [w for w in hook.split() if len(w) > 2 and w.isupper()]
         kandidat = saeubern(" ".join(gross) or hook)
@@ -2007,10 +2025,16 @@ ANALYTICS_ABLAGE = ARBEIT / "analytics"
 ANALYTICS_MAX_ALTER_TAGE = 3    # aeltere Messungen speisen nichts mehr ein
 RETENTION_VIDEOS = 5            # so viele juengste auswertbare Videos zaehlen
 # Das bestehende Wortbudget des Synthese-Prompts (Regel 3: 700 bis 1000
-# Woerter). Die gemessenen Laufzeiten entstanden aus genau diesem Budget,
-# also skaliert Ziellaufzeit/Ist-Laufzeit das Budget proportional mit -
-# keine erfundenen Richtwerte, nur der Dreisatz aus den eigenen Daten.
+# Woerter). Es ist das SOLL und taugt deshalb nicht als Umrechnungsbasis fuer
+# die gemessene Laufzeit - siehe _sprechrate().
 WORTBUDGET = (700, 1000)
+# Erst ab so vielen auswertbaren Videos darf die Messung das Wortbudget
+# veraendern. Darunter bleiben nur die qualitativen Hinweise stehen.
+# Grund: die Abbruchkurve schwankt bei einer Handvoll Aufrufen stark, und
+# ein Teil der Aufrufe sind eigene Kontrollblicke (fertig geschaute Views) -
+# ein Wortziel aus vier Videos ist Rauschen, das sich ueber die
+# Rueckkopplung selbst verstaerkt.
+RETENTION_MIN_N = 5
 
 
 def _mmss(sekunden: float) -> str:
@@ -2036,6 +2060,15 @@ def _retention_kennwerte(video: dict) -> dict | None:
     return {
         "laufzeit_s": laufzeit,
         "views": int(video.get("views") or 0),
+        # Datum und Kapitelmarken wandern mit: das Datum verbindet die Kurve
+        # mit dem Bericht desselben Tages (Ist-Wortzahl, _sprechrate), die
+        # Marken erlauben, den Verlust einzelnen Kapiteln zuzuordnen
+        # (_kapitel_verluste). Beide Felder duerfen fehlen - aeltere
+        # Messungen kennen sie nicht.
+        "veroeffentlicht": str(video.get("veroeffentlicht") or ""),
+        "kapitel": [k for k in (video.get("kapitel") or [])
+                    if isinstance(k, dict)],
+        "punkte": punkte,
         # Mittel der Kurve = mittlere Wiedergabedauer relativ zur Laufzeit
         "mittel": sum(anteile) / len(anteile),
         # Anteil der Laufzeit, ab dem weniger als 50 % bzw. 30 % noch schauen
@@ -2051,6 +2084,52 @@ def _median(werte: list[float]) -> float:
     w = sorted(werte)
     m = len(w) // 2
     return w[m] if len(w) % 2 else (w[m - 1] + w[m]) / 2
+
+
+def bericht_woerter(datum: str) -> int | None:
+    """Ist-Wortzahl des Berichts eines Tages; None, wenn nicht lesbar.
+
+    Gezaehlt wird, was tatsaechlich vorgelesen wird: der Rumpf nach dem
+    Markdown-Trenner, ohne den angehaengten Glossar (er wird nicht
+    gesprochen) und ohne reine URL-/Quellen-Zeilen."""
+    try:
+        text = (EXTRAKTE / datum / "bericht.md").read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    _, _, rumpf = text.partition("\n---\n")
+    zeilen: list[str] = []
+    for z in (rumpf or text).splitlines():
+        s = z.strip()
+        if s.startswith("## ") and s[3:].upper().startswith(("GLOSSAR", "COVERAGE")):
+            break       # Glossar/Abdeckung stehen am Ende und werden nicht gesprochen
+        if not s or s.startswith(("http://", "https://", "[")):
+            continue
+        if re.match(r"^(Quelle|Quellen|Belege|Source|Sources|Evidence):", s, re.I):
+            continue
+        zeilen.append(re.sub(r"\(?https?://\S+\)?", " ", s))
+    return len(" ".join(zeilen).split()) or None
+
+
+def _sprechrate(kennwerte: list[dict]) -> float | None:
+    """Gemessene Woerter je Sekunde Videolaufzeit; None ohne Datenbasis.
+
+    Das ist der Ersatz fuer den frueheren Dreisatz ueber WORTBUDGET: der
+    skalierte das SOLL-Budget (700-1000) mit der IST-Laufzeit einer Messung,
+    die zu Berichten mit rund 1800 Woertern gehoerte - Soll und Ist
+    vermischt, das Wortziel fiel dadurch etwa um Faktor 2 zu niedrig aus
+    (Befund 21.08.2026: "target 5.8 minutes ... roughly 350 to 500 words",
+    waehrend 350-500 Woerter beim gemessenen Tempo nur 3:25-4:50 ergeben).
+    Hier wird stattdessen je gemessenem Video die tatsaechlich geschriebene
+    Wortzahl seines Berichts gegen seine tatsaechliche Laufzeit gestellt -
+    beides Ist, kein Modell."""
+    raten = []
+    for k in kennwerte:
+        woerter = bericht_woerter(str(k.get("veroeffentlicht") or ""))
+        laufzeit = float(k.get("laufzeit_s") or 0)
+        if woerter and laufzeit > 0:
+            raten.append(woerter / laufzeit)
+    return _median(raten) if raten else None
 
 
 def _retention_block(kennwerte: list[dict]) -> str:
@@ -2082,7 +2161,8 @@ def _retention_block(kennwerte: list[dict]) -> str:
         f"-{_mmss(steilster['steil_bis'] * steilster['laufzeit_s'])} "
         f"(loses {steilster['steil_verlust'] * 100:.0f} points of audience).")
     zeilen.append("Act on this:")
-    if drittel:
+    rate = _sprechrate(kennwerte)
+    if drittel and len(kennwerte) >= RETENTION_MIN_N and rate:
         # Ziellaufzeit: der Median-Zeitpunkt, ab dem weniger als 30 % noch
         # schauen - aber nie weniger als die halbe Median-Laufzeit. Die
         # /2-Klausel ist Schleifendaempfung, kein Richtwert: bricht die
@@ -2093,15 +2173,32 @@ def _retention_block(kennwerte: list[dict]) -> str:
         # liefe gegen null. So halbiert sich die Laenge pro Iteration
         # hoechstens; die naechste Messung justiert nach.
         ziel_s = max(_median(drittel), laufzeit / 2)
+        # Umgerechnet mit der GEMESSENEN Wortzahl je Sekunde (siehe
+        # _sprechrate), nicht mehr mit dem Soll-Budget: das Wortziel gehoert
+        # zur beobachteten Laufzeit, nicht zu einer Vorgabe, die nie
+        # eingehalten wurde.
+        mitte = rate * ziel_s
         zeilen.append(
             f"- fewer than 30% of viewers are left after "
             f"{_mmss(_median(drittel))} "
             f"(median) - target a total runtime of about {ziel_s / 60:.1f} "
-            "minutes. Under the current reading pace that is roughly "
-            f"{round(WORTBUDGET[0] * ziel_s / laufzeit / 10) * 10} to "
-            f"{round(WORTBUDGET[1] * ziel_s / laufzeit / 10) * 10} words "
-            "of report body; where this prompt states another word budget, "
-            "this measured target overrides it.")
+            "minutes. At the measured pace of these videos "
+            f"({rate * 60:.0f} words of report body per minute of finished "
+            f"video) that is roughly {round(mitte * 0.9 / 10) * 10} to "
+            f"{round(mitte * 1.1 / 10) * 10} words of report body; where "
+            "this prompt states another word budget, this measured target "
+            "overrides it.")
+    elif drittel:
+        # Zu duenne Datenbasis fuer eine Laengenvorgabe: der qualitative
+        # Befund geht trotzdem raus, das Wortbudget des Prompts bleibt aber
+        # unangetastet.
+        zeilen.append(
+            f"- fewer than 30% of viewers are left after "
+            f"{_mmss(_median(drittel))} (median). Keep the word budget "
+            "stated above, but spend it on the strongest material.")
+        log.info("Retention: nur %d von %d noetigen Videos (bzw. keine "
+                 "Ist-Wortzahl) - Wortbudget bleibt unveraendert",
+                 len(kennwerte), RETENTION_MIN_N)
     zeilen += [
         "- front-load the strongest material: the first minute decides who "
         "stays, so open with the day's single best story, not with "

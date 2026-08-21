@@ -627,6 +627,38 @@ def zahl_tafel(wert: str, titel: str, sub: str) -> Image.Image:
     return bild
 
 
+def zahlen_uebersicht(karten: list[dict]) -> Image.Image:
+    """Alle Tageszahlen auf einen Blick, als stille Tafel.
+
+    Gegenstueck zu zahl_tafel(): seit 21.08.2026 werden nur noch
+    ZAHLEN_GESPROCHEN der vier TL;DR-Zahlen vorgelesen, weil vier
+    gesprochene Zahlensaetze rund 30 s vor der ersten Story kosteten. Im
+    BILD sollen trotzdem alle vier stehen - lesen geht schneller als
+    hoeren. Deshalb eine Zeilentafel statt vier weiterer Count-up-Momente:
+    sie braucht keine eigene Sprechzeit."""
+    bild = _leer()
+    _bande(bild, 150, 574, alpha=176)
+    d = ImageDraw.Draw(bild)
+    wf = folien._font_mono(52)
+    tf = folien._font(True, 26)
+    sf = folien._font(False, 22)
+    # Werte-Spalte an der breitesten Zahl ausrichten, damit die Titel eine
+    # gemeinsame Kante bekommen - sonst franst die Tafel rechts aus.
+    breite = max((d.textlength(str(k.get("wert") or ""), font=wf)
+                  for k in karten[:4]), default=0.0)
+    for i, k in enumerate(karten[:4]):
+        y = 186 + i * 98
+        d.text((MARGIN + 24, y), str(k.get("wert") or ""), font=wf,
+               fill=AKZENT, stroke_width=3, stroke_fill=(0, 0, 0))
+        x = MARGIN + 24 + breite + 40
+        d.text((x, y + 6), str(k.get("titel") or "").upper(), font=tf,
+               fill=HELL)
+        sub = str(k.get("sub") or "")
+        if sub:
+            d.text((x, y + 44), sub, font=sf, fill=GRAU)
+    return bild
+
+
 def outro_tafel() -> Image.Image:
     """Abbinder: fast schwarzer Grund (das Motiv scheint nur noch als
     Ahnung durch), Serientitel linksbuendig mit Amber-Linie darunter -
