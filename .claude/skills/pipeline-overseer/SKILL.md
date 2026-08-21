@@ -27,15 +27,24 @@ damit ein Fehler in einem Schritt die anderen nicht mitreisst:
 | Zeit (täglich) | Skript | Tut |
 |---|---|---|
 | 7:20 / 13:20 / 20:20 | `run.sh` | `crawl_biz.py` + `aggregate_biz.py` → Snapshot, `reports/latest.json` |
-| 7:35 | `report.sh` | `run_report.py --top 15` → `extrakte/<datum>/bericht.md`, Folien, Bilder, GitHub-Publish |
-| 8:10 | `video.sh` | `video_report.py --sprache en` (Vertonung+Render+Upload) + `klip_katalog.py` (Retention) |
-| 21:30 | (inline) | `analytics_bericht.py --tage 45 --speichern` — Abbruchkurven als Erfolgskontrolle |
+| 20:35 | `report.sh` | `run_report.py --top 15` → `extrakte/<datum>/bericht.md`, Folien, Bilder, GitHub-Publish |
+| 21:15 | `video.sh` | `video_report.py --sprache en` (Vertonung+Render+Upload) + `shorts.py` (Tages-Shorts je Story) + `klip_katalog.py` (Retention) |
+| 23:30 | (inline) | `analytics_bericht.py --tage 45 --speichern` — Abbruchkurven als Erfolgskontrolle, seit `2e2d63a` zugleich Datenquelle für die Retention-Rückkopplung in den nächsten Bericht |
 
-Jedes der drei Haupt-Skripte startet mit `git pull --ff-only || echo WARNUNG`
+**Seit 20.08.2026 (`231c51a`) Abendrhythmus statt Morgenlauf:** Messung
+zeigte, dass /biz/ dem US-Handelstag folgt (13–21 UTC = 52.5 % aller Posts,
+06–11 UTC nur 14.1 %) — der alte Redaktionsschluss 05:20 UTC lag im
+Aktivitätstief. Crawl-Raster (7:20/13:20/20:20) bleibt unverändert, nur
+Bericht/Video/Analytics rückten auf den Abend. Erster echter Voll-Zyklus im
+neuen Rhythmus: heute Abend 21.08.2026 — der Abendlauf vom 20.08. selbst
+lieferte zwar Bericht/Extrakte neu, das Hauptvideo wurde aber vom
+Morgenlauf-Marker übersprungen (siehe „Noch nicht produktiv verifiziert"
+unten). `report.sh` läuft weiterhin **vor** `video.sh` (20:35 vs 21:15),
+damit `bericht.md` sicher fertig ist, bevor die Vertonung draufzugreift.
+
+Jedes der Haupt-Skripte startet mit `git pull --ff-only || echo WARNUNG`
 (fault-tolerant, damit hp-ubuntu bei jedem Lauf synchron zu `main` bleibt,
-ohne den Lauf bei Konflikt abzubrechen). `report.sh` läuft **vor** `video.sh`
-(7:35 vs 8:10), damit `bericht.md` sicher fertig ist, bevor die Vertonung
-draufzugreift.
+ohne den Lauf bei Konflikt abzubrechen).
 
 **Getrennte Umgebungen:**
 - hp-ubuntu Produktions-venv: `~/.venvs/boardstats-video/bin/python3` — hat
@@ -60,9 +69,14 @@ draufzugreift.
 `youtube_token.json`, `google_tts_key.txt`, `bett.opus`/`bett_quelle.mp3`).
 Ein lokaler Lauf ohne `--nur-video`/`--vorschau` würde also **wirklich**
 auf den Produktionskanal hochladen und den echten Google-Studio-TTS-Kontingent
-verbrauchen (Stand 19.08.2026 20:41: 16.1 % von 1'000'000 Zeichen/Monat,
+verbrauchen (Stand 20.08.2026 08:10: 17.3 % von 1'000'000 Zeichen/Monat,
 geteilt mit hp-ubuntu — ein voller Testlauf kostet ca. 8'700-13'000 Zeichen).
-Nie einen Lauf ohne Test-Flag lokal starten.
+Nie einen Lauf ohne Test-Flag lokal starten. Seit `cb52e17` (20.08.) spricht
+Sprache `en` mit **en-US-Studio-O** (weiblich, vorher Studio-Q) —
+Hörvergleich aller en-US-Klassen, Ersatzkette (Neural2-G/AriaNeural) an
+Grundfrequenz mitgezogen. Der Vertonungs-Cache greift beim ersten Lauf mit
+der neuen Stimme nicht (Cache-Schlüssel enthält den Stimmennamen) — erster
+Lauf nach dem Wechsel vertont komplett neu und kostet volles Kontingent.
 
 ## Testvideos generieren (meine Verantwortung)
 
@@ -128,6 +142,21 @@ python video_report.py --sprache en --vorschau 20
   ```
   `-u` (unbuffered) ist Pflicht, sonst bleibt das Log bis Prozessende leer
   (bestätigter Fehlermodus, siehe Memory `feedback_logs_live_schreiben`).
+- **Seit `7191699`/`c33885c` ist der Ketten-Test Report→Video nicht mehr
+  ohne Weiteres möglich:** `video_report.py` liest hart `extrakte/<heutiges
+  Datum>/bericht.md` (Lokalzeit, kein `--datum`-Flag). Ein `--trockenlauf`
+  von `run_report.py` schreibt Bericht/Markdown aber bewusst NICHT mehr
+  dorthin, sondern nach `arbeit/<stamp>-test/` (Zustandsschutz, siehe unten)
+  — `video_report.py` findet also nichts und bricht mit "kein Bericht für
+  ... nichts zu tun" ab. Ein echter (nicht-trockener) `run_report.py`-Lauf
+  nur zum Testen würde dagegen den Delta-Zustand für den echten Abendlauf
+  vorwegnehmen (derselbe Fehler wie beim Vorfall vom 19.08., nur über den
+  ungeschützten Produktivpfad). Für einen echten Report→Video-Kettentest
+  bleibt daher nur: auf den nächsten realen Cron-Lauf warten und dessen
+  Logs prüfen, oder `testumgebung.py --kopieren` in einen Worktree spiegeln
+  und dort risikofrei experimentieren. `shorts.py` hat dagegen ein eigenes
+  `--datum`-Flag und lässt sich unabhängig gegen einen beliebigen
+  vorhandenen `extrakte/<datum>/`-Stand testen.
 
 ## Updates auf main prüfen (Checkliste pro Commit/Commit-Serie)
 
@@ -143,10 +172,10 @@ python video_report.py --sprache en --vorschau 20
    Wenn ein Commit das übersprungen hat und Fehler auftauchen: `git blame`
    bzw. `git log -L <start>,<end>:<datei>` nutzen, um den genauen
    verursachenden Commit zu bestimmen, statt pauschal zu vermuten.
-3. **Tests laufen lassen** (`tests/` — Stand 20.08.2026: 149 Tests über 12
-   Dateien, u.a. `test_testlauf_isolation.py` und `test_upload_metadaten.py`
-   neu dazugekommen; Dateiliste wächst, im Zweifel `ls tests/*.py` statt der
-   hier genannten Namen vertrauen):
+3. **Tests laufen lassen** (`tests/` — Stand 21.08.2026: 194 Tests, u.a.
+   `test_shorts.py` (16) und `test_retention.py` (15) neu dazugekommen;
+   Dateiliste wächst, im Zweifel `ls tests/*.py` statt hier genannten Namen
+   vertrauen):
    ```bash
    "C:\Users\claud\AppData\Local\Programs\Python\Python313\python.exe" -m pytest
    ```
@@ -203,12 +232,46 @@ kein Marker); `klip_katalog.py --trockenlauf` loggt die fällige
 Retention, löscht aber nichts. `--kein-github` behält sein bisheriges
 Verhalten (ganze Markdown-Stufe aus) und hat bei Kombination Vorrang.
 
+## Neue Pipeline-Stufe seit 20.08.2026: Tages-Shorts (`shorts.py`)
+
+Läuft in `video.sh` **nach** dem Hauptvideo. Pro `##`-Story des Tagesberichts
+ein YouTube-Short (1080×1920, 20–175 s), geschnitten aus dem bereits
+vorhandenen `video/<datum>/audio_en.mp3` an Wort-Zeitstempeln — **keine**
+eigene Vertonung, kostet also kein zusätzliches TTS-Kontingent. Seit
+`6a26128`/`36006fe` trägt jedes Short zusätzlich das Kapitel-Motiv des
+Hauptvideos als Hintergrund (`MotivWahl`-Klasse aus `szenen_bauen()`
+extrahiert, `shorts.story_motive()` rechnet exakt dieselbe Zuordnung).
+
+- **Marker:** `extrakte/<datum>/shorts_en.json`, inkrementell nach jedem
+  Upload fortgeschrieben (Wiederanlauf überspringt bereits hochgeladene
+  Storys), analog `video_en.json` bewusst **nicht** committet.
+- **Ähnlichkeits-Guard (Schwelle 0.90):** vor dem Schnitt vergleicht
+  `shorts.py` den Wortstrom aus `video/<datum>/audio_en.mp3` mit den
+  Blocktexten des **aktuellen** `extrakte/<datum>/`-Stands. Passt die
+  Tonspur nicht zum Bericht (z.B. weil `report.sh` den Bericht neu
+  geschrieben hat, aber `video.sh` das zugehörige Video wegen bestehendem
+  Marker übersprungen hat — Morgen-Audio vs. Abend-Bericht), bricht der Lauf
+  sauber mit Logzeile ab statt an falschen Grenzen zu schneiden. Genau das
+  ist am 20.08. 21:15 passiert (Ähnlichkeit 0.040) — kein Fehler, erwartetes
+  Verhalten beim ersten (unvollständigen) Abendlauf.
+- **Testen:** `shorts.py --sprache en --trockenlauf --datum YYYY-MM-DD
+  [--nur STORY_INDEX] [--status unlisted]` — unabhängig von der
+  Report→Video-Ketten-Einschränkung oben nutzbar, solange für das
+  angegebene Datum ein vollständiger `extrakte/<datum>/`-Stand samt
+  `video/<datum>/audio_en.mp3` existiert.
+- Test-Upload vom 20.08. (unlisted): https://youtu.be/Q7biXzouGos.
+
 ## Bekannte Betriebswerte (Referenz, bei Bedarf hier aktualisieren)
 
 - Google Studio-TTS-Kontingent: 1'000'000 Zeichen/Monat, geteilt zwischen
   hp-ubuntu-Produktion und jedem lokalen Testlauf ohne `--nur-video`/
   `--vorschau`. Realer Tagesbericht ≈ 8'700-13'000 Zeichen/~590-700 s Video.
-  Stand 19.08.2026 20:41: 16.1 % verbraucht (161'280 Zeichen).
+  Stand 20.08.2026 08:10: 17.3 % verbraucht (173'378 Zeichen) — der erste
+  Lauf mit der neuen Stimme (`cb52e17`) kostet nochmal das volle Kontingent
+  eines Tagesberichts, weil der Vertonungs-Cache dabei nicht greift.
+- `videos.insert` (Uploads, inkl. Shorts) hat ein eigenes Kontingent von
+  100 Uploads/Tag seit 2026 — 8 Shorts/Tag zusätzlich zum Hauptvideo sind
+  unkritisch (siehe Memory `youtube-quota-2026-eigene-upload-buckets.md`).
 - Intro-Länge bis Kapitel 1: 29.6 s (Boden 10 s wegen YouTube-Kapitelregel).
   Tonwerte Sprachspur: −19.5 LUFS, Pausen −84 dBFS, 85 % Energie < 700 Hz →
   Musikbett bei −22 LU, kein Ducking (nur sidechaincompress am Bett selbst).
@@ -319,10 +382,56 @@ Verhalten (ganze Markdown-Stufe aus) und hat bei Kombination Vorrang.
   Fonts sind bereit, der Chart läuft im produktiven Video noch nicht mit.
   Aktiv genutzt werden die Fonts bisher nur über `thumbnail.py`-Karten.
 
+- **Race Condition beim Lesen frischer Crawl-Snapshots (behoben in
+  `3b3f4d5`):** selbst geflaggter Befund vom 20.08. — ein Testlauf um 20:23
+  überlappte mit dem 20:20-Crawl und las `raw/2026-08-19T1820.jsonl.gz`
+  mitten im Schreibvorgang (`gzip.BadGzipFile`), lief in ein vorhandenes
+  try/except und hinterliess **keine** erklärende Logzeile, nur einen Tag
+  ganz ohne frische Motive/Kulisse/Clips. Fix an der Quelle statt nur beim
+  Lesen: `crawl_biz.py` schreibt jetzt nach `<stamp>.jsonl.gz.tmp` und
+  benennt erst nach dem letzten Thread um — ein unfertiger Snapshot fällt
+  damit aus jedem `glob("*.jsonl.gz")` heraus, deckt alle drei Leser ab
+  (`run_report.py`, `bundle_biz.py`, `aggregate_biz.py`). Zusätzlich loggt
+  `_snapshot_posts()` einen unlesbaren Snapshot jetzt statt still leer
+  zurückzukommen. Damit hinfällig: der zuvor als Task geflaggte Vorschlag
+  "Race Condition beim Lesen frischer Crawl-Snapshots absichern".
+
 ## Offene/unklare Punkte (nicht aktiv verfolgen, ausser Nutzer spricht sie an)
 
 - Ungeklärter Mechanismus, wie Video `Q5Mbsfmkvnc` bereits vor einem
   expliziten Löschversuch auf YouTube als "Deleted video" markiert war.
+- Zwei vorbestehende mypy-Fehler in `tests/` (nicht Teil der 20.08.-Serie,
+  seit `e0cad36` bzw. `c288868` unbemerkt liegengeblieben): falscher
+  `type: ignore`-Fehlercode in `test_upload_metadaten.py:44`
+  (`call-overload` statt `arg-type`) und `float | None` gegen
+  `assertAlmostEqual` in `test_schlussbild.py` (5 Stellen). `ruff` und
+  `pytest` bleiben davon unberührt (grün) — beim nächsten Anfassen einer
+  der beiden Dateien mitkorrigieren.
+
+## Noch nicht produktiv verifiziert (Stand 21.08.2026 09:10 CEST)
+
+Die gesamte Serie vom 20.08. an Synthese-/Render-/Upload-Logik — TL;DR-
+Zahlenblock (`6509099`), Titel-Frontloading + Tag-Phrasen (`7f90c51`),
+Retention-Rückkopplung (`2e2d63a`), Sprecherwechsel (`cb52e17`) und die
+komplette Shorts-Pipeline (`4d4b34e`/`6a26128`) — läuft nur in
+Unit-Tests/Sichttests der einzelnen Worktree-Agents (siehe deren Stories) und
+in `pytest` auf dem gemergten `main` (194 grün). Ein echter End-to-End-Lauf
+war zum Zeitpunkt dieser Prüfung nicht möglich, weil einerseits
+`video_report.py` zwingend `extrakte/<heutiges Datum>/` braucht (siehe oben)
+und andererseits ein echter, nicht-trockener `run_report.py`-Testlauf den
+Delta-Zustand vor dem realen Abendlauf verschoben hätte (derselbe
+Fehlermodus wie beim Vorfall vom 19.08.). Der erste vollständige Auto-Lauf
+im neuen Abendrhythmus ist heute Abend, 21.08.2026 (Bericht 20:35, Video
+21:15, Analytics 23:30, Shorts danach). **Beim nächsten Check konkret
+prüfen:**
+- `video_cron.log`: TL;DR-Kapitelmarke "TL;DR" bei ~00:00, Kapitel 1 ab
+  ~40 s statt ~30 s, Video-Titel mit Suchbegriff vorne und Hook ≤55 Zeichen.
+- `report_cron.log`: Zeile "Retention: ..." mit echtem Kennwerteblock
+  (nicht "keine auswertbare Messung") — die Datengrundlage
+  (`arbeit/analytics/2026-08-20.json`, 4 Kurven) steht bereits.
+- Stimme im hochgeladenen Video: weiblich (Studio-O).
+- `extrakte/<datum>/shorts_en.json`: mehrere Storys hochgeladen, Guard nicht
+  gegriffen (Ähnlichkeit ≥0.90).
 
 ## Wartung dieses Skills
 
