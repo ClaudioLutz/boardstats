@@ -38,8 +38,8 @@ Aktivitätstief. Crawl-Raster (7:20/13:20/20:20) bleibt unverändert, nur
 Bericht/Video/Analytics rückten auf den Abend. Erster echter Voll-Zyklus im
 neuen Rhythmus: heute Abend 21.08.2026 — der Abendlauf vom 20.08. selbst
 lieferte zwar Bericht/Extrakte neu, das Hauptvideo wurde aber vom
-Morgenlauf-Marker übersprungen (siehe „Noch nicht produktiv verifiziert"
-unten). `report.sh` läuft weiterhin **vor** `video.sh` (20:35 vs 21:15),
+Morgenlauf-Marker übersprungen (siehe „Serie vom 20.08. im Kettentest
+verifiziert" unten). `report.sh` läuft weiterhin **vor** `video.sh` (20:35 vs 21:15),
 damit `bericht.md` sicher fertig ist, bevor die Vertonung draufzugreift.
 
 Jedes der Haupt-Skripte startet mit `git pull --ff-only || echo WARNUNG`
@@ -142,21 +142,70 @@ python video_report.py --sprache en --vorschau 20
   ```
   `-u` (unbuffered) ist Pflicht, sonst bleibt das Log bis Prozessende leer
   (bestätigter Fehlermodus, siehe Memory `feedback_logs_live_schreiben`).
-- **Seit `7191699`/`c33885c` ist der Ketten-Test Report→Video nicht mehr
-  ohne Weiteres möglich:** `video_report.py` liest hart `extrakte/<heutiges
-  Datum>/bericht.md` (Lokalzeit, kein `--datum`-Flag). Ein `--trockenlauf`
-  von `run_report.py` schreibt Bericht/Markdown aber bewusst NICHT mehr
-  dorthin, sondern nach `arbeit/<stamp>-test/` (Zustandsschutz, siehe unten)
-  — `video_report.py` findet also nichts und bricht mit "kein Bericht für
-  ... nichts zu tun" ab. Ein echter (nicht-trockener) `run_report.py`-Lauf
-  nur zum Testen würde dagegen den Delta-Zustand für den echten Abendlauf
-  vorwegnehmen (derselbe Fehler wie beim Vorfall vom 19.08., nur über den
-  ungeschützten Produktivpfad). Für einen echten Report→Video-Kettentest
-  bleibt daher nur: auf den nächsten realen Cron-Lauf warten und dessen
-  Logs prüfen, oder `testumgebung.py --kopieren` in einen Worktree spiegeln
-  und dort risikofrei experimentieren. `shorts.py` hat dagegen ein eigenes
-  `--datum`-Flag und lässt sich unabhängig gegen einen beliebigen
-  vorhandenen `extrakte/<datum>/`-Stand testen.
+### Voller Kettentest Report→Video→Shorts (erprobtes Rezept, 21.08.2026)
+
+Der Kettentest ist möglich, **lokal auf diesem Windows-Rechner**, ohne den
+Produktions-Delta anfassen zu können. Der frühere Eintrag hier ("nicht mehr
+ohne Weiteres möglich") galt nur für einen Test *auf hp-ubuntu*. Der Trick:
+lokal gibt es keinen produktiven Zustand, den man verderben könnte — die
+Produktion lebt komplett auf hp-ubuntu. Alles, was lokal fabriziert wird,
+ist folgenlos, solange nichts committet/gepusht wird.
+
+Ausgangsproblem bleibt: `video_report.py` liest hart
+`extrakte/<heutiges Datum>/` (Lokalzeit, kein `--datum`-Flag), ein
+`--trockenlauf` von `run_report.py` schreibt aber bewusst nach
+`arbeit/<stamp>-test/`. Die Kettennaht wird darum von Hand gelegt.
+
+```bash
+# 1. Prod-Zustand LESEND spiegeln, damit der Test den echten Delta-Pfad rechnet
+#    (ohne das liest der lokale Lauf alle Threads voll = falscher Codepfad)
+mv cache <scratchpad>/cache-alt && mkdir cache
+scp hp-ubuntu:boardstats/cache/status.json cache/
+scp "hp-ubuntu:boardstats/cache/*.txt" cache/
+# 2. Analytics-Messung spiegeln, sonst bleibt retention_befund() leer
+mkdir -p arbeit/analytics && scp hp-ubuntu:boardstats/arbeit/analytics/*.json arbeit/analytics/
+# 3. Rohsnapshot spiegeln - OHNE ihn gibt es lokal NULL Bildkandidaten
+#    (_snapshot_posts() liest raw/*.jsonl.gz; mit --host liegt raw/ nur remote)
+mkdir -p raw && scp hp-ubuntu:boardstats/raw/<juengster>.jsonl.gz raw/
+# 4. Report (Remote-Anteil dauert nur ~5 s, danach laeuft alles lokal)
+python -u run_report.py --host hp-ubuntu --top 15 --trockenlauf
+# 5. Kettennaht legen
+cp -r arbeit/<stamp>-test/extrakte-md/. extrakte/<datum>/
+cp -r arbeit/motive/<datum>-test arbeit/motive/<datum>
+cp arbeit/thumbs/<datum>-test.jpg arbeit/thumbs/<datum>.jpg
+# 6. Video und Shorts
+python -u video_report.py --sprache en --trockenlauf
+python -u shorts.py --sprache en --trockenlauf --datum <datum>
+```
+
+**Aufräumen ist Pflicht**, sonst kollidiert das fabrizierte
+`extrakte/<datum>/` (untracked) beim nächsten `git pull` mit dem echten
+Produktions-Commit desselben Tages:
+```bash
+rm -rf extrakte/<datum> arbeit/motive/<datum> arbeit/thumbs/<datum>.jpg raw
+```
+`video/<datum>/` darf bleiben (gitignored) — das ist das Prüfergebnis.
+Danach `git status --short` gegenprüfen: muss leer sein.
+
+**Fallen, real erlebt:**
+- Ein `cd` im Bash-Tool wirkt in Folgeaufrufen weiter. Beim Aufräumen
+  **absolute Pfade** verwenden, sonst löscht das `rm -rf` relativ zum
+  letzten `cd` ins Leere (oder Schlimmeres).
+- Zeitfenster beachten: der `--host`-Schritt schreibt `bundles/` und
+  `cache_status.json` auf hp-ubuntu. Vor ~20:10 unkritisch, danach
+  kollidiert er mit dem 20:20-Crawl / 20:35-Report.
+- Der lokale Video-Render darf problemlos über 20:35 hinauslaufen —
+  getrennte Maschine.
+
+**Gegenprobe, dass die Produktion unberührt blieb** (die drei Delta-Dateien
+müssen den Stempel des letzten produktiven Laufs behalten):
+```bash
+ssh hp-ubuntu "cd ~/boardstats && stat -c '%y %n' cache/status.json arbeit/motive/verwendet.json arbeit/clips/katalog.json"
+```
+
+`shorts.py` hat zusätzlich ein eigenes `--datum`-Flag und lässt sich auch
+unabhängig gegen einen beliebigen vorhandenen `extrakte/<datum>/`-Stand
+testen.
 
 ## Updates auf main prüfen (Checkliste pro Commit/Commit-Serie)
 
@@ -268,11 +317,21 @@ extrahiert, `shorts.story_motive()` rechnet exakt dieselbe Zuordnung).
   `--vorschau`. Realer Tagesbericht ≈ 8'700-13'000 Zeichen/~590-700 s Video.
   Stand 20.08.2026 08:10: 17.3 % verbraucht (173'378 Zeichen) — der erste
   Lauf mit der neuen Stimme (`cb52e17`) kostet nochmal das volle Kontingent
-  eines Tagesberichts, weil der Vertonungs-Cache dabei nicht greift.
+  eines Tagesberichts, weil der Vertonungs-Cache dabei nicht greift
+  (bestätigt 21.08.: 9'191 Zeichen für 65 Sätze, kein einziger Cache-Treffer).
+- **Der TTS-Verbrauchszähler ist pro Maschine, nicht global.**
+  `arbeit/tts_verbrauch.json` zählt nur die Läufe der jeweiligen Maschine;
+  der lokale Testlauf meldete "Studio-Kontingent 2026-08: 15'668 von
+  1'000'000 (1.6%)", während hp-ubuntu bei 173'378 Zeichen steht. Das echte
+  Google-Kontingent ist die **Summe beider** (~19 % Ende August). Die
+  Prozentanzeige eines lokalen Laufs nie als Kontingentstand lesen.
 - `videos.insert` (Uploads, inkl. Shorts) hat ein eigenes Kontingent von
   100 Uploads/Tag seit 2026 — 8 Shorts/Tag zusätzlich zum Hauptvideo sind
   unkritisch (siehe Memory `youtube-quota-2026-eigene-upload-buckets.md`).
-- Intro-Länge bis Kapitel 1: 29.6 s (Boden 10 s wegen YouTube-Kapitelregel).
+- Intro-Länge bis Kapitel 1: seit dem TL;DR-Zahlenblock (`6509099`) **37.0 s**
+  (gemessen 21.08.), vorher 29.6 s. Boden 10 s wegen YouTube-Kapitelregel —
+  liegt Kapitel 1 darunter, schiebt `kapitelmarken()` die Marke auf 10 s.
+  Laufzeit des Tagesvideos 21.08.: 513.8 s (8:34), vorher Median 11:39.
   Tonwerte Sprachspur: −19.5 LUFS, Pausen −84 dBFS, 85 % Energie < 700 Hz →
   Musikbett bei −22 LU, kein Ducking (nur sidechaincompress am Bett selbst).
 - Kaltstart-Schlagwort (erster Titel, z.B. "$120K GONE"): seit `50621da`
@@ -408,30 +467,53 @@ extrahiert, `shorts.story_motive()` rechnet exakt dieselbe Zuordnung).
   `pytest` bleiben davon unberührt (grün) — beim nächsten Anfassen einer
   der beiden Dateien mitkorrigieren.
 
-## Noch nicht produktiv verifiziert (Stand 21.08.2026 09:10 CEST)
+## Serie vom 20.08. im Kettentest verifiziert (21.08.2026, 19:04–20:16 CEST)
 
-Die gesamte Serie vom 20.08. an Synthese-/Render-/Upload-Logik — TL;DR-
-Zahlenblock (`6509099`), Titel-Frontloading + Tag-Phrasen (`7f90c51`),
-Retention-Rückkopplung (`2e2d63a`), Sprecherwechsel (`cb52e17`) und die
-komplette Shorts-Pipeline (`4d4b34e`/`6a26128`) — läuft nur in
-Unit-Tests/Sichttests der einzelnen Worktree-Agents (siehe deren Stories) und
-in `pytest` auf dem gemergten `main` (194 grün). Ein echter End-to-End-Lauf
-war zum Zeitpunkt dieser Prüfung nicht möglich, weil einerseits
-`video_report.py` zwingend `extrakte/<heutiges Datum>/` braucht (siehe oben)
-und andererseits ein echter, nicht-trockener `run_report.py`-Testlauf den
-Delta-Zustand vor dem realen Abendlauf verschoben hätte (derselbe
-Fehlermodus wie beim Vorfall vom 19.08.). Der erste vollständige Auto-Lauf
-im neuen Abendrhythmus ist heute Abend, 21.08.2026 (Bericht 20:35, Video
-21:15, Analytics 23:30, Shorts danach). **Beim nächsten Check konkret
-prüfen:**
-- `video_cron.log`: TL;DR-Kapitelmarke "TL;DR" bei ~00:00, Kapitel 1 ab
-  ~40 s statt ~30 s, Video-Titel mit Suchbegriff vorne und Hook ≤55 Zeichen.
-- `report_cron.log`: Zeile "Retention: ..." mit echtem Kennwerteblock
-  (nicht "keine auswertbare Messung") — die Datengrundlage
-  (`arbeit/analytics/2026-08-20.json`, 4 Kurven) steht bereits.
-- Stimme im hochgeladenen Video: weiblich (Studio-O).
-- `extrakte/<datum>/shorts_en.json`: mehrere Storys hochgeladen, Guard nicht
-  gegriffen (Ähnlichkeit ≥0.90).
+Voller lokaler Kettentest Report→Video→Shorts nach dem Rezept oben, mit
+gespiegeltem Prod-Cache (Delta-Pfad: 6× delta / 12× voll) und gespiegelter
+Analytics-Messung. **Alle fünf offenen Prüfpunkte der 20.08.-Serie sind
+damit an echter Ausgabe belegt, nicht nur durch grüne Tests:**
+
+| Feature | Nachweis im Testlauf |
+|---|---|
+| Retention-Rückkopplung `2e2d63a` | "Retention: Befund aus 2026-08-20.json eingespeist (4 Videos, Median-Laufzeit 11:39)"; Block wirkt: 1801 Wörter (19.08.) → 878 Wörter, Laufzeit 11:39 → **8:34** |
+| Titel-Frontloading `7f90c51` | `BBBYQ NOL Theory: $3BN Claim Meets 'Backend Glitch'` — Ticker vorn, Hook 50 Zeichen (≤55) |
+| TL;DR-Zahlenblock `6509099` | 4 Tageszahlen in `folien.json` mit gesprochenem Satz; Frame bei 0:15 zeigt Zahlkarte; Vorspann bis **37.0 s** (vorher 29.6 s) |
+| Stimme `cb52e17` | "Vertonung: Google TTS satzweise (en-US-Studio-O)" |
+| Shorts `4d4b34e`/`6a26128` | Ähnlichkeits-Guard **1.000** (20.08. noch 0.040 → korrekter Abbruch); 7 Storys, 7 **verschiedene** Kapitel-Motive als Hintergrund; Frame-Sichtprüfung: Titel/Stichworte/Kennzahlkarte lesbar, UI-Zonen frei |
+
+Zustandsschutz im selben Lauf mitbelegt: die drei Delta-Dateien auf
+hp-ubuntu (`cache/status.json`, `arbeit/motive/verwendet.json`,
+`arbeit/clips/katalog.json`) trugen vor **und nach** dem Test unverändert
+den Stempel des Laufs vom 20.08. Die Trockenlauf-Guards melden das auch
+selbst ("Bildsperre nicht vermerkt", "Clip-Katalog nicht gestempelt",
+"Cache-Fortschritt nicht fortgeschrieben").
+
+Was der Test **nicht** abdeckt und weiterhin am realen Lauf zu prüfen ist:
+der eigentliche Upload (Kapitelmarken in der YouTube-Beschreibung, Tags,
+Shorts-Marker `extrakte/<datum>/shorts_en.json`, Sichtbarkeitswechsel
+privat→public) — im Trockenlauf wird die Beschreibung nicht gebaut.
+
+**Neuer Befund: Wortzahl-Ableitung im Retention-Block ist falsch
+kalibriert** (`run_report.py:2101`, `_retention_block()`). Die Formel
+skaliert das **Soll**-Budget `WORTBUDGET = (700, 1000)` mit der
+**Ist**-Laufzeit der Messung (699 s) — die aber zu Berichten mit ~1800
+Wörtern gehört, weil das Budget nie eingehalten wurde. Soll und Ist werden
+vermischt, das Wortziel fällt dadurch rund um Faktor 2 zu niedrig aus:
+heute "target 5.8 minutes … roughly 350 to 500 words", während 350–500
+Wörter beim gemessenen Tempo (878 Wörter = 8:34) nur **3:25–4:50 min**
+ergäben — deutlich unter dem eigenen Laufzeitziel. Dass das Modell die
+Vorgabe ignorierte und 878 Wörter schrieb, war Zufall, nicht Regelwerk.
+Sauber wäre, mit der Ist-Wortzahl des zur Messung gehörenden Berichts zu
+skalieren statt mit `WORTBUDGET`. Kein Blocker — die Richtung stimmt.
+
+**Inhaltliche Beobachtung zur Kulisse (Nutzerentscheidung, kein Bug):** die
+Sichtprüfung filtert zuverlässig Hass/Extremismus (2 Bilder abgelehnt:
+antisemitischer Bildtext, Hakenkreuz), lässt aber Anime-Motive mit betonter
+Körperlichkeit als Kapitelhintergrund durch (Short 3, Treasury-Buyback).
+Themenbezug fehlt dort, und für einen Finanzkanal ist das eine
+Positionierungsfrage. Falls unerwünscht, gehört ein Kriterium in
+`HINTERGRUND_PROMPT`, nicht in den Szenenbau.
 
 ## Wartung dieses Skills
 
