@@ -659,20 +659,36 @@ def zahlen_uebersicht(karten: list[dict]) -> Image.Image:
     return bild
 
 
-def outro_tafel() -> Image.Image:
+def outro_tafel(frage: str = "") -> Image.Image:
     """Abbinder: fast schwarzer Grund (das Motiv scheint nur noch als
     Ahnung durch), Serientitel linksbuendig mit Amber-Linie darunter -
-    das ruhige Ende statt einer weiteren zentrierten Tafel."""
+    das ruhige Ende statt einer weiteren zentrierten Tafel.
+
+    `frage` ist die offene Cliffhanger-Frage fuer morgen (seit
+    21.08.2026). Sie steht als Letztes im Bild und bleibt bis zum
+    Schlussframe stehen - der einzige Grund, den der Zuschauer bekommt,
+    morgen wiederzukommen. Ohne Frage bleibt die Tafel wie zuvor."""
     bild = _leer()
     _bande(bild, 0, H, alpha=219)
     d = ImageDraw.Draw(bild)
     d.text((MARGIN, 252), "/biz/ BOARD REPORT", font=folien._font(True, 84),
            fill=HELL)
     d.rectangle([MARGIN, 376, MARGIN + 548, 386], fill=AKZENT)
-    d.text((MARGIN, 420), "New every day", font=folien._font(False, 34),
-           fill=GRAU)
-    d.text((MARGIN, 478), "Source threads and chapters in the description",
-           font=folien._font(False, 28), fill=design_tokens.NEUTRAL[5])
+    if frage:
+        # Die Frage nimmt den Platz der Zeile "New every day" ein: zwei
+        # Versprechen untereinander verwaessern beide, und die Frage ist
+        # das staerkere - sie sagt konkret, was morgen auf dem Spiel steht.
+        ff = folien._font(True, 38)
+        for i, z in enumerate(folien._umbrechen(d, frage, ff,
+                                                B - 2 * MARGIN)[:2]):
+            d.text((MARGIN, 420 + i * 46), z, font=ff, fill=AKZENT)
+        d.text((MARGIN, 522), "Answered in tomorrow's report",
+               font=folien._font(False, 28), fill=GRAU)
+    else:
+        d.text((MARGIN, 420), "New every day", font=folien._font(False, 34),
+               fill=GRAU)
+        d.text((MARGIN, 478), "Source threads and chapters in the description",
+               font=folien._font(False, 28), fill=design_tokens.NEUTRAL[5])
     return bild
 
 

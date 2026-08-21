@@ -378,16 +378,31 @@ def abschnitte_erzeugen(markdown: str) -> tuple[list[Block], list[Abschnitt]]:
 
     Nebenher entsteht die Abschnittsliste: je ##-Ueberschrift ein Abschnitt,
     dem die Thread-IDs seiner Quell-URLs zugeordnet sind - darueber findet
-    der Hintergrund die Bilder der gerade besprochenen Threads."""
+    der Hintergrund die Bilder der gerade besprochenen Threads.
+
+    Der Sammelabschnitt "Still true from yesterday" faellt seit 21.08.2026
+    ebenfalls weg (rr.ist_still_true). Er stand als letztes Kapitel im
+    Video - eine Aufzaehlung von Themen, zu denen es nichts Neues gibt,
+    genau dort, wo ohnehin am wenigsten Zuschauer uebrig sind. Im
+    bericht.md bleibt er stehen: gelesen ist er nuetzlich, gehoert ist er
+    toter Ton."""
     zeilen = markdown.splitlines()
     bloecke: list[Block] = []
     abschnitte = [Abschnitt(threads=[])]  # Index 0: Einleitung vor dem ersten ##
+    ueberspringen = False
     for i, zeile in enumerate(zeilen):
         z = zeile.strip()
         if i == 0 and z.startswith("# "):
             continue
         if z.startswith("## GLOSSAR"):  # trifft auch das englische "## GLOSSARY"
             break
+        if z.startswith("## "):
+            ueberspringen = rr.ist_still_true(z)
+            if ueberspringen:
+                print(f"Video: Abschnitt {z[3:].strip()!r} nicht vertont "
+                      f"(steht weiterhin im Bericht)")
+        if ueberspringen:
+            continue
         for tid in _THREAD_URL.findall(z):
             if tid not in abschnitte[-1].threads:
                 abschnitte[-1].threads.append(tid)
@@ -1777,7 +1792,17 @@ ZAHL_SATZ_WORTE = 12     # laengere Zahlensaetze werden am Satzende gekappt:
 # beiden Seiten falsch.
 PRAES_ZAHLEN = "Today's numbers."
 ZAHLEN_LABEL = "Today's numbers"   # dieselbe Ansage als Bild-Karte
-PRAES_OUTRO = ("That's the board report. Sources in the description.")
+# Schluss-Beat vor dem Abbinder: staerkstes Board-Zitat, dann die offene
+# Frage fuer morgen. Der Abbinder selbst ist seit 21.08.2026 auf einen Satz
+# gekuerzt (vorher drei) - er ist die Stelle, an der ohnehin niemand mehr
+# zuhoert, und jede Sekunde dort geht der Cliffhanger-Frage verloren.
+PRAES_ZITAT = 'Last word from the board: "{zitat}"'
+PRAES_OUTRO = "That's the board report. Sources in the description."
+# Rollen, die das letzte Kapitel beenden: der erste dieser Bloecke NACH der
+# letzten Kapitel-Ueberschrift markiert, wo der Kapitelrumpf aufhoert.
+# "zahl_kopf" steht nur bei einer Blockliste alter Ordnung dort (Zahlen am
+# Ende), der Schluss-Beat und das Outro immer.
+SCHLUSS_ROLLEN = ("zahl_kopf", "schluss_zitat", "schluss_frage", "outro")
 MONATE_EN = ["January", "February", "March", "April", "May", "June", "July",
              "August", "September", "October", "November", "December"]
 BLEND_SCHRITTE = 6       # Zwischenbilder je Ueberblendung Reveal -> Folie
@@ -1990,6 +2015,20 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
         for t in titel_saetze:
             aus.append(Block("absatz", t, 0, rolle="agenda"))
     aus.extend(bloecke)
+    # Schluss-Beat vor dem Abbinder (21.08.2026): das staerkste Board-Zitat
+    # des Tages und eine offene Frage fuer morgen. Bis dahin endete das Video
+    # mit dem Sammelabschnitt der unveraenderten Themen - der schwaechsten
+    # Stelle des Berichts an der auffaelligsten Stelle des Videos. Beide
+    # Felder sind optional; fehlt eines, faellt nur es weg.
+    schluss = fdaten.get("schluss")
+    schluss = schluss if isinstance(schluss, dict) else {}
+    zitat = str(schluss.get("zitat") or "").strip()
+    frage = str(schluss.get("frage") or "").strip()
+    if zitat:
+        aus.append(Block("absatz", PRAES_ZITAT.format(zitat=zitat.strip('"')),
+                         0, rolle="schluss_zitat"))
+    if frage:
+        aus.append(Block("absatz", frage, 0, rolle="schluss_frage"))
     aus.append(Block("absatz", PRAES_OUTRO, 0, rolle="outro"))
     return aus
 
@@ -2450,7 +2489,7 @@ def folien_konkat(bloecke: list[Block], block_worte: list[list[Wort]],
     letzter_kopf = koepfe[-1][0] if koepfe else -1
     schluss = next((start_von(i) for i, b in enumerate(bloecke)
                     if i > letzter_kopf
-                    and b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
+                    and b.rolle in SCHLUSS_ROLLEN and block_worte[i]),
                    ende)
     for k, (kopf, nr) in enumerate(koepfe):
         kopf_start = start_von(kopf)
@@ -2861,7 +2900,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     letzter_kopf = koepfe[-1][0] if koepfe else -1
     schluss = next((start_von(i) for i, b in enumerate(bloecke)
                     if i > letzter_kopf
-                    and b.rolle in ("zahl_kopf", "outro") and block_worte[i]),
+                    and b.rolle in SCHLUSS_ROLLEN and block_worte[i]),
                    ende)
     for k, (kopf, nr) in enumerate(koepfe):
         kopf_start = start_von(kopf)
@@ -2924,9 +2963,16 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             max(rumpf_start,
                 kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)),
             naechster - 0.5)
+        # Tempo-Badge am Kapitelzaehler: seit 21.08.2026 ersetzt er den
+        # frueheren eigenen Abschnitt "FILLING FAST". Dass ein Thread
+        # schnell fuellt, ist kein Thema, sondern eine Eigenschaft des
+        # Themas - also gehoert es an dessen Kapitel, nicht in eine eigene
+        # Strecke am Videoende.
+        tempo = str(eintrag.get("tempo") or "").strip()
+        label = f"CHAPTER {k + 1:02d} / {len(koepfe)}"
         kapitel_szene.overlays.append(ov(
             szenen.titel_karte(titel,
-                               label=f"CHAPTER {k + 1:02d} / {len(koepfe)}",
+                               label=f"{label}  ·  {tempo}" if tempo else label,
                                quelle=f"Source: {quelle}" if quelle else ""),
             kopf_start + 0.2, opener_bis, einflug="unten"))
 
@@ -3332,8 +3378,33 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         zahlen_szenen(start_von(outro_idx) if outro_idx is not None else ende,
                       "Numbers of the day", "THE NUMBERS")
 
+    # Schluss-Beat: das staerkste Board-Zitat des Tages als eigene Szene,
+    # unmittelbar vor dem Abbinder. Es bekommt ein frisches Motiv und die
+    # gewohnte Post-Karte - dasselbe Bildvokabular wie die Kapitel-Zitate,
+    # damit der Schluss nicht wie ein Fremdkoerper wirkt.
+    zit_idx = next((i for i, b in enumerate(bloecke)
+                    if b.rolle == "schluss_zitat"), None)
+    frage_idx = next((i for i, b in enumerate(bloecke)
+                      if b.rolle == "schluss_frage"), None)
+    if zit_idx is not None and block_worte[zit_idx]:
+        t = start_von(zit_idx)
+        bis = next((start_von(i) for i in (frage_idx, outro_idx)
+                    if i is not None and block_worte[i]), ende)
+        s = neu(pool_bild() or tages_motiv, t)
+        s.overlays.append(ov(
+            szenen.zitat_post(bloecke[zit_idx].text.split(": ", 1)[-1]
+                              .strip('"'), _post_datum(datum)),
+            t + 0.2, bis, einflug="unten"))
+        print(f"Schluss-Zitat: {bis - t:.1f}s")
+
     if outro_idx is not None:
-        t = start_von(outro_idx)
+        # Die Cliffhanger-Frage wird schon vor dem Abbinder gesprochen, steht
+        # im Bild aber bis zum letzten Frame (siehe outro_tafel) - so ist sie
+        # das Letzte, was der Zuschauer sieht, ohne den Abbinder zu
+        # verdraengen.
+        frage = (bloecke[frage_idx].text if frage_idx is not None else "")
+        t = start_von(frage_idx if frage_idx is not None
+                      and block_worte[frage_idx] else outro_idx)
         s = neu(tages_motiv or pool_bild(), t)
         outro_start = t + 0.3
         # Board-Aktivitaets-Chart (aktivitaet.py, 18.08.2026): eigener Beat
@@ -3366,10 +3437,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Die Tafel steht bis zum letzten Frame und blendet dabei laenger aus
         # als jedes andere Overlay - das Bild dahinter geht ueber SCHLUSS_FADE
         # gleichzeitig nach Schwarz (siehe _szene_clip).
-        s.overlays.append(ov(szenen.outro_tafel(), outro_start, ende,
+        s.overlays.append(ov(szenen.outro_tafel(frage), outro_start, ende,
                              fade=SCHLUSS_FADE, einflug="unten"))
         print(f"Schlussbild: {ende - outro_start:.1f}s "
-              f"(davon {ende - gesprochen:.1f}s stummer Ausklang)")
+              f"(davon {ende - gesprochen:.1f}s stummer Ausklang)"
+              + (f", Cliffhanger {frage!r}" if frage else ""))
 
     # Je Fokus-Punkt ein eigenes PNG; ueber Naehte geteilte Stuecke teilen es,
     # deshalb ueber die Pfade zaehlen und nicht ueber die Overlays.
@@ -4462,6 +4534,12 @@ def kapitel_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         zeit = (f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
                 if s >= 3600 else f"{s // 60:02d}:{s % 60:02d}")
         titel = block.text.replace("<", "").replace(">", "").replace("—", "-")
+        # Der Reliability-Tag der Ueberschrift ("[one loud ID]", seit
+        # 21.08.2026 Prompt-Regel 4a) gehoert in den Bericht, nicht in den
+        # Kapitelnamen: dort waere er nur Rauschen im Player und frisst von
+        # der knappen Zeilenbreite. Im gesprochenen Text steht er ohnehin -
+        # gestrippt wird nur diese eine Darstellung.
+        titel = re.sub(r"\s*\[[^\]]*\]\s*$", "", titel).strip()
         zeilen.append(f"{zeit} {titel}")
     return "\n".join(zeilen) if len(zeilen) >= 3 else ""
 

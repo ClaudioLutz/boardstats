@@ -19,10 +19,21 @@ import re
 URL = re.compile(r"https?://[^\s<>\"')\]]+")
 THREAD_URL = re.compile(r"https?://boards\.4chan\.org/biz/thread/(\d+)")
 
-# Eine Ueberschrift ist eine kurze Zeile ohne Satzzeichen am Ende, die keine
+# Eine Ueberschrift ist entweder explizit als "## " markiert oder - so war es
+# bis 21.08.2026 allein - eine kurze Zeile ohne Satzzeichen am Ende, die keine
 # Kleinbuchstaben enthaelt. Ziffern, Umlaute, Schraegstriche und Doppelpunkte
 # sind erlaubt, damit "AKTIEN: SANDISK" und "/SMG/ - LAGE" erkannt werden.
+#
+# Der explizite Pfad kam dazu, als die Ueberschriften von Themenlisten
+# ("STOCKS: URANIUM, HOOD, ADOBE") auf Behauptungen mit Einsatz umgestellt
+# wurden ("Silver hits 70 and gets slapped back"). Eine solche Zeile traegt
+# Kleinbuchstaben und waere von der Versalien-Heuristik STILL verworfen
+# worden - mit ihr die ganze ##-Abschnittsstruktur, an der Video-Kapitel,
+# folien_zuordnen() und shorts.py haengen. Die alte Heuristik bleibt als
+# zweiter Pfad, damit Berichte frueherer Tage unveraendert weiterlaufen.
 def _ist_ueberschrift(z: str) -> bool:
+    if z.startswith("## "):
+        return True
     if not (2 < len(z) <= 90):
         return False
     if re.search(r"[a-zäöüß]", z):
@@ -127,7 +138,10 @@ def zu_html(bericht: str, betreff: str = "/biz/ Lagebericht") -> str:
         if _ist_ueberschrift(z):
             absatz_schliessen()
             liste_schliessen()
-            im_glossar = z.startswith("GLOSSAR")
+            # Der Marker "## " gehoert zur Struktur, nicht zum Text - er
+            # faellt vor der Anzeige weg (siehe _ist_ueberschrift).
+            z = z[3:].strip() if z.startswith("## ") else z
+            im_glossar = z.upper().startswith("GLOSSAR")
             teile.append(f'<h2 style="{H2}">{html.escape(z)}</h2>')
             continue
         if im_glossar:

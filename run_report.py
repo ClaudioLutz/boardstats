@@ -807,7 +807,13 @@ def bericht_zu_markdown(bericht: str, datum: str) -> str:
         kopf = zeilen[0].strip()
         zeilen = zeilen[1:]
 
-    koerper = [f"## {z.strip()}" if z.strip() and ist_ueberschrift(z.strip()) else z
+    # Bereits markierte Ueberschriften wandern unveraendert durch - sonst
+    # entstuende "## ## Silver hits 70". Seit 21.08.2026 schreibt der
+    # Synthese-Prompt sie selbst als "## "-Zeile, weil eine Behauptung mit
+    # Kleinbuchstaben von der Versalien-Heuristik nicht erkannt wuerde.
+    koerper = [z if z.strip().startswith("## ")
+               else f"## {z.strip()}" if z.strip() and ist_ueberschrift(z.strip())
+               else z
                for z in zeilen]
     return (
         f"# /biz/ Situation Report {datum}\n\n"
@@ -1026,7 +1032,8 @@ Output ONLY one JSON object, no preamble, no code fence:
                            "anker": "..."}},
                 ...],
  "zahlen": [{"wert": "...", "titel": "...", "sub": "...", "satz": "..."},
-            ...]}
+            ...],
+ "schluss": {"zitat": "...", "frage": "..."}}
 
 Anchors: every "anker" is 3 to 5 CONSECUTIVE words copied VERBATIM from the
 section's body text (not from the heading). It times when the element
@@ -1086,14 +1093,34 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
   "wert" max 12 characters as shown on screen (e.g. "$2 TRILLION",
   "70.28 %"), "titel" max 28 characters, "sub" max 32 characters, "anker"
   where the figure is spoken.
-- Sections that only say "unchanged since yesterday": 2 stichworte,
-  nothing else.
+- The section "Still true from yesterday": 2 stichworte, nothing else.
+  It is not spoken in the video, so do not spend a quote, a card or a
+  sub-story on it.
 
-Rules for "zahlen" (the closing "Numbers of the day" segment):
+- "tempo" (optional): where the section's thread is filling unusually
+  fast and the report says so, the bare acceleration factor as it goes on
+  a badge next to the chapter number - "2.5x", max 6 characters. Omit it
+  everywhere else. Never invent a factor the report does not state.
+
+Rules for "zahlen" (the TL;DR numbers right after the cold open):
 - Exactly 4 entries, the most striking figures across the whole report.
 - "wert" max 12 characters, "titel" max 28, "sub" max 32.
-- "satz": one short spoken sentence for the narrator. TTS-friendly: write
-  units out ("1.26 trillion dollars", not "$1.26T"), no abbreviations.
+- "satz": one short spoken sentence for the narrator, AT MOST 12 WORDS,
+  starting with the figure itself. TTS-friendly: write units out ("1.26
+  trillion dollars", not "$1.26T"), no abbreviations. Only the first two
+  are read aloud; all four are on screen. A long sentence here is the
+  single most expensive mistake in this storyboard - it delays the first
+  chapter, and that is where the audience leaves.
+
+Rules for "schluss" (the last thing the viewer hears):
+- "zitat": the single strongest board one-liner of the WHOLE report,
+  COPIED VERBATIM from it, max 120 characters, no slurs, no profanity.
+  This is the closing beat - pick the line with the most bite, not the
+  most balanced one.
+- "frage": one open question for tomorrow, max 60 characters, that
+  follows from today's biggest unresolved story ("Does silver hold 70?").
+  It must be answerable by tomorrow's report and must not be rhetorical
+  filler. No question about the channel itself.
 """
 
 TIMEOUT_FOLIEN = 700
@@ -1141,6 +1168,25 @@ def _stichwort(p: dict) -> dict:
             **({"detail": frag} if frag else {})}
 
 
+# Der Sammelabschnitt fuer Themen, die sich seit gestern nicht bewegt haben.
+# Genau dieser Wortlaut steht im Synthese-Prompt (Regel 8b) und wird an drei
+# Stellen wiedererkannt: _abdeckung_luecken() erwartet dort weniger
+# Stichworte, FOLIEN_PROMPT gibt ihm nur zwei, und der Video-Aufbau nimmt ihn
+# seit 21.08.2026 ganz aus der Tonspur (er war der tote Ton am Videoende).
+ABSCHNITT_STILL_TRUE = "Still true from yesterday"
+
+
+def ist_still_true(ueberschrift: str) -> bool:
+    """True fuer den Sammelabschnitt der unveraenderten Themen.
+
+    Erkennt beide Fassungen: die heutige ("Still true from yesterday") und
+    die bis zum 21.08.2026 verwendete ("UNCHANGED FROM YESTERDAY"). Ohne
+    den zweiten Fall wuerde ein Rebuild eines aelteren Tages den Abschnitt
+    ploetzlich wieder mitsprechen."""
+    kopf = ueberschrift.strip().lstrip("#").strip().upper()
+    return kopf.startswith(("STILL TRUE", "UNCHANGED"))
+
+
 ABSATZ_MIN_ZEICHEN = 200   # kuerzere Absaetze sind Ueberleitungen, keine
                            # eigene Geschichte - fuer sie reicht der Anker
                            # des Nachbarabsatzes
@@ -1186,7 +1232,7 @@ def _abdeckung_luecken(bericht_md: str, daten: dict) -> list[tuple[str, str]]:
         if not isinstance(a, dict):
             continue
         ueber = str(a.get("ueberschrift") or "").strip()
-        if ueber.upper().startswith("UNCHANGED"):
+        if ist_still_true(ueber):
             continue        # laut Prompt bewusst nur zwei Stichworte
         teile = absaetze.get(ueber)
         if teile is None:   # Ueberschrift weicht ab: an der laengsten
@@ -1260,10 +1306,30 @@ def _folien_versuch(bericht_md: str, zusatz: str = "",
         if not (isinstance(a.get("karte"), dict)
                 and str(a["karte"].get("wert") or "").strip()):
             a.pop("karte", None)
+        # Tempo-Badge: seit 21.08.2026 ersetzt er den frueheren eigenen
+        # Abschnitt "FILLING FAST" (Prompt-Regel 9). Sechs Zeichen sind das
+        # Mass des Badges neben der Kapitelnummer, nicht der Ort fuer einen
+        # Satz - laengere Modellausgaben werden hier gekappt.
+        tempo = str(a.get("tempo") or "").strip()[:6]
+        if tempo:
+            a["tempo"] = tempo
+        else:
+            a.pop("tempo", None)
     zahlen = daten.get("zahlen")
     daten["zahlen"] = [z for z in zahlen if isinstance(z, dict)
                        and str(z.get("wert") or "").strip()][:4] \
         if isinstance(zahlen, list) else []
+    # Schluss-Beat (Zitat + Cliffhanger). Beide Felder sind optional: fehlt
+    # eines, faellt nur dieser Teil des Schlusses weg, nie das Outro selbst.
+    schluss = daten.get("schluss")
+    if isinstance(schluss, dict):
+        daten["schluss"] = {
+            k: v for k, v in (
+                ("zitat", str(schluss.get("zitat") or "").strip()[:140]),
+                ("frage", str(schluss.get("frage") or "").strip()[:80]))
+            if v}
+    else:
+        daten.pop("schluss", None)
     daten["version"] = 2
     return daten
 
@@ -2404,8 +2470,10 @@ On top of that he wants a feel for the board itself - its humor, its memes,
 its mood - which is why this report is written in the board's language.
 
 Rules:
-1. English plain text, NO Markdown formatting, no asterisks, no hash
-   headings. Headings in capital letters on their own line.
+1. English plain text, NO Markdown formatting, no asterisks, no bold.
+   ONE exception, and it is structural, not decoration: every topic
+   heading stands on its own line and starts with "## ". Nothing else in
+   the report ever starts with "## ".
 2. Start with a line "Data as of: <value> local time" taken from the
    DATA AS OF line of the input, plus the number of threads analyzed.
 3. Length: around 700 to 1000 words for the report body.
@@ -2418,9 +2486,32 @@ Rules:
      sentence. Rule of thumb: three related items or more become a list.
    - The first sentence of a section states the result, not the backstory.
    - No nested sentences with more than one subordinate clause.
-4. Structure the report body by topic, most important first. Pick sensible
-   headings, for example STOCKS, CRYPTO, MACRO AND GEOPOLITICS, FILLING
-   FAST. Drop any topic that has nothing to report.
+4. Structure the report body by topic, most important first. Drop any
+   topic that has nothing to report.
+4a. HEADINGS ARE CLAIMS, NOT LABELS. Each heading is read aloud as the
+   chapter title and is used verbatim as the video's YouTube chapter name,
+   so it has to make someone want to hear what follows.
+   - Write a claim or a question with something at stake, in sentence
+     case: "Silver hits 70 and gets slapped back", not
+     "STOCKS: URANIUM, HOOD, ADOBE". A list of tickers is a label; it
+     tells the viewer nothing about what happened.
+   - Fuse the heading with the section's key number where there is one
+     ("Silver 70: slapped back three times"). Do not first name the topic
+     and then state the number a paragraph later.
+   - HARD LIMIT 40 characters, not counting the reliability tag below.
+     Longer chapter names get cut off in the YouTube player.
+   - Where the extracts show self-interest or promotion, append a
+     reliability tag in square brackets at the end of the heading:
+     "[one loud ID]", "[unsourced]", "[shill thread]". The tag replaces
+     the separate reliability sentence that used to close each topic - it
+     belongs where the reader meets the claim, not after it. Omit the tag
+     where there is nothing to flag.
+4b. DECK LINE: directly under every heading, on its own line, write ONE
+   sentence that says what happened - the sharpest fact of the section,
+   with its number. Then a blank line, then the section body. The deck
+   line is not a teaser and not a repetition of the heading: heading makes
+   the claim, deck line delivers the evidence. It is what a reader who
+   only skims the headings takes away.
 5. State concrete numbers with their meaning, and give the URL per item.
    Use standard English number formatting with commas: 1,234,567.
 6. Separate claim from evidence. Mark poster claims as such ("one poster
@@ -2470,7 +2561,10 @@ Rules:
    current development.
 8b. DO NOT REPEAT WHAT YESTERDAY'S REPORT ALREADY SAID (if one is provided
     as YESTERDAY'S REPORT - otherwise write in full as usual; it may be
-    written in German, compare by content). Compare topic by topic:
+    written in German, compare by content). Everything that is merely
+    still true goes into ONE section at the very end of the report, whose
+    heading is exactly "## Still true from yesterday" - that exact
+    wording, it is matched by the video build. Compare topic by topic:
     - If a topic is substantively unchanged since yesterday (no new
       numbers, claims, sources, price targets), do NOT write it out again.
       Write EXACTLY ONE sentence that names the topic concretely enough
@@ -2499,12 +2593,17 @@ Rules:
     that in the COVERAGE block. This does NOT apply to the generals as
     institutions (rule 7): that /smg/ exists again is not a repetition -
     the repetition is telling the same story about it.
-9. The section FILLING FAST describes what these threads actually SAY, not
-   just that they grow quickly. Give the acceleration factor against the
-   thread's own average where the metadata provides it. A thread with
-   nothing beyond its subject line is called out as such.
-10. At the end of each topic, briefly judge reliability whenever the
-    extracts mention signs of self-interest or promotion.
+9. FAST-FILLING THREADS DO NOT GET THEIR OWN SECTION. A thread that grows
+   quickly is not a topic - the topic is what it says. Report it inside
+   the section its subject belongs to, and put the acceleration factor
+   there in the sentence where it carries weight ("filling at 2.5x its
+   own average"), whenever the metadata provides it. A thread with
+   nothing beyond its subject line is called out as such, in one clause,
+   wherever it fits. Never write a heading whose whole point is that
+   something is filling fast.
+10. Reliability is judged in the heading tag (rule 4a), not in a closing
+    sentence of its own. Inside the body, keep marking individual claims
+    as poster claims per rule 6 - that is a different thing and stays.
 11. Poster IDs are per-thread and can be manipulated: treat them as an
     upper bound, make no statements about real head counts. The two ratios
     in the thread header survive that caveat and are worth saying out loud
