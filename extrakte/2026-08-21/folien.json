@@ -1,0 +1,611 @@
+{
+  "abschnitte": [
+    {
+      "ueberschrift": "SILVER HITS 70 AND GETS SLAPPED BACK",
+      "titel": "Silver breaks 70, gold splits the room",
+      "lage": "left",
+      "stichworte": [
+        {
+          "text": "SILVER BREAKS 70",
+          "anker": "Silver's break of 70"
+        },
+        {
+          "text": "/PMG/: TOUCHED $70, UP $1.53",
+          "anker": "the asking price touching 70"
+        },
+        {
+          "text": "/SMG/: BOUNCED OFF 70 x3",
+          "anker": "bounced off 70 three times",
+          "detail": [
+            "calls market \"manipulated\"",
+            "same round number as /pmg/"
+          ]
+        },
+        {
+          "text": "BOTH CLAIMS: UNSOURCED",
+          "anker": "Both unsourced, both from the",
+          "detail": [
+            "from the same round number",
+            "no source given, either board"
+          ]
+        },
+        {
+          "text": "GOLD MONEY GETS LOCKED AWAY",
+          "anker": "bond money fleeing into gold",
+          "detail": [
+            "one poster's claim, unsourced",
+            "quote: \"rug gold fastly\""
+          ]
+        },
+        {
+          "text": "GOLD \"TOO SMALL TO MATTER\"",
+          "anker": "gold is too small to",
+          "detail": [
+            "can mint 5 tons in a week",
+            "rebuttal to the intervention claim"
+          ]
+        },
+        {
+          "text": "\"BIGGEST BUBBLE\" VS $30K CALL",
+          "anker": "another calls gold \"the biggest",
+          "detail": [
+            "called biggest bubble ever",
+            "third poster: $5k to $30k"
+          ]
+        },
+        {
+          "text": "GDXU: 97% IN MAY, NOW 23%",
+          "anker": "GDXU was up 97%",
+          "detail": [
+            "down from 97% peak in May",
+            "as told by the seller"
+          ]
+        },
+        {
+          "text": "GEMS: 10%/YR, CAN'T SELL",
+          "anker": "gems appreciate about 10%/year on",
+          "detail": [
+            "300-400% retail markup gap",
+            "impossible to sell, two posters say"
+          ]
+        },
+        {
+          "text": "VERDICT: SILVER AND GOLD ONLY",
+          "anker": "silver and gold only"
+        },
+        {
+          "text": "COIN SHOPS: -4% OFF SPOT",
+          "anker": "Coin shops took 4% off",
+          "detail": [
+            "eBay closest to spot price",
+            "\"we buy gold\" shops worst"
+          ]
+        },
+        {
+          "text": "\"BOAT ACCIDENT\" CANON HOLDS",
+          "anker": "Canon on undeclared stacks stays",
+          "detail": [
+            "board's standing joke label",
+            "for assets gone before tax time"
+          ]
+        },
+        {
+          "text": "ONE LOUD VOICE FLOODS /PMG/",
+          "anker": "one loud voice (Dcq6rumd) copy-pasting",
+          "detail": [
+            "claims $14k weekly BTC gain",
+            "plus a 7% copper move"
+          ]
+        },
+        {
+          "text": "TREAT HIS NUMBERS AS NOISE",
+          "anker": "Treat his numbers as noise"
+        }
+      ],
+      "zwischenthemen": [
+        {
+          "titel": "Gold splits the room",
+          "anker": "Gold split the room instead",
+          "lage": "right"
+        },
+        {
+          "titel": "Gemstones get settled",
+          "anker": "New in /pmg/: gemstones got",
+          "lage": "left"
+        }
+      ],
+      "zitat": {
+        "text": "If they don't rug gold fastly, they are going to turbocharge what they're trying to fight",
+        "anker": "If they don't rug gold"
+      },
+      "karte": {
+        "wert": "$70/OZ",
+        "titel": "Silver's breakout level",
+        "sub": "touched, then bounced off 3x",
+        "anker": "touching 70 after a"
+      }
+    },
+    {
+      "ueberschrift": "CRYPTO: A SHORT SQUEEZE WITH A NUMBER ON IT",
+      "titel": "Short squeeze, then Monero's clean audit",
+      "lage": "right",
+      "stichworte": [
+        {
+          "text": "3 FORCES BEHIND THE PUMP",
+          "anker": "Treasury buybacks plus dollar weakness",
+          "detail": [
+            "+ETF inflows",
+            "pushed BTC through shorted level"
+          ]
+        },
+        {
+          "text": "$1.4B SHORTS WIPED IN HOURS",
+          "anker": "roughly $1.4B in shorts"
+        },
+        {
+          "text": "CAVEAT: NEEDS REAL SPOT BUYERS",
+          "anker": "upside now depends on real",
+          "detail": [
+            "replaces forced short covering",
+            "same poster flags the catch"
+          ]
+        },
+        {
+          "text": "BTC 80K CALL, SPY BLEED CALL",
+          "anker": "BTC will hit 80k over",
+          "detail": [
+            "\"SPY will bleed for years\"",
+            "both claims unsourced"
+          ]
+        },
+        {
+          "text": "CLAIM: BTC TAPPED $80K ALREADY",
+          "anker": "already \"tapped $80,000\"",
+          "detail": [
+            "retesting $67,000 now",
+            "$200 MSTR tag-along target"
+          ]
+        },
+        {
+          "text": "BUT MSTR LAGGED THE MOVE",
+          "anker": "BTC rose ~25% in five",
+          "detail": [
+            "MSTR only ~15% same stretch",
+            "dents leveraged-proxy thesis"
+          ]
+        },
+        {
+          "text": "TRAIL OF BITS AUDITS FCMP++",
+          "anker": "Trail of Bits reviewed the",
+          "detail": [
+            "2 engineer-weeks of review",
+            "by Trail of Bits"
+          ]
+        },
+        {
+          "text": "6 INFO FINDINGS, 0 SEVERE",
+          "anker": "six informational findings and zero",
+          "detail": [
+            "0 high/med/low severity",
+            "5 of 6 findings resolved"
+          ]
+        },
+        {
+          "text": "BUDGET: 500 XMR (~$150K)",
+          "anker": "Budget was 500 XMR",
+          "detail": [
+            "spread across three phases",
+            "modest budget vs scope"
+          ]
+        },
+        {
+          "text": "\"GOOD, BUT SCOPE IS THIN\"",
+          "anker": "good, but a two-week"
+        },
+        {
+          "text": "BULL: SANCTION-EVASION DEMAND",
+          "anker": "geopolitical sanction-evasion demand"
+        },
+        {
+          "text": "BEAR: MONERO = PGP'S CEILING",
+          "anker": "Monero's ceiling is PGP's"
+        },
+        {
+          "text": "JUST 2 IDS, NOT CONSENSUS",
+          "anker": "two vocal IDs, not consensus"
+        }
+      ],
+      "zwischenthemen": [
+        {
+          "titel": "Waiting-room thread's targets",
+          "anker": "waiting-room thread claims BTC already",
+          "lage": "left"
+        },
+        {
+          "titel": "Monero's actual audit",
+          "anker": "Monero produced today's only audited",
+          "lage": "right"
+        }
+      ],
+      "zitat": {
+        "text": "Monero's ceiling is PGP's ceiling",
+        "anker": "Monero's ceiling is PGP's ceiling"
+      },
+      "karte": {
+        "wert": "$1.4B",
+        "titel": "Shorts wiped in hours",
+        "sub": "BTC broke a shorted level",
+        "anker": "roughly $1.4B in shorts"
+      }
+    },
+    {
+      "ueberschrift": "STOCKS: URANIUM, HOOD, ADOBE, CRUISE DEBT",
+      "titel": "Uranium's clean trade, five noisy ones",
+      "lage": "left",
+      "stichworte": [
+        {
+          "text": "URANIUM: THE CLEAN TRADE TODAY",
+          "anker": "Uranium is the day's cleanest"
+        },
+        {
+          "text": "UUUU +9% ON NUCLEAR PITCH",
+          "anker": "UUUU +9%, justified by",
+          "detail": [
+            "uncredited pasted source",
+            "backs the nuclear thesis"
+          ]
+        },
+        {
+          "text": "US NUCLEAR: 100GW IN 2024",
+          "anker": "US nuclear capacity 100 GW",
+          "detail": [
+            "20% of US electricity today",
+            "baseline before the ramp"
+          ]
+        },
+        {
+          "text": "TARGET: 400GW BY 2050",
+          "anker": "400 GW target by 2050"
+        },
+        {
+          "text": "HOOD +14%, CRYPTO-ADJACENT PITCH",
+          "anker": "HOOD +14%, argued as",
+          "detail": [
+            "same ID also shills free calls",
+            "discount the pitch accordingly"
+          ]
+        },
+        {
+          "text": "ADOBE: 15 PE vs \"NO FUTURE\"",
+          "anker": "Adobe at a 15",
+          "detail": [
+            "bear line: FCF growth just 9%",
+            "\"company has no future\""
+          ]
+        },
+        {
+          "text": "NCLH: $25 TARGET, +50%",
+          "anker": "NCLH +6% off yesterday's",
+          "detail": [
+            "against $14B of cruise debt",
+            "softer bookings, fuel costs"
+          ]
+        },
+        {
+          "text": "\"10 MORE P/E TO GO\"",
+          "anker": "33 P/E in 1929",
+          "detail": [
+            "1929 P/E was 33",
+            "dot-com P/E hit 45"
+          ]
+        },
+        {
+          "text": "SOXL: -$7,000 ON A ROUND TRIP",
+          "anker": "SOXL cost one poster",
+          "detail": [
+            "bought at $200, sold at $96",
+            "just before the rebound hit"
+          ]
+        },
+        {
+          "text": "\"RUGGED CHIPS, PUMP SHITCOINS\"",
+          "anker": "they rugged chips. now"
+        },
+        {
+          "text": "CANON: ALWAYS FUDDED OUT EARLY",
+          "anker": "you will always get fudded",
+          "detail": [
+            "fudded = talked out by others",
+            "board's own diagnosis, called canon"
+          ]
+        },
+        {
+          "text": "MOOD: \"FRIDGE DOOR FELL OFF\"",
+          "anker": "My fridge door just fell"
+        },
+        {
+          "text": "OCO ORDER: TP + STOP TOGETHER",
+          "anker": "OCO order is how",
+          "detail": [
+            "sets both TP and stop-loss",
+            "no order-rejection issue"
+          ]
+        },
+        {
+          "text": "FIND IT: MORE > ADVANCED TRADE",
+          "anker": "buried under More, Create"
+        }
+      ],
+      "zwischenthemen": [
+        {
+          "titel": "Five unverified single-poster calls",
+          "anker": "rest, all single-poster and unverified",
+          "lage": "right"
+        },
+        {
+          "titel": "Practical tip: OCO orders",
+          "anker": "Usable: on Schwab/thinkorswim, an OCO",
+          "lage": "left"
+        }
+      ],
+      "zitat": {
+        "text": "My fridge door just fell off. Is that bearish or bullish?",
+        "anker": "My fridge door just fell"
+      },
+      "karte": {
+        "wert": "400 GW",
+        "titel": "Nuclear target by 2050",
+        "sub": "vs 100GW in 2024, 20% now",
+        "anker": "400 GW target by 2050"
+      }
+    },
+    {
+      "ueberschrift": "GME: THE DRS LEDGER AND A $10 WISH",
+      "titel": "GME: ledger stats, a $10 wish",
+      "lage": "right",
+      "stichworte": [
+        {
+          "text": "FIRST GME COVERAGE TODAY",
+          "anker": "Not covered yesterday"
+        },
+        {
+          "text": "CASH ON HAND: $9.7B",
+          "anker": "$9.7 billion cash"
+        },
+        {
+          "text": "DRS: 14% OF SHARES, DOWN",
+          "anker": "65.0 million of 448.7",
+          "detail": [
+            "was 25% back in March 2024",
+            "as of June 2026 snapshot"
+          ]
+        },
+        {
+          "text": "SHORT INTEREST: 226.42% (2021)",
+          "anker": "226.42% short interest of",
+          "detail": [
+            "sourced to Rosen Legal complaint",
+            "dated January 2021, aging figure"
+          ]
+        },
+        {
+          "text": "WARRANTS EXPIRE OCT 30",
+          "anker": "warrants expiring October 30"
+        },
+        {
+          "text": "SHORT VOLUME: 57-60% NOW",
+          "anker": "Short volume around 57-60%",
+          "detail": [
+            "~54% happens off-exchange",
+            "source: chartexchange.com"
+          ]
+        },
+        {
+          "text": "HOPE: $10-$18 BOTTOM FIRST",
+          "anker": "hopes for a $10-$18"
+        },
+        {
+          "text": "$230 TARGET OFF A \"FRACTAL\"",
+          "anker": "$230 target \"before the",
+          "detail": [
+            "claimed chart fractal, unsourced",
+            "tied to the October deadline"
+          ]
+        },
+        {
+          "text": "\"STILL COMFY WAITIN'\"",
+          "anker": "Still comfy waitin' and"
+        },
+        {
+          "text": "\"DON'T BUY MORE TILL $10\"",
+          "anker": "don't buy anymore gme"
+        }
+      ],
+      "zwischenthemen": [
+        {
+          "titel": "Live thread: hopes and holding",
+          "anker": "Live content is thinner",
+          "lage": "left"
+        }
+      ],
+      "zitat": {
+        "text": "Still comfy waitin' and holdin'",
+        "anker": "Still comfy waitin' and"
+      },
+      "karte": {
+        "wert": "226.42%",
+        "titel": "GME short interest",
+        "sub": "of float, dated Jan 2021",
+        "anker": "226.42% short interest of"
+      }
+    },
+    {
+      "ueberschrift": "FILLING FAST",
+      "titel": "Filling fast: five threads to watch",
+      "lage": "left",
+      "stichworte": [
+        {
+          "text": "/SMG/: 46 POSTS THIS HOUR",
+          "anker": "did 46 posts in"
+        },
+        {
+          "text": "TOPICS: SILVER-70, URANIUM",
+          "anker": "silver-70 slap, uranium and"
+        },
+        {
+          "text": "/GME/ AT 2.5x NORMAL PACE",
+          "anker": "/GME/ at 2.5x its",
+          "detail": [
+            "vs its usual 6.7 posts/hr",
+            "already covered above today"
+          ]
+        },
+        {
+          "text": "/PMG/ AT 1.5x NORMAL PACE",
+          "anker": "/pmg/ at 1.5x its",
+          "detail": [
+            "vs its usual 7.3 posts/hr",
+            "also already covered today"
+          ]
+        },
+        {
+          "text": "HEALTHCARE THREAD AT 1.9x PACE",
+          "anker": "runs 1.9x its average",
+          "detail": [
+            "thesis: aging props up economy",
+            "not an AI-growth story"
+          ]
+        },
+        {
+          "text": "$18/HR CNA CONTRACTS CITED",
+          "anker": "$18/hour CNA temp contracts",
+          "detail": [
+            "claim: pay halves post-boomer era"
+          ]
+        },
+        {
+          "text": "TA FIGHT: \"MOVED BY A TWEET\"",
+          "anker": "moved by a single",
+          "detail": [
+            "blamed on a single Trump post",
+            "mocks chart-reading as a method"
+          ]
+        },
+        {
+          "text": "GREED INDEX \"OVER 70\"",
+          "anker": "greed index \"over 70",
+          "detail": [
+            "cited despite a deep bear market",
+            "reads oddly high for context"
+          ]
+        },
+        {
+          "text": "\"WHY CAN'T THIS HAPPEN?\"",
+          "anker": "five posts with nothing",
+          "detail": [
+            "OP has nothing but the title",
+            "five posts, no real content"
+          ]
+        },
+        {
+          "text": "ONLY REPLY: LATE LONGS PUNISHED",
+          "anker": "leveraged late longs getting"
+        }
+      ],
+      "zwischenthemen": [],
+      "zitat": {
+        "text": "moved by a single truth social post from trump. TA that lol.",
+        "anker": "moved by a single"
+      },
+      "karte": {
+        "wert": "46",
+        "titel": "/smg/ posts, last hour",
+        "sub": "live selloff-adjacent thread",
+        "anker": "did 46 posts in"
+      }
+    },
+    {
+      "ueberschrift": "UNCHANGED FROM YESTERDAY",
+      "titel": "Four threads still going nowhere",
+      "lage": "right",
+      "stichworte": [
+        {
+          "text": "BBBYQ: BELIEVERS VS SKEPTICS LOOP",
+          "anker": "believers-versus-skeptics loop, with the",
+          "detail": [
+            "warrant CUSIP-6 match claim",
+            "filed plan gives holders nothing"
+          ]
+        },
+        {
+          "text": "LOUDEST BBBYQ ID: 33% OF THREAD",
+          "anker": "Loudest ID is 33%"
+        },
+        {
+          "text": "BTC-VS-LINK FEUD: STILL STUCK",
+          "anker": "same disputed dates re-litigated",
+          "detail": [
+            "same disputed dates again",
+            "no new evidence either side"
+          ]
+        },
+        {
+          "text": "DRIVE-BY PITCH: 3 NEW TICKERS",
+          "anker": "REDSTONE, ENA and BIO",
+          "detail": [
+            "REDSTONE, ENA, and BIO named",
+            "no case made for any"
+          ]
+        },
+        {
+          "text": "BTC-AT-17 THREAD: UNCHANGED",
+          "anker": "Babylon staking versus ETFs",
+          "detail": [
+            "3x-4x upside claim persists",
+            "custody debate after Coldcard hack"
+          ]
+        },
+        {
+          "text": "PIZZA THREAD GOES CIRCULAR",
+          "anker": "gone fully circular; only"
+        },
+        {
+          "text": "NEW ANGLE: UNIONIZE, NOT SOLO",
+          "anker": "union membership, not individual",
+          "detail": [
+            "nurse's counter-argument",
+            "not just individual leverage"
+          ]
+        }
+      ],
+      "zwischenthemen": []
+    }
+  ],
+  "zahlen": [
+    {
+      "wert": "$70/OZ",
+      "titel": "Silver's breakout level",
+      "sub": "touched, then bounced 3x",
+      "satz": "Silver touched seventy dollars an ounce today after an overnight gain of one dollar and fifty three cents, then bounced off that level three times, with the board calling the whole move manipulated."
+    },
+    {
+      "wert": "$1.4 BILLION",
+      "titel": "Bitcoin shorts wiped out",
+      "sub": "in just a few hours",
+      "satz": "Roughly one point four billion dollars in bitcoin short positions got wiped out in just a few hours, as treasury buybacks and dollar weakness pushed the price through a heavily shorted level."
+    },
+    {
+      "wert": "226.42%",
+      "titel": "GME short interest",
+      "sub": "of float, 2021 filing",
+      "satz": "GameStop's short interest was reported at two hundred twenty six point four two percent of its float, a figure sourced to a two thousand twenty one legal complaint and still recited as canon."
+    },
+    {
+      "wert": "400 GW",
+      "titel": "US nuclear target, 2050",
+      "sub": "up from 100 GW in 2024",
+      "satz": "The board's uranium pitch points to a United States nuclear capacity target of four hundred gigawatts by twenty fifty, quadruple the one hundred gigawatts online in twenty twenty four."
+    }
+  ],
+  "version": 2
+}

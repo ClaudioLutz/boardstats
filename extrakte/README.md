@@ -4,7 +4,7 @@ Daily, structurally extracted summaries of threads from the 4chan board /biz/ (B
 
 | Date | Threads |
 |---|---|
-| [2026-08-21](2026-08-21/README.md) | 17 |
+| [2026-08-21](2026-08-21/README.md) | 17 (with report) |
 | [2026-08-20](2026-08-20/README.md) | 22 (with report) |
 | [2026-08-19](2026-08-19/README.md) | 15 (with report) |
 | [2026-08-18](2026-08-18/README.md) | 15 (with report) |
