@@ -2,7 +2,7 @@
 datum: 2026-08-21
 agent: main
 typ: docs
-commit: ea1040a
+commit: 95d6e8c
 ---
 
 # Erster produktiver Abendlauf verifiziert, `report.sh`-Pull-Lücke gefunden
