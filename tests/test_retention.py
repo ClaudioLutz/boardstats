@@ -68,14 +68,33 @@ class Kennwerte(unittest.TestCase):
 
 
 class Block(unittest.TestCase):
+    """Ab RETENTION_MIN_N Videos darf die Messung das Wortbudget setzen.
+
+    Die Umrechnung Laufzeit -> Woerter laeuft ueber die IST-Wortzahl der
+    zugehoerigen Berichte (bericht_woerter), nicht mehr ueber das
+    SOLL-Budget WORTBUDGET - deshalb wird sie hier auf einen festen Wert
+    gelegt: 1200 Woerter je 600 s Video = 2.0 Woerter/s = 120 pro Minute."""
+
+    def setUp(self):
+        self._echt = run_report.bericht_woerter
+        run_report.bericht_woerter = lambda datum: 1200
+
+    def tearDown(self):
+        run_report.bericht_woerter = self._echt
+
+    def viele(self, f, **extra):
+        """RETENTION_MIN_N gleiche Videos - genug fuer die Wortvorgabe."""
+        return [run_report._retention_kennwerte(video(f, **extra))
+                for _ in range(run_report.RETENTION_MIN_N)]
+
     def test_zieldauer_und_wortbudget(self):
-        """Median-Abbruch unter 30 % bei x=0.71 von 600 s -> Ziel ~7.1 min,
-        Wortziel = 700..1000 skaliert mit 0.71 (auf Zehner gerundet)."""
-        k = run_report._retention_kennwerte(video(lambda x: 1 - x))
-        block = run_report._retention_block([k])
+        """Median-Abbruch unter 30 % bei x=0.71 von 600 s -> Ziel ~7.1 min.
+        Wortziel = 2.0 W/s * 426 s = 852, +-10 % auf Zehner gerundet."""
+        block = run_report._retention_block(self.viele(lambda x: 1 - x))
         self.assertTrue(block.startswith("\n"))
         self.assertIn("target a total runtime of about 7.1 minutes", block)
-        self.assertIn("500 to 710 words", block)     # 700*0.71=497, 1000*0.71=710
+        self.assertIn("120 words of report body per minute", block)
+        self.assertIn("770 to 940 words", block)
         self.assertIn("half the audience is gone by 5:06", block)  # 0.51*600
         self.assertIn("front-load", block)
 
@@ -89,11 +108,31 @@ class Block(unittest.TestCase):
         k = run_report._retention_kennwerte(video(kollaps))
         assert k is not None
         self.assertAlmostEqual(k["unter_03"], 0.04)   # t30 bei 24 s
-        block = run_report._retention_block([k])
+        block = run_report._retention_block(self.viele(kollaps))
         # Ziel = max(24 s, 600/2 s) = 300 s = 5.0 min, nie 0.4 min
         self.assertIn("fewer than 30% of viewers are left after 0:24", block)
         self.assertIn("target a total runtime of about 5.0 minutes", block)
-        self.assertIn("350 to 500 words", block)      # 700*0.5, 1000*0.5
+        self.assertIn("540 to 660 words", block)      # 2.0 W/s * 300 s = 600
+
+    def test_wortbudget_erst_ab_mindestzahl(self):
+        """Unter RETENTION_MIN_N Videos bleibt das Wortbudget des Prompts
+        stehen: vier Videos sind Rauschen, und ein Teil der Aufrufe sind
+        eigene Kontrollblicke. Der qualitative Befund geht trotzdem raus."""
+        wenige = [run_report._retention_kennwerte(video(lambda x: 1 - x))
+                  for _ in range(run_report.RETENTION_MIN_N - 1)]
+        block = run_report._retention_block(wenige)
+        self.assertIn("fewer than 30% of viewers are left after 7:06", block)
+        self.assertIn("Keep the word budget stated above", block)
+        self.assertNotIn("words of report body per minute", block)
+        self.assertNotIn("target a total runtime", block)
+
+    def test_ohne_ist_wortzahl_keine_vorgabe(self):
+        """Fehlt der Bericht zu den gemessenen Videos, gibt es keine Rate -
+        dann darf der Block auch bei genug Videos kein Wortziel erfinden."""
+        run_report.bericht_woerter = lambda datum: None
+        block = run_report._retention_block(self.viele(lambda x: 1 - x))
+        self.assertIn("Keep the word budget stated above", block)
+        self.assertNotIn("target a total runtime", block)
 
     def test_stichprobengroesse_in_der_kopfzeile(self):
         """Bei einer Handvoll Views ist die Kurve Richtungssignal - das

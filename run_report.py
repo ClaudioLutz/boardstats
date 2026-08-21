@@ -807,7 +807,13 @@ def bericht_zu_markdown(bericht: str, datum: str) -> str:
         kopf = zeilen[0].strip()
         zeilen = zeilen[1:]
 
-    koerper = [f"## {z.strip()}" if z.strip() and ist_ueberschrift(z.strip()) else z
+    # Bereits markierte Ueberschriften wandern unveraendert durch - sonst
+    # entstuende "## ## Silver hits 70". Seit 21.08.2026 schreibt der
+    # Synthese-Prompt sie selbst als "## "-Zeile, weil eine Behauptung mit
+    # Kleinbuchstaben von der Versalien-Heuristik nicht erkannt wuerde.
+    koerper = [z if z.strip().startswith("## ")
+               else f"## {z.strip()}" if z.strip() and ist_ueberschrift(z.strip())
+               else z
                for z in zeilen]
     return (
         f"# /biz/ Situation Report {datum}\n\n"
@@ -833,6 +839,12 @@ Write one sensational title hook for today's YouTube video.
 Rules:
 - Pick the ONE most compelling story of the report: the biggest
   development, the largest number or the sharpest conflict.
+- CARRY A HARD NUMBER: the hook must contain the day's most striking
+  concrete figure (a price, a percentage, a sum) whenever the report
+  offers one. The hook is also spoken as the video's very first sentence,
+  and a first sentence that states a number is the strongest reason to
+  keep watching that this format has. Only where the day genuinely has no
+  such figure may the hook rest on the sharpest conflict instead.
 - FRONT-LOAD the search terms: the hook STARTS with what people type
   into YouTube search - the ticker, company or asset name, or the core
   topic. The twist, number or verdict follows after it. Never put
@@ -855,7 +867,10 @@ Rules:
 Also write the keyword for the video's thumbnail: at most three words and
 20 characters, the core of the hook (like "CHAIN SPLIT" or "$2 TRILLION").
 It is printed on the image in large letters and must stay readable on a
-phone, so no full sentences and no punctuation.
+phone, so no full sentences and no punctuation. Every word of it must
+appear IN THE HOOK, copied not paraphrased: the hook is spoken as the
+video's first sentence while the keyword stands on screen, so a viewer
+reads and hears the same words.
 
 Output ONLY one JSON object, no preamble, no postscript, no code fence:
 {"hook": "...", "thumb": "..."}
@@ -905,12 +920,21 @@ def _thumb_bereinigen(schlagwort: str, hook: str) -> str:
     """Schlagwort fuers Vorschaubild: Grossbuchstaben, keine Satzzeichen,
     hoechstens THUMB_MAX_ZEICHEN. Fehlt es oder bleibt nichts uebrig, wird es
     aus dem Hook abgeleitet - dessen grossgeschriebene Woerter sind genau die
-    Zuspitzung, die aufs Bild gehoert."""
+    Zuspitzung, die aufs Bild gehoert.
+
+    Seit 21.08.2026 muss jedes Wort des Schlagworts auch IM HOOK stehen. Der
+    Hook ist seit demselben Tag der erste gesprochene Satz des Videos
+    (PRAES_HOOK), und das Schlagwort steht in Sekunde 0 gross im Bild - wer
+    ein Wort liest, das er nicht hoert, erlebt einen Bruch genau in dem
+    Fenster, in dem die Abbruchkurve am steilsten faellt. Bleibt nach dem
+    Filter nichts uebrig, greift dieselbe Ableitung aus dem Hook wie bei
+    fehlendem Schlagwort."""
     def saeubern(roh: str) -> str:
         return re.sub(r"\s+", " ",
                       re.sub(r"[^0-9A-Za-zÄÖÜäöü %$&+.-]+", " ", roh)).strip().upper()
 
-    kandidat = saeubern(schlagwort)
+    im_hook = set(saeubern(hook).split())
+    kandidat = " ".join(w for w in saeubern(schlagwort).split() if w in im_hook)
     if not kandidat:
         gross = [w for w in hook.split() if len(w) > 2 and w.isupper()]
         kandidat = saeubern(" ".join(gross) or hook)
@@ -1008,7 +1032,8 @@ Output ONLY one JSON object, no preamble, no code fence:
                            "anker": "..."}},
                 ...],
  "zahlen": [{"wert": "...", "titel": "...", "sub": "...", "satz": "..."},
-            ...]}
+            ...],
+ "schluss": {"zitat": "...", "frage": "..."}}
 
 Anchors: every "anker" is 3 to 5 CONSECUTIVE words copied VERBATIM from the
 section's body text (not from the heading). It times when the element
@@ -1068,14 +1093,34 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
   "wert" max 12 characters as shown on screen (e.g. "$2 TRILLION",
   "70.28 %"), "titel" max 28 characters, "sub" max 32 characters, "anker"
   where the figure is spoken.
-- Sections that only say "unchanged since yesterday": 2 stichworte,
-  nothing else.
+- The section "Still true from yesterday": 2 stichworte, nothing else.
+  It is not spoken in the video, so do not spend a quote, a card or a
+  sub-story on it.
 
-Rules for "zahlen" (the closing "Numbers of the day" segment):
+- "tempo" (optional): where the section's thread is filling unusually
+  fast and the report says so, the bare acceleration factor as it goes on
+  a badge next to the chapter number - "2.5x", max 6 characters. Omit it
+  everywhere else. Never invent a factor the report does not state.
+
+Rules for "zahlen" (the TL;DR numbers right after the cold open):
 - Exactly 4 entries, the most striking figures across the whole report.
 - "wert" max 12 characters, "titel" max 28, "sub" max 32.
-- "satz": one short spoken sentence for the narrator. TTS-friendly: write
-  units out ("1.26 trillion dollars", not "$1.26T"), no abbreviations.
+- "satz": one short spoken sentence for the narrator, AT MOST 12 WORDS,
+  starting with the figure itself. TTS-friendly: write units out ("1.26
+  trillion dollars", not "$1.26T"), no abbreviations. Only the first two
+  are read aloud; all four are on screen. A long sentence here is the
+  single most expensive mistake in this storyboard - it delays the first
+  chapter, and that is where the audience leaves.
+
+Rules for "schluss" (the last thing the viewer hears):
+- "zitat": the single strongest board one-liner of the WHOLE report,
+  COPIED VERBATIM from it, max 120 characters, no slurs, no profanity.
+  This is the closing beat - pick the line with the most bite, not the
+  most balanced one.
+- "frage": one open question for tomorrow, max 60 characters, that
+  follows from today's biggest unresolved story ("Does silver hold 70?").
+  It must be answerable by tomorrow's report and must not be rhetorical
+  filler. No question about the channel itself.
 """
 
 TIMEOUT_FOLIEN = 700
@@ -1123,6 +1168,25 @@ def _stichwort(p: dict) -> dict:
             **({"detail": frag} if frag else {})}
 
 
+# Der Sammelabschnitt fuer Themen, die sich seit gestern nicht bewegt haben.
+# Genau dieser Wortlaut steht im Synthese-Prompt (Regel 8b) und wird an drei
+# Stellen wiedererkannt: _abdeckung_luecken() erwartet dort weniger
+# Stichworte, FOLIEN_PROMPT gibt ihm nur zwei, und der Video-Aufbau nimmt ihn
+# seit 21.08.2026 ganz aus der Tonspur (er war der tote Ton am Videoende).
+ABSCHNITT_STILL_TRUE = "Still true from yesterday"
+
+
+def ist_still_true(ueberschrift: str) -> bool:
+    """True fuer den Sammelabschnitt der unveraenderten Themen.
+
+    Erkennt beide Fassungen: die heutige ("Still true from yesterday") und
+    die bis zum 21.08.2026 verwendete ("UNCHANGED FROM YESTERDAY"). Ohne
+    den zweiten Fall wuerde ein Rebuild eines aelteren Tages den Abschnitt
+    ploetzlich wieder mitsprechen."""
+    kopf = ueberschrift.strip().lstrip("#").strip().upper()
+    return kopf.startswith(("STILL TRUE", "UNCHANGED"))
+
+
 ABSATZ_MIN_ZEICHEN = 200   # kuerzere Absaetze sind Ueberleitungen, keine
                            # eigene Geschichte - fuer sie reicht der Anker
                            # des Nachbarabsatzes
@@ -1168,7 +1232,7 @@ def _abdeckung_luecken(bericht_md: str, daten: dict) -> list[tuple[str, str]]:
         if not isinstance(a, dict):
             continue
         ueber = str(a.get("ueberschrift") or "").strip()
-        if ueber.upper().startswith("UNCHANGED"):
+        if ist_still_true(ueber):
             continue        # laut Prompt bewusst nur zwei Stichworte
         teile = absaetze.get(ueber)
         if teile is None:   # Ueberschrift weicht ab: an der laengsten
@@ -1242,10 +1306,30 @@ def _folien_versuch(bericht_md: str, zusatz: str = "",
         if not (isinstance(a.get("karte"), dict)
                 and str(a["karte"].get("wert") or "").strip()):
             a.pop("karte", None)
+        # Tempo-Badge: seit 21.08.2026 ersetzt er den frueheren eigenen
+        # Abschnitt "FILLING FAST" (Prompt-Regel 9). Sechs Zeichen sind das
+        # Mass des Badges neben der Kapitelnummer, nicht der Ort fuer einen
+        # Satz - laengere Modellausgaben werden hier gekappt.
+        tempo = str(a.get("tempo") or "").strip()[:6]
+        if tempo:
+            a["tempo"] = tempo
+        else:
+            a.pop("tempo", None)
     zahlen = daten.get("zahlen")
     daten["zahlen"] = [z for z in zahlen if isinstance(z, dict)
                        and str(z.get("wert") or "").strip()][:4] \
         if isinstance(zahlen, list) else []
+    # Schluss-Beat (Zitat + Cliffhanger). Beide Felder sind optional: fehlt
+    # eines, faellt nur dieser Teil des Schlusses weg, nie das Outro selbst.
+    schluss = daten.get("schluss")
+    if isinstance(schluss, dict):
+        daten["schluss"] = {
+            k: v for k, v in (
+                ("zitat", str(schluss.get("zitat") or "").strip()[:140]),
+                ("frage", str(schluss.get("frage") or "").strip()[:80]))
+            if v}
+    else:
+        daten.pop("schluss", None)
     daten["version"] = 2
     return daten
 
@@ -2007,10 +2091,16 @@ ANALYTICS_ABLAGE = ARBEIT / "analytics"
 ANALYTICS_MAX_ALTER_TAGE = 3    # aeltere Messungen speisen nichts mehr ein
 RETENTION_VIDEOS = 5            # so viele juengste auswertbare Videos zaehlen
 # Das bestehende Wortbudget des Synthese-Prompts (Regel 3: 700 bis 1000
-# Woerter). Die gemessenen Laufzeiten entstanden aus genau diesem Budget,
-# also skaliert Ziellaufzeit/Ist-Laufzeit das Budget proportional mit -
-# keine erfundenen Richtwerte, nur der Dreisatz aus den eigenen Daten.
+# Woerter). Es ist das SOLL und taugt deshalb nicht als Umrechnungsbasis fuer
+# die gemessene Laufzeit - siehe _sprechrate().
 WORTBUDGET = (700, 1000)
+# Erst ab so vielen auswertbaren Videos darf die Messung das Wortbudget
+# veraendern. Darunter bleiben nur die qualitativen Hinweise stehen.
+# Grund: die Abbruchkurve schwankt bei einer Handvoll Aufrufen stark, und
+# ein Teil der Aufrufe sind eigene Kontrollblicke (fertig geschaute Views) -
+# ein Wortziel aus vier Videos ist Rauschen, das sich ueber die
+# Rueckkopplung selbst verstaerkt.
+RETENTION_MIN_N = 5
 
 
 def _mmss(sekunden: float) -> str:
@@ -2036,6 +2126,15 @@ def _retention_kennwerte(video: dict) -> dict | None:
     return {
         "laufzeit_s": laufzeit,
         "views": int(video.get("views") or 0),
+        # Datum und Kapitelmarken wandern mit: das Datum verbindet die Kurve
+        # mit dem Bericht desselben Tages (Ist-Wortzahl, _sprechrate), die
+        # Marken erlauben, den Verlust einzelnen Kapiteln zuzuordnen
+        # (_kapitel_verluste). Beide Felder duerfen fehlen - aeltere
+        # Messungen kennen sie nicht.
+        "veroeffentlicht": str(video.get("veroeffentlicht") or ""),
+        "kapitel": [k for k in (video.get("kapitel") or [])
+                    if isinstance(k, dict)],
+        "punkte": punkte,
         # Mittel der Kurve = mittlere Wiedergabedauer relativ zur Laufzeit
         "mittel": sum(anteile) / len(anteile),
         # Anteil der Laufzeit, ab dem weniger als 50 % bzw. 30 % noch schauen
@@ -2051,6 +2150,107 @@ def _median(werte: list[float]) -> float:
     w = sorted(werte)
     m = len(w) // 2
     return w[m] if len(w) % 2 else (w[m - 1] + w[m]) / 2
+
+
+def bericht_woerter(datum: str) -> int | None:
+    """Ist-Wortzahl des Berichts eines Tages; None, wenn nicht lesbar.
+
+    Gezaehlt wird, was tatsaechlich vorgelesen wird: der Rumpf nach dem
+    Markdown-Trenner, ohne den angehaengten Glossar (er wird nicht
+    gesprochen) und ohne reine URL-/Quellen-Zeilen."""
+    try:
+        text = (EXTRAKTE / datum / "bericht.md").read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    _, _, rumpf = text.partition("\n---\n")
+    zeilen: list[str] = []
+    for z in (rumpf or text).splitlines():
+        s = z.strip()
+        if s.startswith("## ") and s[3:].upper().startswith(("GLOSSAR", "COVERAGE")):
+            break       # Glossar/Abdeckung stehen am Ende und werden nicht gesprochen
+        if not s or s.startswith(("http://", "https://", "[")):
+            continue
+        if re.match(r"^(Quelle|Quellen|Belege|Source|Sources|Evidence):", s, re.I):
+            continue
+        zeilen.append(re.sub(r"\(?https?://\S+\)?", " ", s))
+    return len(" ".join(zeilen).split()) or None
+
+
+def _bindung_bei(punkte: list[tuple[float, float]], x: float) -> float:
+    """Zuschauerbindung am Laufzeitanteil x, linear zwischen den
+    Stuetzpunkten interpoliert. Ausserhalb der Kurve gilt der Randwert."""
+    if x <= punkte[0][0]:
+        return punkte[0][1]
+    if x >= punkte[-1][0]:
+        return punkte[-1][1]
+    for (x0, w0), (x1, w1) in zip(punkte, punkte[1:]):
+        if x0 <= x <= x1:
+            if x1 == x0:
+                return w0
+            return w0 + (w1 - w0) * (x - x0) / (x1 - x0)
+    return punkte[-1][1]
+
+
+def _kapitel_verluste(kennwerte: list[dict]) -> list[dict]:
+    """Bindungsverlust je Kapitel, normalisiert auf eine Minute.
+
+    Die Gesamtkurve sagt, WANN Zuschauer gehen, aber nicht WOBEI. Erst
+    gegen die Kapitelmarken gelegt (analytics_bericht.kapitel_aus_
+    beschreibung, seit 21.08.2026 miterhoben) wird daraus eine Aussage
+    ueber Inhalte. Normalisiert wird pro Minute, weil ein langes Kapitel
+    sonst allein durch seine Laenge oben staende - gesucht ist die
+    Steilheit des Abfalls, nicht die Summe.
+
+    Das erste Kapitel (00:00, Vorspann/TL;DR) bleibt draussen: dort faellt
+    die Kurve bei jedem Video am steilsten, das ist der bekannte
+    Einstiegsverlust und keine Aussage ueber ein Thema. Videos ohne
+    Kapitelmarken liefern nichts - aeltere Messungen kennen das Feld gar
+    nicht, und der Befund muss ohne sie unveraendert weiterlaufen."""
+    aus: list[dict] = []
+    for k in kennwerte:
+        marken = k.get("kapitel") or []
+        punkte = k.get("punkte") or []
+        laufzeit = float(k.get("laufzeit_s") or 0)
+        if len(marken) < 3 or not punkte or laufzeit <= 0:
+            continue
+        grenzen = [float(m.get("zeit_s") or 0) for m in marken] + [laufzeit]
+        for i in range(1, len(marken)):        # 0 = Vorspann, bleibt draussen
+            von, bis = grenzen[i], grenzen[i + 1]
+            dauer = bis - von
+            if dauer < 30:      # zu kurz fuer eine belastbare Steigung
+                continue
+            verlust = (_bindung_bei(punkte, von / laufzeit)
+                       - _bindung_bei(punkte, bis / laufzeit))
+            aus.append({
+                "titel": str(marken[i].get("titel") or "").strip(),
+                "nummer": i,
+                "von": len(marken),
+                "dauer_s": dauer,
+                "je_min": verlust / (dauer / 60),
+            })
+    return sorted(aus, key=lambda x: x["je_min"], reverse=True)
+
+
+def _sprechrate(kennwerte: list[dict]) -> float | None:
+    """Gemessene Woerter je Sekunde Videolaufzeit; None ohne Datenbasis.
+
+    Das ist der Ersatz fuer den frueheren Dreisatz ueber WORTBUDGET: der
+    skalierte das SOLL-Budget (700-1000) mit der IST-Laufzeit einer Messung,
+    die zu Berichten mit rund 1800 Woertern gehoerte - Soll und Ist
+    vermischt, das Wortziel fiel dadurch etwa um Faktor 2 zu niedrig aus
+    (Befund 21.08.2026: "target 5.8 minutes ... roughly 350 to 500 words",
+    waehrend 350-500 Woerter beim gemessenen Tempo nur 3:25-4:50 ergeben).
+    Hier wird stattdessen je gemessenem Video die tatsaechlich geschriebene
+    Wortzahl seines Berichts gegen seine tatsaechliche Laufzeit gestellt -
+    beides Ist, kein Modell."""
+    raten = []
+    for k in kennwerte:
+        woerter = bericht_woerter(str(k.get("veroeffentlicht") or ""))
+        laufzeit = float(k.get("laufzeit_s") or 0)
+        if woerter and laufzeit > 0:
+            raten.append(woerter / laufzeit)
+    return _median(raten) if raten else None
 
 
 def _retention_block(kennwerte: list[dict]) -> str:
@@ -2082,7 +2282,8 @@ def _retention_block(kennwerte: list[dict]) -> str:
         f"-{_mmss(steilster['steil_bis'] * steilster['laufzeit_s'])} "
         f"(loses {steilster['steil_verlust'] * 100:.0f} points of audience).")
     zeilen.append("Act on this:")
-    if drittel:
+    rate = _sprechrate(kennwerte)
+    if drittel and len(kennwerte) >= RETENTION_MIN_N and rate:
         # Ziellaufzeit: der Median-Zeitpunkt, ab dem weniger als 30 % noch
         # schauen - aber nie weniger als die halbe Median-Laufzeit. Die
         # /2-Klausel ist Schleifendaempfung, kein Richtwert: bricht die
@@ -2093,15 +2294,32 @@ def _retention_block(kennwerte: list[dict]) -> str:
         # liefe gegen null. So halbiert sich die Laenge pro Iteration
         # hoechstens; die naechste Messung justiert nach.
         ziel_s = max(_median(drittel), laufzeit / 2)
+        # Umgerechnet mit der GEMESSENEN Wortzahl je Sekunde (siehe
+        # _sprechrate), nicht mehr mit dem Soll-Budget: das Wortziel gehoert
+        # zur beobachteten Laufzeit, nicht zu einer Vorgabe, die nie
+        # eingehalten wurde.
+        mitte = rate * ziel_s
         zeilen.append(
             f"- fewer than 30% of viewers are left after "
             f"{_mmss(_median(drittel))} "
             f"(median) - target a total runtime of about {ziel_s / 60:.1f} "
-            "minutes. Under the current reading pace that is roughly "
-            f"{round(WORTBUDGET[0] * ziel_s / laufzeit / 10) * 10} to "
-            f"{round(WORTBUDGET[1] * ziel_s / laufzeit / 10) * 10} words "
-            "of report body; where this prompt states another word budget, "
-            "this measured target overrides it.")
+            "minutes. At the measured pace of these videos "
+            f"({rate * 60:.0f} words of report body per minute of finished "
+            f"video) that is roughly {round(mitte * 0.9 / 10) * 10} to "
+            f"{round(mitte * 1.1 / 10) * 10} words of report body; where "
+            "this prompt states another word budget, this measured target "
+            "overrides it.")
+    elif drittel:
+        # Zu duenne Datenbasis fuer eine Laengenvorgabe: der qualitative
+        # Befund geht trotzdem raus, das Wortbudget des Prompts bleibt aber
+        # unangetastet.
+        zeilen.append(
+            f"- fewer than 30% of viewers are left after "
+            f"{_mmss(_median(drittel))} (median). Keep the word budget "
+            "stated above, but spend it on the strongest material.")
+        log.info("Retention: nur %d von %d noetigen Videos (bzw. keine "
+                 "Ist-Wortzahl) - Wortbudget bleibt unveraendert",
+                 len(kennwerte), RETENTION_MIN_N)
     zeilen += [
         "- front-load the strongest material: the first minute decides who "
         "stays, so open with the day's single best story, not with "
@@ -2109,7 +2327,42 @@ def _retention_block(kennwerte: list[dict]) -> str:
         "- tighten every section: cut background and repetition first, keep "
         "concrete numbers and the board's voice.",
     ]
+    zeilen += _kapitel_zeilen(_kapitel_verluste(kennwerte))
     return "\n".join(zeilen)
+
+
+KAPITEL_NENNEN = 4      # so viele verlustreichste Kapitel nennt der Befund
+KAPITEL_SCHWELLE = 0.02  # ab 2 Bindungspunkten je Minute lohnt die Nennung
+
+
+def _kapitel_zeilen(verluste: list[dict]) -> list[str]:
+    """Die "killed chapters" als Negativ-Hinweis fuer den naechsten Bericht
+    und das naechste Drehbuch - leer, wenn keine Kapitelmessung vorliegt.
+
+    Bewusst mit Kapitelnamen statt mit einer erfundenen Typologie: der
+    Name sagt, worum es ging, und die Zuordnung zu einem "Typ" trifft das
+    Modell besser als eine Heuristik hier. Dass die Liste leer bleiben
+    darf, ist Teil des Vertrags - Messungen von vor dem 21.08.2026 tragen
+    keine Kapitelmarken."""
+    treffer = [v for v in verluste
+               if v["je_min"] >= KAPITEL_SCHWELLE and v["titel"]][:KAPITEL_NENNEN]
+    if not treffer:
+        return []
+    zeilen = ["CHAPTERS THAT LOST THE MOST AUDIENCE (per minute, measured "
+              "against the chapter marks of the last uploads; the opening "
+              "chapter is excluded because every video drops there):"]
+    for v in treffer:
+        zeilen.append(
+            f"- \"{v['titel']}\" (chapter {v['nummer'] + 1} of {v['von']}, "
+            f"{_mmss(v['dauer_s'])} long): lost "
+            f"{v['je_min'] * 100:.0f} points of audience per minute.")
+    zeilen.append(
+        "Treat these as a warning about KIND, not about subject: what made "
+        "them leak was most likely length without news, a topic already told, "
+        "or a passage without a concrete number. A topic that belongs in "
+        "today's report still belongs in it - write it tighter and put its "
+        "hardest fact first.")
+    return zeilen
 
 
 def retention_befund(ablage: Path = ANALYTICS_ABLAGE) -> str:
@@ -2307,8 +2560,10 @@ On top of that he wants a feel for the board itself - its humor, its memes,
 its mood - which is why this report is written in the board's language.
 
 Rules:
-1. English plain text, NO Markdown formatting, no asterisks, no hash
-   headings. Headings in capital letters on their own line.
+1. English plain text, NO Markdown formatting, no asterisks, no bold.
+   ONE exception, and it is structural, not decoration: every topic
+   heading stands on its own line and starts with "## ". Nothing else in
+   the report ever starts with "## ".
 2. Start with a line "Data as of: <value> local time" taken from the
    DATA AS OF line of the input, plus the number of threads analyzed.
 3. Length: around 700 to 1000 words for the report body.
@@ -2321,9 +2576,32 @@ Rules:
      sentence. Rule of thumb: three related items or more become a list.
    - The first sentence of a section states the result, not the backstory.
    - No nested sentences with more than one subordinate clause.
-4. Structure the report body by topic, most important first. Pick sensible
-   headings, for example STOCKS, CRYPTO, MACRO AND GEOPOLITICS, FILLING
-   FAST. Drop any topic that has nothing to report.
+4. Structure the report body by topic, most important first. Drop any
+   topic that has nothing to report.
+4a. HEADINGS ARE CLAIMS, NOT LABELS. Each heading is read aloud as the
+   chapter title and is used verbatim as the video's YouTube chapter name,
+   so it has to make someone want to hear what follows.
+   - Write a claim or a question with something at stake, in sentence
+     case: "Silver hits 70 and gets slapped back", not
+     "STOCKS: URANIUM, HOOD, ADOBE". A list of tickers is a label; it
+     tells the viewer nothing about what happened.
+   - Fuse the heading with the section's key number where there is one
+     ("Silver 70: slapped back three times"). Do not first name the topic
+     and then state the number a paragraph later.
+   - HARD LIMIT 40 characters, not counting the reliability tag below.
+     Longer chapter names get cut off in the YouTube player.
+   - Where the extracts show self-interest or promotion, append a
+     reliability tag in square brackets at the end of the heading:
+     "[one loud ID]", "[unsourced]", "[shill thread]". The tag replaces
+     the separate reliability sentence that used to close each topic - it
+     belongs where the reader meets the claim, not after it. Omit the tag
+     where there is nothing to flag.
+4b. DECK LINE: directly under every heading, on its own line, write ONE
+   sentence that says what happened - the sharpest fact of the section,
+   with its number. Then a blank line, then the section body. The deck
+   line is not a teaser and not a repetition of the heading: heading makes
+   the claim, deck line delivers the evidence. It is what a reader who
+   only skims the headings takes away.
 5. State concrete numbers with their meaning, and give the URL per item.
    Use standard English number formatting with commas: 1,234,567.
 6. Separate claim from evidence. Mark poster claims as such ("one poster
@@ -2373,7 +2651,10 @@ Rules:
    current development.
 8b. DO NOT REPEAT WHAT YESTERDAY'S REPORT ALREADY SAID (if one is provided
     as YESTERDAY'S REPORT - otherwise write in full as usual; it may be
-    written in German, compare by content). Compare topic by topic:
+    written in German, compare by content). Everything that is merely
+    still true goes into ONE section at the very end of the report, whose
+    heading is exactly "## Still true from yesterday" - that exact
+    wording, it is matched by the video build. Compare topic by topic:
     - If a topic is substantively unchanged since yesterday (no new
       numbers, claims, sources, price targets), do NOT write it out again.
       Write EXACTLY ONE sentence that names the topic concretely enough
@@ -2402,12 +2683,17 @@ Rules:
     that in the COVERAGE block. This does NOT apply to the generals as
     institutions (rule 7): that /smg/ exists again is not a repetition -
     the repetition is telling the same story about it.
-9. The section FILLING FAST describes what these threads actually SAY, not
-   just that they grow quickly. Give the acceleration factor against the
-   thread's own average where the metadata provides it. A thread with
-   nothing beyond its subject line is called out as such.
-10. At the end of each topic, briefly judge reliability whenever the
-    extracts mention signs of self-interest or promotion.
+9. FAST-FILLING THREADS DO NOT GET THEIR OWN SECTION. A thread that grows
+   quickly is not a topic - the topic is what it says. Report it inside
+   the section its subject belongs to, and put the acceleration factor
+   there in the sentence where it carries weight ("filling at 2.5x its
+   own average"), whenever the metadata provides it. A thread with
+   nothing beyond its subject line is called out as such, in one clause,
+   wherever it fits. Never write a heading whose whole point is that
+   something is filling fast.
+10. Reliability is judged in the heading tag (rule 4a), not in a closing
+    sentence of its own. Inside the body, keep marking individual claims
+    as poster claims per rule 6 - that is a different thing and stays.
 11. Poster IDs are per-thread and can be manipulated: treat them as an
     upper bound, make no statements about real head counts. The two ratios
     in the thread header survive that caveat and are worth saying out loud

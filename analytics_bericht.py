@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -134,8 +135,46 @@ def _video_meta(token: str, ids: list[str]) -> list[dict]:
                 "titel": eintrag["snippet"]["title"],
                 "veroeffentlicht": eintrag["snippet"]["publishedAt"][:10],
                 "laufzeit": eintrag.get("contentDetails", {}).get("duration", ""),
+                # Die Kapitelmarken stehen in der Beschreibung, die der
+                # snippet-Part ohnehin mitliefert - sie sind die einzige
+                # Quelle, gegen die sich die Abbruchkurve KAPITELWEISE lesen
+                # laesst (siehe kapitel_aus_beschreibung).
+                "kapitel": kapitel_aus_beschreibung(
+                    eintrag["snippet"].get("description", "")),
             }
     return [gefunden.get(i, {}) for i in ids]
+
+
+# Eine Kapitelzeile der YouTube-Beschreibung: "00:00 TL;DR", "07:07 Silver
+# hits 70". Stunden sind zugelassen, kommen bei diesem Format aber nicht vor.
+_KAPITEL_ZEILE = re.compile(r"^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s+(\S.*)$")
+
+
+def kapitel_aus_beschreibung(text: str) -> list[dict]:
+    """Kapitelmarken einer Videobeschreibung als [{"zeit_s", "titel"}, ...].
+
+    YouTube verlangt fuer gueltige Kapitel eine erste Marke bei 00:00,
+    mindestens drei Marken und 10 s Mindestabstand - genau das erzeugt
+    video_report.kapitel_bauen(). Hier wird dieselbe Liste wieder
+    eingelesen, damit die Abbruchkurve kapitelweise ausgewertet werden
+    kann. Eine Beschreibung ohne solchen Block liefert [] - der Konsument
+    faellt dann auf die Gesamtkurve zurueck."""
+    marken: list[dict] = []
+    for zeile in text.splitlines():
+        m = _KAPITEL_ZEILE.match(zeile.strip())
+        if not m:
+            continue
+        std, minute, sek, titel = m.groups()
+        marken.append({"zeit_s": int(std or 0) * 3600 + int(minute) * 60
+                       + int(sek), "titel": titel.strip()})
+    # Erst ab der Marke bei 0 s ist es ein Kapitelblock und keine zufaellige
+    # Zeitangabe im Fliesstext; die Reihenfolge muss aufsteigend sein.
+    if not marken or marken[0]["zeit_s"] != 0:
+        return []
+    for a, b in zip(marken, marken[1:]):
+        if b["zeit_s"] <= a["zeit_s"]:
+            return []
+    return marken if len(marken) >= 3 else []
 
 
 def abbruchkurve(token: str, video_id: str, tage: int = 90) -> list[dict]:
@@ -188,6 +227,11 @@ def kurven_erheben(token: str, tage: int = KURVEN_TAGE) -> list[dict]:
         aus.append({"video_id": v["video"], "titel": v.get("titel", ""),
                     "veroeffentlicht": v.get("veroeffentlicht", ""),
                     "laufzeit_s": _sekunden(v.get("laufzeit", "")),
+                    # Kapitelmarken aus der Beschreibung: erst mit ihnen
+                    # laesst sich der Verlust einzelnen Kapiteln zuordnen
+                    # statt nur der Laufzeit insgesamt (run_report.
+                    # _kapitel_verluste). Leer, wenn das Video keine hat.
+                    "kapitel": v.get("kapitel") or [],
                     # Stichprobengroesse gehoert zum Befund: bei einer
                     # Handvoll Aufrufen ist die Kurve Richtungs-, kein
                     # Praezisionssignal - der Konsument sagt das dazu.
