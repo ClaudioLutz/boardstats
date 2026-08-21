@@ -2,7 +2,7 @@
 datum: 2026-08-21
 agent: main
 typ: bugfix
-commit: <Folgecommit, siehe Story-Hash-Korrektur>
+commit: 481724f
 ---
 
 # `report.sh` zieht jetzt `git pull --ff-only` wie die anderen zwei Cron-Skripte

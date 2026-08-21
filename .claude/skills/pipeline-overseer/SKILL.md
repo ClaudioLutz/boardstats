@@ -44,7 +44,7 @@ damit `bericht.md` sicher fertig ist, bevor die Vertonung draufzugreift.
 
 Alle drei Haupt-Skripte starten mit `git pull --ff-only || echo WARNUNG`
 (fault-tolerant: lieber mit altem Stand laufen als gar nicht) — **in
-`report.sh` allerdings erst seit `d0bdb1d`, 21.08.2026.** Bis dahin war es
+`report.sh` allerdings erst seit `481724f`, 21.08.2026.** Bis dahin war es
 das einzige der drei ohne Pull, was die frühere Behauptung „jedes der drei
 Haupt-Skripte startet mit `git pull`" zu einer unbemerkten Falle machte.
 
@@ -67,7 +67,7 @@ Reparatur (working tree ist nach dem Lauf sauber, also unkritisch):
 ssh hp-ubuntu "cd ~/boardstats && git pull --rebase origin main && git push origin main"
 ```
 
-**Konsequenz für eigene Pushes:** seit `d0bdb1d` reicht ein Push nach `main`
+**Konsequenz für eigene Pushes:** seit `481724f` reicht ein Push nach `main`
 wieder für alle drei Läufe. Solange der Pull noch fehlte, war der Workaround
 „vor 20:35 pushen *und* von Hand nachziehen" nötig — er ist jetzt Geschichte,
 bleibt aber die richtige Reaktion, falls ein `git pull` im Log als WARNUNG
