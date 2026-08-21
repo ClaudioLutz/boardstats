@@ -355,19 +355,26 @@ extrahiert, `shorts.story_motive()` rechnet exakt dieselbe Zuordnung).
 - `videos.insert` (Uploads, inkl. Shorts) hat ein eigenes Kontingent von
   100 Uploads/Tag seit 2026 — 8 Shorts/Tag zusätzlich zum Hauptvideo sind
   unkritisch (siehe Memory `youtube-quota-2026-eigene-upload-buckets.md`).
-- Intro-Länge bis Kapitel 1 — **wächst und ist der offene Kritikpunkt**:
-  29.6 s (vor `6509099`) → 37.0 s (Trockenlauf 21.08.) → **48.9 s im
-  produktiven Lauf 21.08.** Boden 10 s wegen YouTube-Kapitelregel — liegt
-  Kapitel 1 darunter, schiebt `kapitelmarken()` die Marke auf 10 s; eine
-  **Decke gibt es nicht**. Ursache ist nicht die Anzahl der Zahlen (beide
-  Läufe hatten exakt 4), sondern die unbegrenzte Länge des Feldes `satz` je
-  Zahl in `folien.json` — produktiv voll ausgeschriebene Fliesssätze
-  („one dollar and fifty three cents"). Gegen die gemessene Abbruchkurve
-  (50 % weg nach 1:08) verbrennt der Vorspann damit rund drei Viertel der
-  mittleren Verweildauer, bevor der erste Kapitelinhalt beginnt — er
-  arbeitet direkt gegen die Retention-Rückkopplung, die ihn kürzen soll.
+- Intro-Länge bis Kapitel 1 — **seit `6bd295f` (22.08.2026) gedeckelt, der
+  frühere offene Kritikpunkt ist erledigt**: 29.6 s → 37.0 s → 48.9 s
+  (produktiv 21.08.) → **16.4 s im Kettentest 22.08.**, Kapitel 1 beginnt
+  dort bei 0:17. Es gibt jetzt beides: Boden `INTRO_BODEN` 11.5 s (wegen der
+  YouTube-Kapitelregel; liegt Kapitel 1 darunter, schiebt `kapitel_bauen()`
+  die Marke auf 10 s) **und** Decke `INTRO_DECKEL` 15 s. Über der Decke
+  fallen gesprochene Zahlensätze weg — aber nur, solange das Ergebnis nicht
+  unter den Boden rutscht: sonst spränge der Serien-Satz an, der länger ist
+  als der eingesparte Zahlensatz (real beobachtet, deshalb `571b7c2`).
+  Ursache des Wachstums war nicht die Anzahl der Zahlen, sondern die
+  unbegrenzte Länge des Feldes `satz` je Zahl in `folien.json` — produktiv
+  voll ausgeschriebene Fliesssätze („one dollar and fifty three cents").
+  Dagegen wirken jetzt zwei Dinge: `_zahl_satz()` kappt auf den ersten Satz
+  und `ZAHL_SATZ_WORTE` (12), und der Drehbuch-Prompt fordert höchstens
+  12 Wörter. Gesprochen werden nur noch `ZAHLEN_GESPROCHEN` (2) der vier
+  Zahlen; im Bild stehen weiterhin alle vier (`szenen.zahlen_uebersicht`).
   Laufzeit des Tagesvideos 21.08.: produktiv 483 s (8:03), Trockenlauf
-  513.8 s (8:34), vorher Median 11:39.
+  513.8 s (8:34), vorher Median 11:39; Kettentest 22.08.: 482 s (8:02) bei
+  1826 Wörtern Bericht — die Kürzung kam dort allein aus Vorspann und dem
+  weggefallenen Still-true-Kapitel, nicht aus einem kürzeren Bericht.
   Tonwerte Sprachspur: −19.5 LUFS, Pausen −84 dBFS, 85 % Energie < 700 Hz →
   Musikbett bei −22 LU, kein Ducking (nur sidechaincompress am Bett selbst).
 - Kaltstart-Schlagwort (erster Titel, z.B. "$120K GONE"): seit `50621da`
@@ -567,18 +574,25 @@ Zwei Auffälligkeiten, die den Lauf nicht gefährdet haben, aber offen sind:
   als Tags (`drs ledger and a $10 wish`, `short squeeze with a number on it`).
   Unschädlich, aber verschenkt Tag-Plätze.
 
-**Neuer Befund: Wortzahl-Ableitung im Retention-Block ist falsch
-kalibriert** (`run_report.py:2101`, `_retention_block()`). Die Formel
-skaliert das **Soll**-Budget `WORTBUDGET = (700, 1000)` mit der
-**Ist**-Laufzeit der Messung (699 s) — die aber zu Berichten mit ~1800
-Wörtern gehört, weil das Budget nie eingehalten wurde. Soll und Ist werden
-vermischt, das Wortziel fällt dadurch rund um Faktor 2 zu niedrig aus:
-heute "target 5.8 minutes … roughly 350 to 500 words", während 350–500
-Wörter beim gemessenen Tempo (878 Wörter = 8:34) nur **3:25–4:50 min**
-ergäben — deutlich unter dem eigenen Laufzeitziel. Dass das Modell die
-Vorgabe ignorierte und 878 Wörter schrieb, war Zufall, nicht Regelwerk.
-Sauber wäre, mit der Ist-Wortzahl des zur Messung gehörenden Berichts zu
-skalieren statt mit `WORTBUDGET`. Kein Blocker — die Richtung stimmt.
+**Befund vom 21.08. (Wortzahl-Ableitung im Retention-Block falsch
+kalibriert) ist mit `6bd295f` behoben.** Die Formel skalierte das
+**Soll**-Budget `WORTBUDGET = (700, 1000)` mit der **Ist**-Laufzeit der
+Messung (699 s) — die aber zu Berichten mit ~1800 Wörtern gehörte, weil das
+Budget nie eingehalten wurde. Soll und Ist vermischt, das Wortziel fiel
+dadurch rund um Faktor 2 zu niedrig aus. `_retention_block()` rechnet jetzt
+über `_sprechrate()`: je gemessenem Video die **Ist**-Wortzahl seines
+Berichts (`bericht_woerter()`, liest `extrakte/<datum>/bericht.md`) gegen
+seine **Ist**-Laufzeit, Median daraus. Neu ist ausserdem das Gate
+`RETENTION_MIN_N = 5`: unter fünf auswertbaren Videos gibt der Block nur
+den qualitativen Befund aus und lässt das Wortbudget des Prompts stehen
+(vorher wirkte die Rückkopplung schon ab einem Video — bei einer Handvoll
+Aufrufe, von denen ein Teil eigene Kontrollblicke sind, ist das Rauschen,
+das sich über die Schleife selbst verstärkt). Im Kettentest 22.08. real
+gesehen: *„Retention: nur 4 von 5 noetigen Videos … Wortbudget bleibt
+unveraendert"*. **Folge fürs Beobachten:** solange weniger als fünf
+Messungen vorliegen, kommt eine Laufzeitverkürzung NICHT mehr aus dem
+Bericht — der lag im Test bei 1826 Wörtern. Sie kommt aus Vorspann-Deckel
+und weggefallenem Still-true-Kapitel.
 
 **Inhaltliche Beobachtung zur Kulisse (Nutzerentscheidung, kein Bug):** die
 Sichtprüfung filtert zuverlässig Hass/Extremismus (2 Bilder abgelehnt:
@@ -587,6 +601,52 @@ Körperlichkeit als Kapitelhintergrund durch (Short 3, Treasury-Buyback).
 Themenbezug fehlt dort, und für einen Finanzkanal ist das eine
 Positionierungsfrage. Falls unerwünscht, gehört ein Kriterium in
 `HINTERGRUND_PROMPT`, nicht in den Szenenbau.
+
+## Serie A–D gegen die Abbruchwand (`6bd295f`, 22.08.2026)
+
+Umsetzung der Brainstorming-Session vom 21.08.
+(`research/brainstorming/brainstorm-reporttexte-retention-2026-08-21/`).
+Ausgangsbefund: Abbruchwand bei 1:08, unter 30 % Verbleib nach 0:45.
+Im lokalen Kettentest (22.08. 00:00–00:40) an echter Ausgabe verifiziert:
+
+| Stossrichtung | Nachweis im Testlauf |
+|---|---|
+| A Vorspann-Deckel | Log: „Vorspann geschaetzt ueber 15s – Zahlensatz nur noch im Bild"; Vorspann **16.4 s** (produktiv 21.08.: 48.9 s), Kapitel 1 im Frame bei 0:17 |
+| A TL;DR 2 statt 4 | Log: „TL;DR: 1 von 4 Zahlen gesprochen, alle vier im Bild (2.2s Uebersicht)"; Zahlensätze 9–10 Wörter statt Fliesssätze |
+| A Retention-Gate | Log: „nur 4 von 5 noetigen Videos – Wortbudget bleibt unveraendert" |
+| A Thumb=Hook | `thumb_en` „GTA6 LEAK" steht wörtlich im Hook, Frame bei 0:02 zeigt es |
+| B Headlines | 8 `## `-Abschnitte, 25–38 Zeichen, Behauptungen („A pizza against 1.3 million a week"), Tags `[unsourced]`/`[one loud ID]`, Deck-Zeile unter jeder Überschrift |
+| B Bausteine weg | kein `FILLING FAST`, kein `UNCHANGED FROM` mehr im Bericht |
+| C Still true | Log: „Abschnitt 'Still true from yesterday' nicht vertont"; Video hat 7 Kapitel, Bericht 8 Abschnitte |
+| C Schluss | Log: „Schluss-Zitat: 5.1s" + „Cliffhanger 'Does the BBBYQ guarantor claim hold up?'"; beide Frames geprüft |
+| C Tempo-Badge | zwei Abschnitte mit `1.7x` / `2x` im Drehbuch |
+| D Degradation | die vier Messungen tragen kein `kapitel`-Feld → Befund unverändert, kein Fehler |
+
+**Was beim nächsten produktiven Lauf (22.08. 20:35/21:15) zu prüfen ist:**
+
+1. Vorspann-Länge im Log gegen 15 s — der Test lief noch vor `571b7c2`.
+2. Ob das Modell den `## `-Marker **auch produktiv** setzt. Der gefährliche
+   Fehlermodus: Behauptungs-Headline in Kleinschreibung **ohne** Marker →
+   die Versalien-Heuristik greift nicht und alle Abschnitte kollabieren
+   still zu einem. Schnellprüfung: `grep -c '^## ' extrakte/<datum>/bericht.md`
+   muss ~5–8 ergeben, nicht 0–1.
+3. Kapitelmarken in der Beschreibung (max. 44 Zeichen, ohne `[Tag]`).
+4. Ob der 23:30-Analytics-Lauf jetzt `kapitel` je Kurve mitschreibt — erst
+   damit liefert D ab dem Folgetag „killed chapters" in die Prompts.
+5. Stichwort-Fragmente: im Test fielen nur **2 von 41** wegen zu enger
+   Fenster weg (produktiv 21.08.: 14 von 63). Ob das hält, zeigt der
+   produktive Lauf mit dichterem Text.
+
+**Bewusst nicht geliefert** (in der Story begründet): der A/B-Titel-Punkt
+aus D. Die Messgrösse wäre die Klickrate, und Impressionen/CTR gibt die
+YouTube-API nicht heraus (siehe Modul-Docstring `analytics_bericht.py`).
+
+**Falle, die dabei zugeschnappt ist:** `git add -A` nach einem lokalen
+Kettentest nimmt `extrakte/<datum>/` mit — das ist die **einzige**
+Testausgabe, die nicht gitignored ist (`arbeit/`, `cache/`, `video/`, `raw/`
+sind es). Vor jedem Commit während eines Kettentests `git status --short`
+lesen. Beim Aufräumen fiel es auf (21 Löschungen statt leerem Status), der
+Commit war noch ungepusht und wurde per `git rm --cached` + amend bereinigt.
 
 ## Wartung dieses Skills
 
