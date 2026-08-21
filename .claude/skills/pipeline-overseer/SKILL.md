@@ -42,9 +42,35 @@ Morgenlauf-Marker übersprungen (siehe „Serie vom 20.08. im Kettentest
 verifiziert" unten). `report.sh` läuft weiterhin **vor** `video.sh` (20:35 vs 21:15),
 damit `bericht.md` sicher fertig ist, bevor die Vertonung draufzugreift.
 
-Jedes der Haupt-Skripte startet mit `git pull --ff-only || echo WARNUNG`
-(fault-tolerant, damit hp-ubuntu bei jedem Lauf synchron zu `main` bleibt,
-ohne den Lauf bei Konflikt abzubrechen).
+**`report.sh` zieht KEIN `git pull` — anders als `run.sh`/`video.sh`**
+(verifiziert am Skript selbst, 21.08.2026; die frühere Behauptung „jedes der
+drei Haupt-Skripte startet mit `git pull --ff-only`" war falsch). `video.sh`
+und `run.sh` haben `git pull --ff-only || echo WARNUNG` (fault-tolerant:
+lieber mit altem Stand rendern als gar kein Video), `report.sh` läuft
+stumpf auf dem Stand, der gerade im Checkout liegt.
+
+Zwei praktische Folgen, beide am 21.08. real eingetreten:
+
+- Ein Push auf `main` zwischen dem letzten `video.sh` und dem nächsten
+  `report.sh` erreicht den 20:35-Lauf **nicht**. Wer Code testet, das Ergebnis
+  pusht und annimmt, der Abendbericht laufe damit, irrt.
+- Schlimmer: `run_report.py` committet Extrakte/Bericht selbst und pusht.
+  Liegt auf `origin` ein Commit, den hp-ubuntu nicht hat, wird der Push
+  **zweimal abgelehnt** („Veroeffentlichung auf GitHub fehlgeschlagen") und
+  das Repo divergiert (lokal 2 Commits voraus, origin 1). Der Bericht selbst
+  ist davon unberührt, aber das GitHub-Archiv bleibt leer und der `--ff-only`
+  -Pull von `video.sh` scheitert danach ebenfalls.
+
+Reparatur (working tree ist nach dem Lauf sauber, also unkritisch):
+
+```bash
+ssh hp-ubuntu "cd ~/boardstats && git pull --rebase origin main && git push origin main"
+```
+
+**Konsequenz für eigene Pushes:** entweder vor 20:35 pushen *und* danach
+`ssh hp-ubuntu "cd ~/boardstats && git pull --ff-only"` von Hand nachziehen,
+oder erst nach dem Report-Lauf pushen. Sich auf ein Pull in `report.sh` zu
+verlassen, funktioniert nicht.
 
 **Getrennte Umgebungen:**
 - hp-ubuntu Produktions-venv: `~/.venvs/boardstats-video/bin/python3` — hat
@@ -328,10 +354,19 @@ extrahiert, `shorts.story_motive()` rechnet exakt dieselbe Zuordnung).
 - `videos.insert` (Uploads, inkl. Shorts) hat ein eigenes Kontingent von
   100 Uploads/Tag seit 2026 — 8 Shorts/Tag zusätzlich zum Hauptvideo sind
   unkritisch (siehe Memory `youtube-quota-2026-eigene-upload-buckets.md`).
-- Intro-Länge bis Kapitel 1: seit dem TL;DR-Zahlenblock (`6509099`) **37.0 s**
-  (gemessen 21.08.), vorher 29.6 s. Boden 10 s wegen YouTube-Kapitelregel —
-  liegt Kapitel 1 darunter, schiebt `kapitelmarken()` die Marke auf 10 s.
-  Laufzeit des Tagesvideos 21.08.: 513.8 s (8:34), vorher Median 11:39.
+- Intro-Länge bis Kapitel 1 — **wächst und ist der offene Kritikpunkt**:
+  29.6 s (vor `6509099`) → 37.0 s (Trockenlauf 21.08.) → **48.9 s im
+  produktiven Lauf 21.08.** Boden 10 s wegen YouTube-Kapitelregel — liegt
+  Kapitel 1 darunter, schiebt `kapitelmarken()` die Marke auf 10 s; eine
+  **Decke gibt es nicht**. Ursache ist nicht die Anzahl der Zahlen (beide
+  Läufe hatten exakt 4), sondern die unbegrenzte Länge des Feldes `satz` je
+  Zahl in `folien.json` — produktiv voll ausgeschriebene Fliesssätze
+  („one dollar and fifty three cents"). Gegen die gemessene Abbruchkurve
+  (50 % weg nach 1:08) verbrennt der Vorspann damit rund drei Viertel der
+  mittleren Verweildauer, bevor der erste Kapitelinhalt beginnt — er
+  arbeitet direkt gegen die Retention-Rückkopplung, die ihn kürzen soll.
+  Laufzeit des Tagesvideos 21.08.: produktiv 483 s (8:03), Trockenlauf
+  513.8 s (8:34), vorher Median 11:39.
   Tonwerte Sprachspur: −19.5 LUFS, Pausen −84 dBFS, 85 % Energie < 700 Hz →
   Musikbett bei −22 LU, kein Ducking (nur sidechaincompress am Bett selbst).
 - Kaltstart-Schlagwort (erster Titel, z.B. "$120K GONE"): seit `50621da`
@@ -489,10 +524,47 @@ den Stempel des Laufs vom 20.08. Die Trockenlauf-Guards melden das auch
 selbst ("Bildsperre nicht vermerkt", "Clip-Katalog nicht gestempelt",
 "Cache-Fortschritt nicht fortgeschrieben").
 
-Was der Test **nicht** abdeckt und weiterhin am realen Lauf zu prüfen ist:
-der eigentliche Upload (Kapitelmarken in der YouTube-Beschreibung, Tags,
-Shorts-Marker `extrakte/<datum>/shorts_en.json`, Sichtbarkeitswechsel
-privat→public) — im Trockenlauf wird die Beschreibung nicht gebaut.
+Was der Test nicht abdeckte, ist am produktiven Abendlauf desselben Tages
+nachgeholt (siehe nächster Abschnitt).
+
+## Erster produktiver Abendlauf verifiziert (21.08.2026, 20:35–21:33 CEST)
+
+Report 20:35–20:55 (`5196b1f`), Video+Shorts 21:15–21:33. Die Upload-Seite,
+die der Trockenlauf prinzipiell nicht bauen kann, ist damit belegt — per
+`videos.list` an den **tatsächlich hochgeladenen** Metadaten gelesen, nicht
+am Log:
+
+- **Kapitelmarken** in der Beschreibung vorhanden und korrekt: `00:00 TL;DR`,
+  `00:48 SILVER HITS 70…` bis `07:07 UNCHANGED FROM YESTERDAY`.
+- **Tags**: 17 Stück, Sichtbarkeit `public`, Kategorie 25, `defaultLanguage=en`,
+  Thumbnail gesetzt, Untertitel hochgeladen, Playlist `PLE-UMRGn6d6g`,
+  Kanal-Trailer gesetzt.
+- Beschreibung enthält Datenstand, Disclaimer, Hashtags, den 5000-Zeichen-
+  Abschneidehinweis und die Quell-Threads.
+- **Shorts**: 6 Storys, alle `public`, Rückverweis aufs Hauptvideo in der
+  Beschreibung, Dauer 1:33 (< 3 min + 9:16 → YouTube erkennt sie als Shorts,
+  auch ohne `#Shorts`-Hashtag). Marker `shorts_en.json` und `video_en.json`
+  beide geschrieben. Ähnlichkeits-Guard produktiv **1.000**.
+- **Delta korrekt**: `17 Threads (3× delta, 14× voll), Datenstand 20:19` —
+  volle Tagesperiode seit dem Lauf vom 20.08., vom Trockenlauf unangetastet.
+- **Sichtprüfung schärfer als im Test**: 5 Bilder abgelehnt (Hakenkreuz,
+  homophober Slur, Galgenstrick-Symbolik, sexualisierte Pose, Beschimpfung),
+  31 freigegeben, 8 Clips.
+
+Zwei Auffälligkeiten, die den Lauf nicht gefährdet haben, aber offen sind:
+
+- **Vorspann 48.9 s** statt 37.0 s im Test — Betriebswert oben, ernstester
+  Punkt gegen die Retention.
+- **14 von 63 Stichwort-Fragmenten fielen wegen zu enger Fenster weg**
+  (Trockenlauf: 1 von 54). Bei dichterem Text kollabieren die Lesezeit-Böden
+  `DETAIL_FRAG_MIN`/`DETAIL_CPS` reihenweise; wenn ein Fünftel der geplanten
+  Bildtexte verschwindet, ist die Zwischenstufen-Idee halb wirksam.
+- Randfall sauber abgefangen: `Clip … Frame bei 0.39s fehlgeschlagen:
+  ffmpeg lieferte Exit 0, aber keine Datei (EOF-Randfall)` → Clip abgelehnt,
+  Lauf lief weiter.
+- Tag-Qualität: neben echten Suchbegriffen stehen ganze Kapitelüberschriften
+  als Tags (`drs ledger and a $10 wish`, `short squeeze with a number on it`).
+  Unschädlich, aber verschenkt Tag-Plätze.
 
 **Neuer Befund: Wortzahl-Ableitung im Retention-Block ist falsch
 kalibriert** (`run_report.py:2101`, `_retention_block()`). Die Formel
