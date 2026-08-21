@@ -2177,6 +2177,61 @@ def bericht_woerter(datum: str) -> int | None:
     return len(" ".join(zeilen).split()) or None
 
 
+def _bindung_bei(punkte: list[tuple[float, float]], x: float) -> float:
+    """Zuschauerbindung am Laufzeitanteil x, linear zwischen den
+    Stuetzpunkten interpoliert. Ausserhalb der Kurve gilt der Randwert."""
+    if x <= punkte[0][0]:
+        return punkte[0][1]
+    if x >= punkte[-1][0]:
+        return punkte[-1][1]
+    for (x0, w0), (x1, w1) in zip(punkte, punkte[1:]):
+        if x0 <= x <= x1:
+            if x1 == x0:
+                return w0
+            return w0 + (w1 - w0) * (x - x0) / (x1 - x0)
+    return punkte[-1][1]
+
+
+def _kapitel_verluste(kennwerte: list[dict]) -> list[dict]:
+    """Bindungsverlust je Kapitel, normalisiert auf eine Minute.
+
+    Die Gesamtkurve sagt, WANN Zuschauer gehen, aber nicht WOBEI. Erst
+    gegen die Kapitelmarken gelegt (analytics_bericht.kapitel_aus_
+    beschreibung, seit 21.08.2026 miterhoben) wird daraus eine Aussage
+    ueber Inhalte. Normalisiert wird pro Minute, weil ein langes Kapitel
+    sonst allein durch seine Laenge oben staende - gesucht ist die
+    Steilheit des Abfalls, nicht die Summe.
+
+    Das erste Kapitel (00:00, Vorspann/TL;DR) bleibt draussen: dort faellt
+    die Kurve bei jedem Video am steilsten, das ist der bekannte
+    Einstiegsverlust und keine Aussage ueber ein Thema. Videos ohne
+    Kapitelmarken liefern nichts - aeltere Messungen kennen das Feld gar
+    nicht, und der Befund muss ohne sie unveraendert weiterlaufen."""
+    aus: list[dict] = []
+    for k in kennwerte:
+        marken = k.get("kapitel") or []
+        punkte = k.get("punkte") or []
+        laufzeit = float(k.get("laufzeit_s") or 0)
+        if len(marken) < 3 or not punkte or laufzeit <= 0:
+            continue
+        grenzen = [float(m.get("zeit_s") or 0) for m in marken] + [laufzeit]
+        for i in range(1, len(marken)):        # 0 = Vorspann, bleibt draussen
+            von, bis = grenzen[i], grenzen[i + 1]
+            dauer = bis - von
+            if dauer < 30:      # zu kurz fuer eine belastbare Steigung
+                continue
+            verlust = (_bindung_bei(punkte, von / laufzeit)
+                       - _bindung_bei(punkte, bis / laufzeit))
+            aus.append({
+                "titel": str(marken[i].get("titel") or "").strip(),
+                "nummer": i,
+                "von": len(marken),
+                "dauer_s": dauer,
+                "je_min": verlust / (dauer / 60),
+            })
+    return sorted(aus, key=lambda x: x["je_min"], reverse=True)
+
+
 def _sprechrate(kennwerte: list[dict]) -> float | None:
     """Gemessene Woerter je Sekunde Videolaufzeit; None ohne Datenbasis.
 
@@ -2272,7 +2327,42 @@ def _retention_block(kennwerte: list[dict]) -> str:
         "- tighten every section: cut background and repetition first, keep "
         "concrete numbers and the board's voice.",
     ]
+    zeilen += _kapitel_zeilen(_kapitel_verluste(kennwerte))
     return "\n".join(zeilen)
+
+
+KAPITEL_NENNEN = 4      # so viele verlustreichste Kapitel nennt der Befund
+KAPITEL_SCHWELLE = 0.02  # ab 2 Bindungspunkten je Minute lohnt die Nennung
+
+
+def _kapitel_zeilen(verluste: list[dict]) -> list[str]:
+    """Die "killed chapters" als Negativ-Hinweis fuer den naechsten Bericht
+    und das naechste Drehbuch - leer, wenn keine Kapitelmessung vorliegt.
+
+    Bewusst mit Kapitelnamen statt mit einer erfundenen Typologie: der
+    Name sagt, worum es ging, und die Zuordnung zu einem "Typ" trifft das
+    Modell besser als eine Heuristik hier. Dass die Liste leer bleiben
+    darf, ist Teil des Vertrags - Messungen von vor dem 21.08.2026 tragen
+    keine Kapitelmarken."""
+    treffer = [v for v in verluste
+               if v["je_min"] >= KAPITEL_SCHWELLE and v["titel"]][:KAPITEL_NENNEN]
+    if not treffer:
+        return []
+    zeilen = ["CHAPTERS THAT LOST THE MOST AUDIENCE (per minute, measured "
+              "against the chapter marks of the last uploads; the opening "
+              "chapter is excluded because every video drops there):"]
+    for v in treffer:
+        zeilen.append(
+            f"- \"{v['titel']}\" (chapter {v['nummer'] + 1} of {v['von']}, "
+            f"{_mmss(v['dauer_s'])} long): lost "
+            f"{v['je_min'] * 100:.0f} points of audience per minute.")
+    zeilen.append(
+        "Treat these as a warning about KIND, not about subject: what made "
+        "them leak was most likely length without news, a topic already told, "
+        "or a passage without a concrete number. A topic that belongs in "
+        "today's report still belongs in it - write it tighter and put its "
+        "hardest fact first.")
+    return zeilen
 
 
 def retention_befund(ablage: Path = ANALYTICS_ABLAGE) -> str:
