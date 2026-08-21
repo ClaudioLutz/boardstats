@@ -1803,6 +1803,10 @@ PRAES_OUTRO = "That's the board report. Sources in the description."
 # "zahl_kopf" steht nur bei einer Blockliste alter Ordnung dort (Zahlen am
 # Ende), der Schluss-Beat und das Outro immer.
 SCHLUSS_ROLLEN = ("zahl_kopf", "schluss_zitat", "schluss_frage", "outro")
+KAPITELNAME_MAX = 44     # Zeichen im YouTube-Kapitelnamen. Der Prompt fordert
+                         # 40 fuer die Ueberschrift; die vier Zeichen Luft
+                         # fangen ab, dass der Player sonst mitten im Wort
+                         # abschneidet.
 MONATE_EN = ["January", "February", "March", "April", "May", "June", "July",
              "August", "September", "October", "November", "December"]
 BLEND_SCHRITTE = 6       # Zwischenbilder je Ueberblendung Reveal -> Folie
@@ -1850,8 +1854,15 @@ def folien_zuordnen(fdaten: dict, bloecke: list[Block]) -> dict[int, dict]:
     Berichtsabschnitte bekommen spaeter eine Folie ohne Stichpunkte."""
     koepfe = [(b.abschnitt, _norm_text(b.text)) for b in bloecke
               if b.art == "ueberschrift"]
+    # Der Drehbuch-Eintrag zum Sammelabschnitt "Still true from yesterday"
+    # muss raus: seit 21.08.2026 wird dieser Abschnitt nicht mehr vertont,
+    # also gibt es keinen Kopf, der ihn per Ueberschrift aufnimmt. Ueber den
+    # "Rest der Reihe nach"-Pfad unten landeten seine zwei Stichworte sonst
+    # in einem echten Kapitel, sobald ein anderes seinen Heading-Match
+    # verfehlt - und das Kapitel liefe mit fremden Bullets.
     eintraege = [a for a in fdaten["abschnitte"]
-                 if isinstance(a, dict) and a.get("titel")]
+                 if isinstance(a, dict) and a.get("titel")
+                 and not rr.ist_still_true(str(a.get("ueberschrift") or ""))]
     nach_kopf = {_norm_text(str(a.get("ueberschrift", ""))): a for a in eintraege}
     aus: dict[int, dict] = {}
     for nr, kopf in koepfe:
@@ -4540,6 +4551,14 @@ def kapitel_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # der knappen Zeilenbreite. Im gesprochenen Text steht er ohnehin -
         # gestrippt wird nur diese eine Darstellung.
         titel = re.sub(r"\s*\[[^\]]*\]\s*$", "", titel).strip()
+        # Harte Laengengrenze, an der Wortgrenze: der Prompt fordert 40
+        # Zeichen, aber Prompt-Prosa ist keine Zusicherung - laengere
+        # Kapitelnamen schneidet der YouTube-Player selbst ab, und zwar
+        # mitten im Wort. Gekappt wird NUR diese Darstellung, nie die
+        # Ueberschrift im Bericht: an der haengen die Verbatim-Anker des
+        # Drehbuchs.
+        if len(titel) > KAPITELNAME_MAX:
+            titel = rr._wortgrenze(titel, KAPITELNAME_MAX)
         zeilen.append(f"{zeit} {titel}")
     return "\n".join(zeilen) if len(zeilen) >= 3 else ""
 
