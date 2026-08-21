@@ -42,14 +42,14 @@ Morgenlauf-Marker übersprungen (siehe „Serie vom 20.08. im Kettentest
 verifiziert" unten). `report.sh` läuft weiterhin **vor** `video.sh` (20:35 vs 21:15),
 damit `bericht.md` sicher fertig ist, bevor die Vertonung draufzugreift.
 
-**`report.sh` zieht KEIN `git pull` — anders als `run.sh`/`video.sh`**
-(verifiziert am Skript selbst, 21.08.2026; die frühere Behauptung „jedes der
-drei Haupt-Skripte startet mit `git pull --ff-only`" war falsch). `video.sh`
-und `run.sh` haben `git pull --ff-only || echo WARNUNG` (fault-tolerant:
-lieber mit altem Stand rendern als gar kein Video), `report.sh` läuft
-stumpf auf dem Stand, der gerade im Checkout liegt.
+Alle drei Haupt-Skripte starten mit `git pull --ff-only || echo WARNUNG`
+(fault-tolerant: lieber mit altem Stand laufen als gar nicht) — **in
+`report.sh` allerdings erst seit `d0bdb1d`, 21.08.2026.** Bis dahin war es
+das einzige der drei ohne Pull, was die frühere Behauptung „jedes der drei
+Haupt-Skripte startet mit `git pull`" zu einer unbemerkten Falle machte.
 
-Zwei praktische Folgen, beide am 21.08. real eingetreten:
+Die zwei Folgen, beide am 21.08. real eingetreten, bevor der Pull eingebaut
+war (als Diagnosemuster weiterhin nützlich, falls der Pull mal fehlschlägt):
 
 - Ein Push auf `main` zwischen dem letzten `video.sh` und dem nächsten
   `report.sh` erreicht den 20:35-Lauf **nicht**. Wer Code testet, das Ergebnis
@@ -67,10 +67,11 @@ Reparatur (working tree ist nach dem Lauf sauber, also unkritisch):
 ssh hp-ubuntu "cd ~/boardstats && git pull --rebase origin main && git push origin main"
 ```
 
-**Konsequenz für eigene Pushes:** entweder vor 20:35 pushen *und* danach
-`ssh hp-ubuntu "cd ~/boardstats && git pull --ff-only"` von Hand nachziehen,
-oder erst nach dem Report-Lauf pushen. Sich auf ein Pull in `report.sh` zu
-verlassen, funktioniert nicht.
+**Konsequenz für eigene Pushes:** seit `d0bdb1d` reicht ein Push nach `main`
+wieder für alle drei Läufe. Solange der Pull noch fehlte, war der Workaround
+„vor 20:35 pushen *und* von Hand nachziehen" nötig — er ist jetzt Geschichte,
+bleibt aber die richtige Reaktion, falls ein `git pull` im Log als WARNUNG
+auftaucht (dann liegt ein schmutziges Arbeitsverzeichnis auf hp-ubuntu vor).
 
 **Getrennte Umgebungen:**
 - hp-ubuntu Produktions-venv: `~/.venvs/boardstats-video/bin/python3` — hat

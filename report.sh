@@ -32,6 +32,16 @@ fi
 
 {
     echo "===== Bericht gestartet: $(date '+%Y-%m-%d %H:%M:%S') ====="
+    # Als einziges der drei Cron-Skripte fehlte hier der Pull (run.sh und
+    # video.sh hatten ihn seit je). Folge am 21.08.2026: ein Push nach main
+    # um 20:21 erreichte hp-ubuntu nicht, der 20:35-Lauf rannte auf altem
+    # Code - und weil run_report.py Extrakte/Bericht selbst committet und
+    # pusht, prallte sein Push an origin ab ("Veroeffentlichung auf GitHub
+    # fehlgeschlagen"), das Repo divergierte und der --ff-only-Pull von
+    # video.sh waere danach ebenfalls gescheitert. --ff-only verweigert bei
+    # lokalen Aenderungen statt etwas zu ueberschreiben; ein Fehlschlag darf
+    # den Lauf nicht stoppen (lieber alter Stand als kein Bericht).
+    git pull --ff-only || echo "WARNUNG: git pull fehlgeschlagen - laeuft mit dem lokalen Stand weiter"
     python3 run_report.py --top 15
     echo "===== Bericht beendet:  $(date '+%Y-%m-%d %H:%M:%S') ====="
 } >> "$LOG" 2>&1
