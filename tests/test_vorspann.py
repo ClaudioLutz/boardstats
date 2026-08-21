@@ -105,6 +105,27 @@ class Vorspann(unittest.TestCase):
                  + V._pause_sekunden(V.GOOGLE_KAPITEL_PAUSE))
         self.assertLessEqual(dauer, V.INTRO_DECKEL)
 
+    def test_nie_kuerzen_und_dann_serien_satz(self):
+        """Die Invariante hinter der Boden-Bremse: ein Zahlensatz wird nie
+        weggekuerzt, wenn danach der Serien-Satz anspringt.
+
+        Genau diese Reihenfolge war am 22.08.2026 im echten Lauf zu sehen -
+        erst fiel ein Zahlensatz weg (11.3s), dann hing der Boden den
+        Serien-Satz an und der Vorspann stand bei 16.4s. Das Ergebnis war
+        laenger als ohne die Kuerzung UND enthielt statt einer Zahl die
+        Seriennennung, die vorne gerade nicht stehen soll. Ueber die ganze
+        Bandbreite an Satzlaengen darf das nicht mehr vorkommen."""
+        for worte in range(2, V.ZAHL_SATZ_WORTE + 1):
+            satz = " ".join(["wort"] * worte) + "."
+            bloecke = bloecke_bauen([satz] * 4, hook="GOLD UP")
+            gekuerzt = len(rollen(bloecke, "zahl")) < V.ZAHLEN_GESPROCHEN
+            serien = "4chan business board report" in rollen(
+                bloecke, "intro")[0].text
+            self.assertFalse(
+                gekuerzt and serien,
+                f"bei {worte} Woertern je Zahlensatz wurde gekuerzt UND "
+                "der Serien-Satz angehaengt")
+
     def test_kurzer_vorspann_behaelt_den_serien_satz(self):
         """Unter INTRO_BODEN wird der Serien-Satz angehaengt, damit
         Kapitel 1 nicht unter die 10-Sekunden-Regel rutscht - er steht

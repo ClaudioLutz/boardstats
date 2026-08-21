@@ -1986,7 +1986,23 @@ def praesentations_bloecke(bloecke: list[Block], zuordnung: dict[int, dict],
         # Ansage ohne Inhalt.
         geschaetzt = schaetzen()
         while geschaetzt > INTRO_DECKEL and len(zahl_saetze) > 1:
-            weg = zahl_saetze.pop()
+            weg = zahl_saetze[-1]
+            behalten, zahl_saetze = zahl_saetze, zahl_saetze[:-1]
+            # Unter den Boden darf das Kuerzen nicht fuehren: dort haengt
+            # der Code sonst den Serien-Satz an ("This is the 4chan business
+            # board report for ..."), und der ist LAENGER als der gerade
+            # entfernte Zahlensatz - gemessen 22.08.2026: ein Zahlensatz
+            # weg ergab 11.3s, mit Serien-Satz danach 16.4s. Dann lieber
+            # den Zahlensatz behalten: gleiche Groessenordnung, aber eine
+            # echte Zahl statt der Seriennennung, die der Vorspann laut
+            # Auftrag gerade NICHT vorne tragen soll.
+            if schaetzen() < INTRO_BODEN:
+                zahl_saetze = behalten
+                print(f"Vorspann {geschaetzt:.1f}s ueber "
+                      f"{INTRO_DECKEL:.0f}s - Zahlensatz bleibt trotzdem "
+                      f"gesprochen, weil ohne ihn der Serien-Satz "
+                      f"anspringt und laenger waere")
+                break
             geschaetzt = schaetzen()
             print(f"Vorspann geschaetzt ueber {INTRO_DECKEL:.0f}s - "
                   f"Zahlensatz {weg[:40]!r} nur noch im Bild, jetzt "
