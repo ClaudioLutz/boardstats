@@ -80,6 +80,34 @@ def test_stories_finden_uebersteht_fremde_rahmen_reihenfolge() -> None:
     assert stories[1].worte[-1].text == "again."
 
 
+def test_letzte_story_endet_vor_dem_schluss_beat() -> None:
+    """Seit 21.08.2026 stehen zwischen letzter Story und Outro das
+    Board-Zitat des Tages und die Cliffhanger-Frage. Ohne den Zitat-Rahmen
+    in ENDE_PHRASEN liefe das letzte Short bis zum Outro weiter und truege
+    beides als fremdes Anhaengsel am Ende."""
+    bloecke = _bloecke()
+    gesprochen = (" ".join(b.text for b in bloecke[:6]) + " "
+                  + vr.PRAES_ZITAT.format(zitat="we are all gonna make it")
+                  + " Does alpha hold ten? " + vr.PRAES_OUTRO)
+    stories = shorts.stories_finden(bloecke, _worte(gesprochen))
+    assert [s.nr for s in stories] == [1, 2]
+    letzte = " ".join(w.text for w in stories[1].worte)
+    assert "Last" not in letzte and "board" not in letzte
+    assert "Does" not in letzte
+    assert stories[1].worte[-1].text == "again."
+
+
+def test_ende_phrasen_kennen_die_alten_fassungen() -> None:
+    """Eine Tonspur von vor dem 21.08.2026 traegt die frueheren Rahmen-
+    Saetze; auch dann darf die letzte Story nicht ins Outro laufen."""
+    bloecke = _bloecke()
+    gesprochen = (" ".join(b.text for b in bloecke[:6])
+                  + " The day in four numbers. Alpha gained ten percent. "
+                  "That's the board report for today.")
+    stories = shorts.stories_finden(bloecke, _worte(gesprochen))
+    assert stories[1].worte[-1].text == "again."
+
+
 def test_stories_finden_fehlende_ueberschrift_wird_uebersprungen() -> None:
     bloecke = _bloecke()
     gesprochen = ("STOCKS: ALPHA RUNS HOT Alpha ran hot all day long. "

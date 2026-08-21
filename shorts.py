@@ -222,10 +222,26 @@ def _phrase_suchen(phrase: str, toks: list[str],
     return None
 
 
-# Rahmen-Saetze, an denen die letzte Story endet: der Outro-Satz und der
-# Zahlenblock-Kopf (aktuelle wie fruehere Formulierung - die Tonspur des
+# Rahmen-Saetze, an denen die letzte Story endet: Schluss-Beat, Outro-Satz
+# und Zahlenblock-Kopf (aktuelle wie fruehere Formulierung - die Tonspur des
 # Tages kann von einem aelteren Codestand stammen als der Bericht).
-ENDE_PHRASEN = [vr.PRAES_OUTRO, vr.PRAES_ZAHLEN, "Before we wrap up"]
+# Gesucht wird die FRUEHESTE Fundstelle ueber alle Eintraege, die Reihenfolge
+# hier spielt also keine Rolle.
+#
+# Der Schluss-Beat (21.08.2026) steht ZWISCHEN letzter Story und Outro. Ohne
+# seinen Anfang in dieser Liste liefe das letzte Short bis zum Outro weiter
+# und haette das Board-Zitat des Tages plus die Cliffhanger-Frage als
+# fremdes Anhaengsel am Ende. Vom Zitat-Rahmen taugt nur der feste Teil vor
+# dem Zitat selbst als Suchphrase.
+ENDE_PHRASEN = [
+    vr.PRAES_ZITAT.split("{")[0],
+    vr.PRAES_ZAHLEN,
+    vr.PRAES_OUTRO,
+    # Fassungen vor dem 21.08.2026 - eine aeltere Tonspur kennt nur diese:
+    "The day in four numbers",
+    "That's the board report for today",
+    "Before we wrap up",
+]
 
 
 def stories_finden(bloecke: list[vr.Block],
