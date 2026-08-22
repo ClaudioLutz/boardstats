@@ -3052,12 +3052,17 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 schnitt = bis - ZAHL_UEBERSICHT_MIN
                 _countup_overlays(z, karten[j], t + 0.2, schnitt, ov,
                                   klang)
-                z.overlays.append(ov(
-                    szenen.zahlen_uebersicht(karten), schnitt, bis,
-                    einflug="unten",
-                    lese_text=" · ".join(str(k.get("wert") or "")
-                                         for k in karten),
-                    lese_boden=ZAHL_UEBERSICHT_MIN))
+                # Small Multiples (C2) mit gestaffeltem Einflug (die
+                # Null-Objekt-Hierarchie aus C1: eine Bewegung, die
+                # Elemente folgen versetzt).
+                for ki, kbild in enumerate(szenen.zahlen_multiples(karten)):
+                    ktext = (f"{karten[ki].get('wert') or ''} "
+                             f"{karten[ki].get('titel') or ''}").strip()
+                    z.overlays.append(ov(
+                        kbild, schnitt + ki * MULTIPLES_VERSATZ, bis,
+                        einflug="unten", lese_text=ktext,
+                        lese_boden=min(ZAHL_UEBERSICHT_MIN,
+                                       lese_boden_allgemein(ktext))))
                 print(f"TL;DR: {len(genutzt)} von {len(karten)} Zahlen "
                       f"gesprochen, alle vier im Bild "
                       f"({ZAHL_UEBERSICHT_MIN:.1f}s Uebersicht)")
@@ -3751,6 +3756,48 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     return folge, klang
 
 
+# Sparkline aus dem Text (C2): "down 12% from 61k" traegt zwei belegte
+# Punkte - den Bezugswert hinter "from" und den Wert der Karte selbst.
+# Nur wenn BEIDE im Text stehen, entsteht eine Grafik (Leitplanke 7).
+_SPARK_BASIS = re.compile(
+    r"\b(down|up)\b[^.;]{0,40}?\bfrom\s+\$?([\d.,]+)\s*([kKmMbB]?)")
+_SPARK_SUFFIX = {"k": 1e3, "m": 1e6, "b": 1e9}
+
+
+def _sparkline_daten(karte: dict) -> tuple[float, float, str, str] | None:
+    """(wert_von, wert_bis, label_von, label_bis) fuer szenen.zahl_tafel,
+    None ohne belegten Bezugswert. Ist der Kartenwert ein Prozentsatz,
+    ergibt sich der zweite Punkt aus genau der behaupteten Relation; ist
+    er absolut, wird er direkt gezeichnet. Die Labels bleiben die
+    Original-Schreibweisen aus dem Bericht."""
+    text = " ".join(str(karte.get(f) or "") for f in ("wert", "sub", "satz"))
+    m = _SPARK_BASIS.search(text, )
+    if not m:
+        return None
+    try:
+        basis = float(m.group(2).replace(",", "")) \
+            * _SPARK_SUFFIX.get(m.group(3).lower(), 1.0)
+    except ValueError:
+        return None
+    wert_str = str(karte.get("wert") or "")
+    zm = szenen._ZAHL.search(wert_str)
+    if not zm or basis <= 0:
+        return None
+    zahl = abs(float(zm.group(0).replace(",", "")))
+    runter = m.group(1).lower() == "down" or zm.group(0).startswith("-")
+    if "%" in wert_str:
+        if zahl >= 100:
+            return None     # "up 300% from x" spraengt die Mini-Skala
+        aktuell = basis * (1 - zahl / 100) if runter \
+            else basis * (1 + zahl / 100)
+    else:
+        suffix = wert_str[zm.end():zm.end() + 1].lower()
+        aktuell = zahl * _SPARK_SUFFIX.get(suffix, 1.0)
+    if aktuell <= 0:
+        return None
+    return basis, aktuell, m.group(2) + m.group(3), wert_str
+
+
 def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
                       ov, klang: list[tuple[float, str]] | None = None
                       ) -> None:
@@ -3774,11 +3821,17 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
     if klang is not None and stufen:
         # Impact genau auf dem Einrasten des Endwerts (Intent B5).
         klang.append((final_ab, "zahl"))
+    # Sparkline (C2) erst auf dem Endstand: waehrend des Zaehlwerks wuerde
+    # sie nur ablenken, und der Bezugswert gehoert zum fertigen Wert.
+    spark = _sparkline_daten(karte)
+    if spark:
+        print(f"Sparkline: {wert!r} von {spark[2]!r}")
     if stufen and bis - final_ab > COUNTUP_FLASH + 0.6:
-        sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, flash=True),
+        sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, flash=True,
+                                                spark=spark),
                               final_ab, final_ab + COUNTUP_FLASH, 0.0))
         final_ab += COUNTUP_FLASH
-    sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub),
+    sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, spark=spark),
                           final_ab, bis, 0.0,
                           lese_text=f"{wert} {titel}".strip(),
                           lese_boden=max(ZAHL_COUNTUP_MIN,
@@ -3821,6 +3874,7 @@ AKTIVITAET_MIN_SEC = 3.5  # kuerzer lohnt sich die Balkengrafik im Outro nicht
 ZAHL_COUNTUP_MIN = 1.8   # so lange muss der Count-up der letzten gesprochenen
                          # Zahl mindestens stehen bleiben, bevor die stille
                          # Uebersicht sein Fenster uebernehmen darf
+MULTIPLES_VERSATZ = 0.12  # Staffelversatz der Small-Multiples-Karten (C1/C2)
 ZAHL_UEBERSICHT_MIN = 2.2  # Lesezeit der Uebersichtstafel mit allen vier
                            # Zahlen; passt das Fenster nicht, entfaellt sie
                            # ersatzlos statt aufzublitzen

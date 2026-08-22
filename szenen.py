@@ -763,8 +763,9 @@ def zahl_farbe(wert: str) -> tuple[int, int, int]:
     return AKZENT
 
 
-def zahl_tafel(wert: str, titel: str, sub: str,
-               flash: bool = False) -> Image.Image:
+def zahl_tafel(wert: str, titel: str, sub: str, flash: bool = False,
+               spark: tuple[float, float, str, str] | None = None
+               ) -> Image.Image:
     """Bildschirmfuellende Zahl: der grosse Moment fuer die eine Kennzahl.
 
     Designsystem 19.08.2026: die Zahl darf dramatisch sein - 200 px Mono
@@ -774,9 +775,16 @@ def zahl_tafel(wert: str, titel: str, sub: str,
     Seit Intent A#35 (22.08.2026) traegt eine gerichtete Zahl Farbe UND
     Pfeil (Gruen/Rot statt Amber/Gedimmt). flash=True rendert die Zahl
     weiss - die Blitz-Variante fuer den Moment, in dem der Count-up den
-    Endwert erreicht (C1 Flash-on-change)."""
+    Endwert erreicht (C1 Flash-on-change).
+
+    spark (C2, Kernbeat des Genre-Entscheids) sind (wert_von, wert_bis,
+    label_von, label_bis): zwei belegte Punkte aus dem Berichtstext und
+    ihre Original-Beschriftungen. Gezeichnet werden GENAU zwei Punkte und
+    eine gerade Verbindung - keine interpolierte Kurve, die Form darf
+    nicht mehr Genauigkeit suggerieren, als der Board-Post hergibt
+    (Leitplanke 7)."""
     bild = _leer()
-    _bande(bild, _s(154), _s(574), alpha=166)
+    _bande(bild, _s(154), _s(620) if spark else _s(574), alpha=166)
     d = ImageDraw.Draw(bild)
     for gr in (200, 160, 128, 96):
         font = _font_mono(gr)
@@ -804,51 +812,90 @@ def zahl_tafel(wert: str, titel: str, sub: str,
     sf = _font(False, 24)
     d.text(((B - d.textlength(sub, font=sf)) / 2, _s(512)), sub, font=sf,
            fill=GRAU)
+    if spark:
+        von_w, bis_w, label_von, label_bis = spark
+        x0s, x1s = B // 2 - _s(130), B // 2 + _s(130)
+        y_lo, y_hi = _s(606), _s(558)
+        hoch, tief = max(von_w, bis_w), min(von_w, bis_w)
+
+        def sy(v: float) -> float:
+            if hoch == tief:
+                return (y_lo + y_hi) / 2
+            return y_lo - (v - tief) / (hoch - tief) * (y_lo - y_hi)
+
+        farbe = HELL if flash else zahl_farbe(wert)
+        d.line([(x0s, sy(von_w)), (x1s, sy(bis_w))], fill=farbe,
+               width=_s(3))
+        for xx, vv in ((x0s, von_w), (x1s, bis_w)):
+            d.ellipse([xx - _s(5), sy(vv) - _s(5),
+                       xx + _s(5), sy(vv) + _s(5)], fill=farbe)
+        lf = _font_mono(18)
+        d.text((x0s - _s(14) - d.textlength(label_von, font=lf),
+                sy(von_w) - _s(11)), label_von, font=lf, fill=GRAU)
+        d.text((x1s + _s(14), sy(bis_w) - _s(11)), label_bis, font=lf,
+               fill=GRAU)
     return bild
 
 
-def zahlen_uebersicht(karten: list[dict]) -> Image.Image:
-    """Alle Tageszahlen auf einen Blick, als stille Tafel.
+MULTI_BREITE = 560      # 720p-Layoutmass einer Mini-Karte (Small Multiples)
+MULTI_HOEHE = 168
+MULTI_LUECKE = 26
 
-    Gegenstueck zu zahl_tafel(): seit 21.08.2026 werden nur noch
-    ZAHLEN_GESPROCHEN der vier TL;DR-Zahlen vorgelesen, weil vier
-    gesprochene Zahlensaetze rund 30 s vor der ersten Story kosteten. Im
-    BILD sollen trotzdem alle vier stehen - lesen geht schneller als
-    hoeren. Deshalb eine Zeilentafel statt vier weiterer Count-up-Momente:
-    sie braucht keine eigene Sprechzeit."""
-    bild = _leer()
-    _bande(bild, _s(150), _s(574), alpha=176)
-    d = ImageDraw.Draw(bild)
-    wf = _font_mono(52)
-    tf = _font(True, 26)
-    sf = _font(False, 22)
-    # Werte-Spalte an der breitesten Zahl ausrichten, damit die Titel eine
-    # gemeinsame Kante bekommen - sonst franst die Tafel rechts aus. Der
-    # Trend-Pfeil gerichteter Zahlen (Intent A#35) zaehlt zur Spaltenbreite.
-    def _wert_breite(k: dict) -> float:
-        w = str(k.get("wert") or "")
-        return d.textlength(w, font=wf) \
-            + (_s(44) if _zahl_richtung(w) else 0)
 
-    breite = max((_wert_breite(k) for k in karten[:4]), default=0.0)
+def zahlen_multiples(karten: list[dict]) -> list[Image.Image]:
+    """Die TL;DR-Zahlen als Small Multiples (C2, Kernbeat des Genre-
+    Entscheids): vier Mini-Karten im 2x2-Raster statt einer Zeilentafel.
+    Je Karte ein eigenes Canvas-Bild, damit video_report sie gestaffelt
+    einfliegen lassen kann (Null-Objekt-Hierarchie aus C1: eine Bewegung,
+    die Elemente folgen versetzt). Gerichtete Werte tragen Farbe und
+    Pfeil (Intent A#35)."""
+    n = min(4, len(karten))
+    if not n:
+        return []
+    spalten = 2 if n > 1 else 1
+    zeilen_n = (n + 1) // 2
+    mw, mh, ml = _s(MULTI_BREITE), _s(MULTI_HOEHE), _s(MULTI_LUECKE)
+    x0 = (B - spalten * mw - (spalten - 1) * ml) // 2
+    y0 = (H - zeilen_n * mh - (zeilen_n - 1) * ml) // 2 - _s(16)
+    aus: list[Image.Image] = []
+    wf = _font_mono(46)
+    tf = _font(True, 24)
+    sf = _font(False, 20)
     for i, k in enumerate(karten[:4]):
-        y = _s(186) + i * _s(98)
+        bild = _leer()
+        d = ImageDraw.Draw(bild)
+        cx = x0 + (i % 2) * (mw + ml)
+        cy = y0 + (i // 2) * (mh + ml)
+        d.rounded_rectangle([cx, cy, cx + mw, cy + mh], radius=ECKRADIUS,
+                            fill=(0, 0, 0, KARTE_ALPHA))
         wert = str(k.get("wert") or "")
         farbe = zahl_farbe(wert)
-        d.text((MARGIN + _s(24), y), wert, font=wf,
-               fill=farbe, stroke_width=4, stroke_fill=(0, 0, 0))
+        d.rectangle([cx, cy + _s(20), cx + _s(8), cy + mh - _s(20)],
+                    fill=farbe)
+        d.text((cx + _s(34), cy + _s(22)), wert, font=wf, fill=farbe,
+               stroke_width=3, stroke_fill=(0, 0, 0))
         richtung = _zahl_richtung(wert)
         if richtung:
             ic = icons.icon(richtung, _s(30), farbe)
             bild.alpha_composite(
-                ic, (int(MARGIN + _s(24) + d.textlength(wert, font=wf)
-                         + _s(12)), y + _s(18)))
-        x = MARGIN + _s(24) + breite + _s(40)
-        d.text((x, y + _s(6)), str(k.get("titel") or "").upper(), font=tf,
-               fill=HELL)
+                ic, (int(cx + _s(34) + d.textlength(wert, font=wf)
+                         + _s(14)), cy + _s(38)))
+        d.text((cx + _s(34), cy + _s(92)),
+               str(k.get("titel") or "").upper(), font=tf, fill=HELL)
         sub = str(k.get("sub") or "")
         if sub:
-            d.text((x, y + _s(44)), sub, font=sf, fill=GRAU)
+            d.text((cx + _s(34), cy + _s(128)), sub, font=sf, fill=GRAU)
+        aus.append(bild)
+    return aus
+
+
+def zahlen_uebersicht(karten: list[dict]) -> Image.Image:
+    """Alle Tageszahlen auf einen Blick - seit C2 (22.08.2026) als Small
+    Multiples statt Zeilentafel; diese Funktion komponiert die Mini-Karten
+    zu EINEM Bild (Vorlage und Fallback ohne Staffelung)."""
+    bild = _leer()
+    for karte in zahlen_multiples(karten):
+        bild.alpha_composite(karte)
     return bild
 
 
