@@ -220,10 +220,13 @@ EIGENES_REPO = "github.com/ClaudioLutz"
 
 CANVAS_W = 1280
 CANVAS_H = 720
-# Das Kompositions-Raster bleibt bei 1280x720 (Fonts/Positionen ueberall im
-# Rendering sind darauf abgestimmt); erst beim finalen Mux fuer YouTube wird
-# auf 1080p hochskaliert. Gleiches Seitenverhaeltnis (16:9), also reine
-# Vergroesserung ohne Crop/Padding.
+# 1280x720 gilt nur noch fuer die Ersatzpfade (v5-ASS-Text, v6-Folien), die
+# beim finalen Mux hochskaliert werden. Der Szenen-Weg (v7) rendert seit dem
+# 22.08.2026 NATIV in 1920x1080 (Intent A#4): Overlays kommen aus szenen.py
+# bereits im 1080p-Raster (szenen.SK), die Szenen-Clips entstehen direkt in
+# RENDER_W x RENDER_H - der 1.5x-Weichzeichner am Ende entfaellt.
+RENDER_W = szenen.B
+RENDER_H = szenen.H
 YOUTUBE_W = 1920
 YOUTUBE_H = 1080
 FONTSIZE = 34
@@ -3500,9 +3503,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             reihe = aktivitaet.taegliche_extrakt_zahlen(EXTRAKTE)
             chart_dauer = (gesprochen - outro_start) - OUTRO_TAFEL_MIN_SEC
             if len(reihe) >= 2 and chart_dauer >= AKTIVITAET_MIN_SEC:
-                s.overlays.append(ov(aktivitaet.aktivitaets_chart(reihe),
-                                     outro_start, outro_start + chart_dauer,
-                                     einflug="unten"))
+                s.overlays.append(ov(
+                    aktivitaet.aktivitaets_chart(reihe, sk=szenen.SK),
+                    outro_start, outro_start + chart_dauer,
+                    einflug="unten"))
                 outro_start += chart_dauer
         except Exception as e:
             print(f"Aktivitaets-Chart uebersprungen ({e})")
@@ -3566,7 +3570,8 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
 
 UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
 EINFLUG_DAUER = 0.40     # so lange rueckt eine Karte in ihre Endlage
-EINFLUG_WEG = 72         # aus so vielen Pixeln Versatz kommt sie
+EINFLUG_WEG = szenen._s(72)   # aus so vielen Pixeln Versatz kommt sie
+                         # (720p-Layoutmass, nativ skaliert)
 FLUG_DAUER = 0.35        # so lange fliegt ein Fokus-Punkt in die Themen-Karte
 FLUG_VORLAUF = 0.25      # so viel vor dem Wechsel setzt er sich in Bewegung:
                          # der abgeloeste Punkt ist damit rund 0.1 s nach dem
@@ -4025,14 +4030,14 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
         z = f"1+{ZOOM_HUB}*on/{n}" if s.zoom_rein \
             else f"1+{ZOOM_HUB}*({n}-on)/{n}"
         # 2x-Supersampling vor zoompan gegen das bekannte Zittern des Filters
-        teile = [f"[0:v]scale={2 * CANVAS_W}:{2 * CANVAS_H}"
+        teile = [f"[0:v]scale={2 * RENDER_W}:{2 * RENDER_H}"
                  f":force_original_aspect_ratio=increase,"
-                 f"crop={2 * CANVAS_W}:{2 * CANVAS_H},"
+                 f"crop={2 * RENDER_W}:{2 * RENDER_H},"
                  f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                 f":d={d}:s={CANVAS_W}x{CANVAS_H}:fps={FPS}[bg]"]
+                 f":d={d}:s={RENDER_W}x{RENDER_H}:fps={FPS}[bg]"]
     else:
         cmd += ["-f", "lavfi", "-i",
-                f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}:r={FPS}"
+                f"color=c={HINTERGRUND}:s={RENDER_W}x{RENDER_H}:r={FPS}"
                 f":d={dauer + 0.3:.3f}"]
         teile = ["[0:v]null[bg]"]
     for o in ovs:
@@ -4049,10 +4054,10 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
         # ist der Anschluss stetig) - sonst springt es an der Naht.
         z0 = 1.0 if naechster_zoom_rein else 1 + ZOOM_HUB
         teile.append(
-            f"[{len(ovs) + 1}:v]scale={2 * CANVAS_W}:{2 * CANVAS_H}"
+            f"[{len(ovs) + 1}:v]scale={2 * RENDER_W}:{2 * RENDER_H}"
             f":force_original_aspect_ratio=increase,"
-            f"crop={2 * CANVAS_W}:{2 * CANVAS_H},"
-            f"crop=iw/{z0:.3f}:ih/{z0:.3f},scale={CANVAS_W}:{CANVAS_H},"
+            f"crop={2 * RENDER_W}:{2 * RENDER_H},"
+            f"crop=iw/{z0:.3f}:ih/{z0:.3f},scale={RENDER_W}:{RENDER_H},"
             f"format=rgba,fade=t=in:st={dauer - UEBERGANG:.3f}"
             f":d={UEBERGANG}:alpha=1[nx]")
         teile.append(f"{kette}[nx]overlay=0:0[bgx]")
@@ -4409,10 +4414,15 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
         "\n".join("file '" + str(c).replace("\\", "/") + "'" for c in clips)
         + "\n", encoding="utf-8")
     ton_ein, ton_aus = ton_argumente(audio_mp3, ende, kapitel1)
+    # Nativ gerenderte Clips (RENDER == YOUTUBE) brauchen keine Skalierung
+    # mehr; der fruehere 1.5x-Upscale war genau der Weichzeichner, den
+    # Intent A#4 abschafft.
+    skala = ([] if (RENDER_W, RENDER_H) == (YOUTUBE_W, YOUTUBE_H)
+             else ["-vf", f"scale={YOUTUBE_W}:{YOUTUBE_H}"])
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error",
          "-f", "concat", "-safe", "0", "-i", str(liste),
-         *ton_ein, "-vf", f"scale={YOUTUBE_W}:{YOUTUBE_H}",
+         *ton_ein, *skala,
          "-c:v", "libx264", "-preset", "medium", "-crf", "18",
          "-pix_fmt", "yuv420p", *ton_aus, "-shortest", str(ziel_mp4)],
         check=True, timeout=900, capture_output=True)

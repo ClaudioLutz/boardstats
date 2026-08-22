@@ -62,10 +62,16 @@ def taegliche_extrakt_zahlen(extrakte_dir: Path, tage: int = 14
 
 
 def aktivitaets_chart(reihe: list[tuple[str, int]],
-                      titel: str = "Board activity, last 14 days") -> Image.Image:
-    """Balkengrafik als 1280x720-RGBA-Kartenoverlay - dasselbe Kartenformat
+                      titel: str = "Board activity, last 14 days",
+                      sk: float = 1.0) -> Image.Image:
+    """Balkengrafik als RGBA-Kartenoverlay - dasselbe Kartenformat
     (KARTE_BG-Flaeche, Akzentbalken, Eckenradius) wie die uebrigen Pillow-
-    Karten, damit sie sich nicht wie ein Fremdkoerper einreiht."""
+    Karten, damit sie sich nicht wie ein Fremdkoerper einreiht.
+
+    sk skaliert das 1280x720-Layout auf das native Renderraster des
+    Szenen-Wegs (szenen.SK, seit 22.08.2026 also 1920x1080): matplotlib
+    rendert dann direkt mit hoeherem dpi, statt dass das fertige Bild
+    weichgezeichnet hochskaliert wuerde."""
     theme = design_tokens.KARTEN_THEME["dunkel"]
     bg = tuple(c / 255 for c in theme["bg"])
     akzent = tuple(c / 255 for c in theme["wert"])
@@ -75,7 +81,7 @@ def aktivitaets_chart(reihe: list[tuple[str, int]],
     tage = [t[5:] for t, _ in reihe]     # "MM-DD" statt volles Datum
     werte = [n for _, n in reihe]
 
-    fig = plt.figure(figsize=(9.6, 3.4), dpi=100)
+    fig = plt.figure(figsize=(9.6, 3.4), dpi=round(100 * sk))
     fig.patch.set_alpha(0)
     ax = fig.add_axes((0.06, 0.16, 0.90, 0.68))
     ax.set_facecolor(bg)
@@ -110,18 +116,20 @@ def aktivitaets_chart(reihe: list[tuple[str, int]],
     # schliesst genau diese Luecke - ohne ihn stand der Chart komplett
     # freischwebend auf dem rohen Board-Bild (Nutzer-Feedback 18.08.2026:
     # Balken kaum lesbar vor Bildrauschen).
-    karte = Image.new("RGBA", (B, H), (0, 0, 0, 0))
-    ziel_breite = 1100
+    breite, hoehe = round(B * sk), round(H * sk)
+    karte = Image.new("RGBA", (breite, hoehe), (0, 0, 0, 0))
+    ziel_breite = round(1100 * sk)
     skala = ziel_breite / chart.width
     chart = chart.resize((ziel_breite, int(chart.height * skala)),
                          Image.Resampling.LANCZOS)
-    x = (B - chart.width) // 2
-    y = (H - chart.height) // 2
-    polster = 28
+    x = (breite - chart.width) // 2
+    y = (hoehe - chart.height) // 2
+    polster = round(28 * sk)
     ImageDraw.Draw(karte).rounded_rectangle(
         [x - polster, y - polster, x + chart.width + polster,
          y + chart.height + polster],
-        radius=18, fill=(*theme["bg"], 235), outline=theme["rand"], width=2)
+        radius=round(18 * sk), fill=(*theme["bg"], 235),
+        outline=theme["rand"], width=max(2, round(2 * sk)))
     karte.alpha_composite(chart, (x, y))
     return karte
 

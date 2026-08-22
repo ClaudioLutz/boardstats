@@ -3,7 +3,8 @@
 
 Weg vom Folien-Look: Das Video besteht aus Szenen mit vollflaechigem,
 langsam driftendem Board-Bild (ffmpeg zoompan); aller Text liegt als
-transparente 1280x720-PNG-Overlays darueber, die ffmpeg zeitgesteuert ein-
+transparente PNG-Overlays darueber (seit 22.08.2026 nativ 1920x1080 statt
+hochskaliertem 1280x720, siehe SK unten), die ffmpeg zeitgesteuert ein-
 und ausblendet. Dieses Modul rendert nur die Overlays (PIL, RGBA, Position
 eingebacken) - Szenen-Timing und ffmpeg-Aufbau macht video_report.py.
 
@@ -27,13 +28,41 @@ import folien
 import icons
 import thumbnail
 
-B = thumbnail.BREITE
-H = thumbnail.HOEHE
+# Nativ in 1920x1080 statt 1280x720 hochskaliert (Intent A#4, 22.08.2026):
+# der finale 1.5x-Upscale schmierte alles Text-Rendering weich. Das LAYOUT
+# bleibt im vertrauten 720p-Denkraster - alle Schriftgrade sind weiterhin
+# 720p-Zahlen und laufen durch die _font*-Wrapper unten, alle Pixelmasse
+# durch _s(). Nur B/H und die von szenen-Funktionen ZURUECKGEGEBENEN
+# Koordinaten sind echte 1080p-Pixel; video_report rendert die Szenen-Clips
+# im selben Raster (RENDER_W/RENDER_H).
+SK = 1.5
+
+
+def _s(v: float) -> int:
+    """720p-Layoutmass -> native Render-Pixel."""
+    return round(v * SK)
+
+
+B = _s(thumbnail.BREITE)
+H = _s(thumbnail.HOEHE)
 AKZENT = thumbnail.AKZENT
 HELL = thumbnail.TEXT_HELL
 GRAU = thumbnail.TEXT_GRAU
 GEDIMMT = design_tokens.NEUTRAL[4]
-MARGIN = 64
+MARGIN = _s(64)
+
+
+def _font(fett: bool, gr: int) -> ImageFont.FreeTypeFont:
+    """Schrift in 720p-Grad, nativ skaliert gerendert."""
+    return folien._font(fett, _s(gr))
+
+
+def _font_medium(gr: int) -> ImageFont.FreeTypeFont:
+    return folien._font_medium(_s(gr))
+
+
+def _font_mono(gr: int) -> ImageFont.FreeTypeFont:
+    return folien._font_mono(_s(gr))
 
 # Serientitel im Bild (C5, 22.08.2026): "BIZ-NEWS" statt "4CHAN /biz/ ·
 # BOARD REPORT". Die Slash-Schreibweise ist die 4chan-Board-Notation und
@@ -63,7 +92,7 @@ def _bande(bild: Image.Image, oben: int, unten: int, alpha: int = 150) -> None:
     ImageDraw.Draw(bild).rectangle([0, oben, B, unten], fill=(0, 0, 0, alpha))
 
 
-UHR_GROESSE = 22
+UHR_GROESSE = _s(22)
 
 
 def bug(datum: str) -> Image.Image:
@@ -72,14 +101,14 @@ def bug(datum: str) -> Image.Image:
     sie mitzoomen)."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
-    d.text((40, 30), BUG_TEXT, font=folien._font(True, 24), fill=AKZENT,
-           stroke_width=2, stroke_fill=(0, 0, 0))
-    breite = d.textlength(datum, font=folien._font(False, 24))
+    d.text((_s(40), _s(30)), BUG_TEXT, font=_font(True, 24), fill=AKZENT,
+           stroke_width=3, stroke_fill=(0, 0, 0))
+    breite = d.textlength(datum, font=_font(False, 24))
     uhr = icons.icon("clock", UHR_GROESSE, GRAU)
-    x_uhr = int(B - 40 - breite - UHR_GROESSE - 10)
-    bild.alpha_composite(uhr, (x_uhr, 28))
-    d.text((B - 40 - breite, 30), datum, font=folien._font(False, 24),
-           fill=GRAU, stroke_width=2, stroke_fill=(0, 0, 0))
+    x_uhr = int(B - _s(40) - breite - UHR_GROESSE - _s(10))
+    bild.alpha_composite(uhr, (x_uhr, _s(28)))
+    d.text((B - _s(40) - breite, _s(30)), datum, font=_font(False, 24),
+           fill=GRAU, stroke_width=3, stroke_fill=(0, 0, 0))
     return bild
 
 
@@ -90,8 +119,9 @@ def vignette() -> Image.Image:
     Verlauf dunkelte nur noch das Board-Motiv ab, ohne etwas zu tragen."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
-    for y in range(0, 96):
-        d.line([(0, y), (B, y)], fill=(0, 0, 0, int(110 * (1 - y / 96))))
+    hoehe = _s(96)
+    for y in range(0, hoehe):
+        d.line([(0, y), (B, y)], fill=(0, 0, 0, int(110 * (1 - y / hoehe))))
     return bild
 
 
@@ -103,29 +133,29 @@ def titel_karte(text: str, label: str = "", quelle: str = "",
     bild = _leer()
     d = ImageDraw.Draw(bild)
     groessen = (56, 48, 40) if gross else (44, 38, 32)
-    breite = B - 2 * MARGIN - 120
+    breite = B - 2 * MARGIN - _s(120)
     for gr in groessen:
-        font = folien._font(True, gr)
+        font = _font(True, gr)
         zeilen = folien._umbrechen(d, text.upper(), font, breite)
         if len(zeilen) <= 3:
             break
-    schritt = int(gr * 1.16)
-    unterkante = H - (128 if quelle else 96)
+    schritt = _s(gr * 1.16)
+    unterkante = H - (_s(128) if quelle else _s(96))
     text_oben = unterkante - schritt * len(zeilen)
-    label_oben = text_oben - (44 if label else 0)
-    _bande(bild, label_oben - 26, H - 56, alpha=150)
+    label_oben = text_oben - (_s(44) if label else 0)
+    _bande(bild, label_oben - _s(26), H - _s(56), alpha=150)
     d = ImageDraw.Draw(bild)
     if label:
-        d.text((MARGIN + 40, label_oben), label.upper(),
-               font=folien._font(True, 26), fill=AKZENT)
-    d.rectangle([MARGIN, text_oben + 8, MARGIN + 14,
-                 text_oben + schritt * len(zeilen) - 6], fill=AKZENT)
+        d.text((MARGIN + _s(40), label_oben), label.upper(),
+               font=_font(True, 26), fill=AKZENT)
+    d.rectangle([MARGIN, text_oben + _s(8), MARGIN + _s(14),
+                 text_oben + schritt * len(zeilen) - _s(6)], fill=AKZENT)
     for i, z in enumerate(zeilen):
-        d.text((MARGIN + 40, text_oben + i * schritt), z, font=font, fill=HELL,
-               stroke_width=3, stroke_fill=(0, 0, 0))
+        d.text((MARGIN + _s(40), text_oben + i * schritt), z, font=font,
+               fill=HELL, stroke_width=4, stroke_fill=(0, 0, 0))
     if quelle:
-        d.text((MARGIN + 40, unterkante + 10), quelle,
-               font=folien._font(False, 22), fill=GEDIMMT)
+        d.text((MARGIN + _s(40), unterkante + _s(10)), quelle,
+               font=_font(False, 22), fill=GEDIMMT)
     return bild
 
 
@@ -136,28 +166,28 @@ def titel_karte(text: str, label: str = "", quelle: str = "",
 # trotzdem als zwei Overlays - Titel-Teil (steht ab Segmentbeginn) und
 # Voll-Spalte je Kartenstand -, die sich zeitlich abloesen statt zu stapeln:
 # zweimal KARTE_ALPHA uebereinander waere ein sichtbarer Dunkel-Puls.
-KARTE_BREITE = 470
-KARTE_OBEN = 100        # Oberkante der Randspalte, unter dem Ecken-Bug
-KARTE_UNTEN_MAX = 600   # Lower Thirds laufen nie gleichzeitig mit der Karte
+KARTE_BREITE = _s(470)
+KARTE_OBEN = _s(100)       # Oberkante der Randspalte, unter dem Ecken-Bug
+KARTE_UNTEN_MAX = _s(600)  # Lower Thirds laufen nie gleichzeitig mit der Karte
 KARTE_ALT = design_tokens.NEUTRAL[2]
-KARTE_PAD_L = 42        # Einzug an der Bildkante (dort sitzt der Amber-Tab)
-KARTE_PAD_R = 30
-KARTE_TEXT_X = KARTE_PAD_L + 9 + 14   # Punkt-Text neben dem 9-px-Quadrat
+KARTE_PAD_L = _s(42)       # Einzug an der Bildkante (dort sitzt der Amber-Tab)
+KARTE_PAD_R = _s(30)
+KARTE_TEXT_X = KARTE_PAD_L + _s(9) + _s(14)   # Punkt-Text neben dem 9-px-Quadrat
 # Textbreite im Kasten: vom Texteinzug bis zum rechten Innenrand.
 KARTE_INNEN = KARTE_BREITE - KARTE_TEXT_X - KARTE_PAD_R
 KARTE_PUNKT_FONT = 24
-KARTE_PUNKT_ZEILE = 31
-KARTE_PUNKT_LUECKE = 12
+KARTE_PUNKT_ZEILE = _s(31)
+KARTE_PUNKT_LUECKE = _s(12)
 # Deckkraft der Text-Kaesten, deutlich hoeher als die frueheren 160/170: der
 # Text liegt auf rohem Board-Motiv, und dessen Feinstruktur (oft Screenshots
 # mit Text) frisst Kontrast. Der Kasten traegt die Lesbarkeit deshalb allein -
 # das Motiv selbst bleibt unangetastet scharf (Nutzervorgabe 17.08.: der
 # Hintergrund sollte nur hinter den Karten ruhig werden, nicht im ganzen Bild).
 KARTE_ALPHA = 228
-ECKRADIUS = 16
+ECKRADIUS = _s(16)
 LINIE = design_tokens.NEUTRAL[7]
 
-TITEL_PAD_T = 26        # Luft ueber und (im Titel-Teil) unter dem Titel
+TITEL_PAD_T = _s(26)       # Luft ueber und (im Titel-Teil) unter dem Titel
 
 
 def _rail_x(lage: str) -> int:
@@ -179,13 +209,13 @@ def _titel_zeilen(d: ImageDraw.ImageDraw, titel: str
     Der Titel lebt jetzt in der 470 px schmalen Randspalte statt auf der
     vollen Bildbreite - zwei Zeilen sind der Normalfall, eine kleinere
     Stufe kauft knappe Faelle zurueck, ab drei Zeilen wird gekappt."""
-    breite = KARTE_BREITE - KARTE_PAD_L - 32 - KARTE_PAD_R
+    breite = KARTE_BREITE - KARTE_PAD_L - _s(32) - KARTE_PAD_R
     for gr in (28, 25):
-        f = folien._font(True, gr)
+        f = _font(True, gr)
         zeilen = folien._umbrechen(d, titel.upper(), f, breite)
         if len(zeilen) <= 2:
-            return zeilen, f, gr + 6
-    return zeilen[:3], f, gr + 6
+            return zeilen, f, _s(gr + 6)
+    return zeilen[:3], f, _s(gr + 6)
 
 
 def titel_unterkante(titel: str) -> int:
@@ -200,15 +230,17 @@ def _rail_kopf(bild: Image.Image, d: ImageDraw.ImageDraw, x: int,
     """Kopf der Randspalte: Amber-Tab an der Aussenkante, Lesezeichen-Icon
     und Titelzeilen. Wird von Titel-Teil und Voll-Spalte identisch
     gezeichnet, damit deren Abloesung pixelgleich und unsichtbar ist."""
-    tab_x = x if x == 0 else x + KARTE_BREITE - 8
-    d.rectangle([tab_x, KARTE_OBEN + TITEL_PAD_T, tab_x + 8,
-                 KARTE_OBEN + TITEL_PAD_T + 40], fill=AKZENT)
+    tab_x = x if x == 0 else x + KARTE_BREITE - _s(8)
+    d.rectangle([tab_x, KARTE_OBEN + TITEL_PAD_T, tab_x + _s(8),
+                 KARTE_OBEN + TITEL_PAD_T + _s(40)], fill=AKZENT)
     # Lesezeichen-Icon statt reinem Balken: derselbe Platz, aber als
     # Kapitelmarker sofort erkennbar statt als reines Farbfeld.
-    marker = icons.icon("bookmark", 20, AKZENT)
-    bild.alpha_composite(marker, (x + KARTE_PAD_L, KARTE_OBEN + TITEL_PAD_T + 7))
+    marker = icons.icon("bookmark", _s(20), AKZENT)
+    bild.alpha_composite(
+        marker, (x + KARTE_PAD_L, KARTE_OBEN + TITEL_PAD_T + _s(7)))
     for i, z in enumerate(zeilen):
-        d.text((x + KARTE_PAD_L + 32, KARTE_OBEN + TITEL_PAD_T + i * schritt),
+        d.text((x + KARTE_PAD_L + _s(32),
+                KARTE_OBEN + TITEL_PAD_T + i * schritt),
                z, font=f, fill=HELL)
 
 
@@ -243,13 +275,13 @@ def _karte_layout(d: ImageDraw.ImageDraw, titel: str, punkte: list[str],
     Punkt nach oben statt eine Zeile nach unten."""
     x = _rail_x(lage)
     tz, _, ts = _titel_zeilen(d, titel)
-    trenner_y = KARTE_OBEN + TITEL_PAD_T + len(tz) * ts + 20
-    punkte_oben = trenner_y + 2 + 18
+    trenner_y = KARTE_OBEN + TITEL_PAD_T + len(tz) * ts + _s(20)
+    punkte_oben = trenner_y + _s(2) + _s(18)
     # Inter statt Space Grotesk: geparkte Stichpunkte sind Fliesstext, keine
     # Titel - dieselbe fette Display-Schrift fuer beide war genau die
     # bemaengelte fehlende Typo-Hierarchie (Titel/Stichpunkte unterschieden
     # sich nur in der Groesse).
-    pf = folien._font_medium(KARTE_PUNKT_FONT)
+    pf = _font_medium(KARTE_PUNKT_FONT)
     bloecke = [folien._umbrechen(d, p.upper(), pf, KARTE_INNEN)[:2]
                for p in punkte[:max(sichtbar, 0)]]
     # von hinten so viele Punkte aufnehmen wie reinpassen (der juengste zuerst)
@@ -257,7 +289,7 @@ def _karte_layout(d: ImageDraw.ImageDraw, titel: str, punkte: list[str],
     h = 0
     for zeilen in reversed(bloecke):
         dh = len(zeilen) * KARTE_PUNKT_ZEILE + KARTE_PUNKT_LUECKE
-        if anzeige and punkte_oben + h + dh - KARTE_PUNKT_LUECKE + 28 \
+        if anzeige and punkte_oben + h + dh - KARTE_PUNKT_LUECKE + _s(28) \
                 > KARTE_UNTEN_MAX:
             break
         anzeige.insert(0, zeilen)
@@ -267,7 +299,7 @@ def _karte_layout(d: ImageDraw.ImageDraw, titel: str, punkte: list[str],
     for zeilen in anzeige:
         punkt_y.append(y)
         y += len(zeilen) * KARTE_PUNKT_ZEILE + KARTE_PUNKT_LUECKE
-    unten = (y - KARTE_PUNKT_LUECKE + 28) if anzeige \
+    unten = (y - KARTE_PUNKT_LUECKE + _s(28)) if anzeige \
         else titel_unterkante(titel)
     return x, trenner_y, anzeige, punkt_y, unten
 
@@ -295,10 +327,12 @@ def themen_karte(titel: str, punkte: list[str], sichtbar: int,
     zeilen_t, f_t, schritt_t = _titel_zeilen(d, titel)
     _rail_kopf(bild, d, x, zeilen_t, f_t, schritt_t)
     d.rectangle([x + KARTE_PAD_L, trenner_y,
-                 x + KARTE_BREITE - KARTE_PAD_R, trenner_y + 2], fill=LINIE)
-    pf = folien._font_medium(KARTE_PUNKT_FONT)
+                 x + KARTE_BREITE - KARTE_PAD_R, trenner_y + _s(2)],
+                fill=LINIE)
+    pf = _font_medium(KARTE_PUNKT_FONT)
     for zeilen, py in zip(anzeige, punkt_y):
-        d.rectangle([x + KARTE_PAD_L, py + 11, x + KARTE_PAD_L + 9, py + 20],
+        d.rectangle([x + KARTE_PAD_L, py + _s(11),
+                     x + KARTE_PAD_L + _s(9), py + _s(20)],
                     fill=GEDIMMT)
         for j, z in enumerate(zeilen):
             d.text((x + KARTE_TEXT_X, py + j * KARTE_PUNKT_ZEILE), z,
@@ -326,7 +360,7 @@ def karte_text(text: str) -> str:
     Kappung stuende dort Text, der beim Parken in der Karte wegfaellt -
     das Parken waere dann ein sichtbarer Informationsverlust."""
     zeilen = folien._umbrechen(ImageDraw.Draw(_leer()), text.upper(),
-                              folien._font_medium(KARTE_PUNKT_FONT),
+                              _font_medium(KARTE_PUNKT_FONT),
                               KARTE_INNEN)[:2]
     return " ".join(zeilen)
 
@@ -339,11 +373,11 @@ def karte_passt(text: str) -> bool:
     wer nach Zeichen kappt, wirft bei schmalen Woertern Platz weg."""
     return text.strip() != "" and len(folien._umbrechen(
         ImageDraw.Draw(_leer()), text.upper(),
-        folien._font_medium(KARTE_PUNKT_FONT), KARTE_INNEN)) <= 2
+        _font_medium(KARTE_PUNKT_FONT), KARTE_INNEN)) <= 2
 
 
-FOKUS_BREITE = 650
-FOKUS_MITTE = 318       # vertikale Mitte des Kastens: hoch genug, dass ein
+FOKUS_BREITE = _s(650)
+FOKUS_MITTE = _s(318)      # vertikale Mitte des Kastens: hoch genug, dass ein
                         # ein- oder zweizeiliger Kapitel-Opener darunter Platz
                         # hat (dessen Bande beginnt bei y=426), tief genug,
                         # dass die Bildmitte belebt wird und nicht der
@@ -352,10 +386,10 @@ FOKUS_MITTE = 318       # vertikale Mitte des Kastens: hoch genug, dass ein
                         # Bande auf den letzten rund 24 px - verdeckt wird
                         # dabei kein Text, nur zwei dunkle Flaechen stossen
                         # aneinander.
-FOKUS_PAD_L = 42        # Texteinzug (hinter dem 8-px-Amber-Balken)
-FOKUS_PAD_R = 36
+FOKUS_PAD_L = _s(42)       # Texteinzug (hinter dem 8-px-Amber-Balken)
+FOKUS_PAD_R = _s(36)
 FOKUS_FONT = 42
-FOKUS_ZEILE = 52
+FOKUS_ZEILE = _s(52)
 
 # Detail-Fragmente unter dem Fokus-Punkt: die Zwischenstufe zwischen dem
 # 34-Zeichen-Bulletpoint und dem gesprochenen Satz. Telegrammstil, gemischte
@@ -376,11 +410,11 @@ FOKUS_ZEILE = 52
 # Randspalte fliegt - die Fragmente sind dann schon ausgeblendet.
 DETAIL_MAX = 3          # mehr Fragmente konkurrieren mit dem Board-Motiv
 DETAIL_FONT = 24
-DETAIL_ZEILE = 33
-DETAIL_ABSTAND = 10     # Luft zwischen zwei Fragmenten
-DETAIL_TRENNER = 3      # Hoehe der kurzen Trennlinie unter dem Fokus-Titel
-DETAIL_OBEN = 16        # Luft Trennlinie -> erstes Fragment
-DETAIL_UNTEN = 30
+DETAIL_ZEILE = _s(33)
+DETAIL_ABSTAND = _s(10)    # Luft zwischen zwei Fragmenten
+DETAIL_TRENNER = _s(3)     # Hoehe der kurzen Trennlinie unter dem Fokus-Titel
+DETAIL_OBEN = _s(16)       # Luft Trennlinie -> erstes Fragment
+DETAIL_UNTEN = _s(30)
 
 # Untere Grenze des Stapels aus Fokus-Kasten und Detail-Kasten. Grosszuegig,
 # weil waehrend der Fokus-Karte kein Lower Third laeuft: Zwischenthema, Zitat
@@ -388,13 +422,13 @@ DETAIL_UNTEN = 30
 # haelt video_report.py von den Fragmenten frei (dort steht der Punkt allein,
 # also zentriert wie bisher). Bleibt die Vignette, gegen die der Kasten mit
 # KARTE_ALPHA ohnehin selbst antritt.
-STAPEL_UNTEN_MAX = 580
-STAPEL_OBEN_MIN = 112   # unter dem Ecken-Bug, falls kein Titel darueber steht
+STAPEL_UNTEN_MAX = _s(580)
+STAPEL_OBEN_MIN = _s(112)  # unter dem Ecken-Bug, falls kein Titel darueber steht
 
 
 def _detail_bloecke(d: ImageDraw.ImageDraw, fragmente: list[str]
                     ) -> tuple[list[list[str]], ImageFont.FreeTypeFont]:
-    f = folien._font_medium(DETAIL_FONT)
+    f = _font_medium(DETAIL_FONT)
     breite = FOKUS_BREITE - FOKUS_PAD_L - FOKUS_PAD_R
     return ([folien._umbrechen(d, s.strip(), f, breite)[:2]
              for s in (fragmente or [])[:DETAIL_MAX] if s.strip()], f)
@@ -421,7 +455,7 @@ def _stapel(d: ImageDraw.ImageDraw, text: str, detail: list[str] | None,
     er Hoehe braucht - aber nie ueber `oben_min`. Passt er dann immer noch
     nicht, fallen Fragmente von hinten weg, statt ueberzulaufen."""
     x = MARGIN if lage == "right" else B - MARGIN - FOKUS_BREITE
-    ff = folien._font(True, FOKUS_FONT)
+    ff = _font(True, FOKUS_FONT)
     zeilen = folien._umbrechen(d, text.upper(), ff,
                                FOKUS_BREITE - FOKUS_PAD_L - FOKUS_PAD_R)[:3]
     bloecke, df = _detail_bloecke(d, detail or [])
@@ -429,7 +463,8 @@ def _stapel(d: ImageDraw.ImageDraw, text: str, detail: list[str] | None,
     def h_fokus(mit_detail: bool) -> int:
         # Mit Detail-Teil endet der Fokus-Teil 22 px unter dem Titel (dort
         # uebernimmt die Trennlinie), allein traegt er 30 px Fussluft.
-        return 32 + len(zeilen) * FOKUS_ZEILE + (22 if mit_detail else 30)
+        return _s(32) + len(zeilen) * FOKUS_ZEILE \
+            + (_s(22) if mit_detail else _s(30))
 
     while bloecke and (oben_min + h_fokus(True) + _detail_hoehe(bloecke)
                        > STAPEL_UNTEN_MAX):
@@ -472,12 +507,12 @@ def fokus_punkt(text: str, lage: str = "left",
     d.rounded_rectangle([x, oben, x + FOKUS_BREITE, oben + h],
                         radius=ECKRADIUS, fill=(0, 0, 0, KARTE_ALPHA),
                         corners=ecken)
-    d.rectangle([x, oben + 26, x + 8,
-                 oben + h - (0 if bloecke else 26)], fill=AKZENT)
+    d.rectangle([x, oben + _s(26), x + _s(8),
+                 oben + h - (0 if bloecke else _s(26))], fill=AKZENT)
     for i, z in enumerate(zeilen):
-        d.text((x + FOKUS_PAD_L, oben + 32 + i * FOKUS_ZEILE), z, font=f,
-               fill=HELL, stroke_width=2, stroke_fill=(0, 0, 0))
-    return bild, x + FOKUS_PAD_L, oben + 32
+        d.text((x + FOKUS_PAD_L, oben + _s(32) + i * FOKUS_ZEILE), z, font=f,
+               fill=HELL, stroke_width=3, stroke_fill=(0, 0, 0))
+    return bild, x + FOKUS_PAD_L, oben + _s(32)
 
 
 def detail_teile(text: str, detail: list[str], lage: str = "left",
@@ -520,9 +555,10 @@ def detail_teile(text: str, detail: list[str], lage: str = "left",
         dk.rounded_rectangle([x, d_oben + 1, x + FOKUS_BREITE, k_unten],
                              radius=ECKRADIUS, fill=(0, 0, 0, KARTE_ALPHA),
                              corners=(False, False, True, True))
-        dk.rectangle([x, d_oben + 1, x + 8, k_unten - 26], fill=AKZENT)
+        dk.rectangle([x, d_oben + 1, x + _s(8), k_unten - _s(26)],
+                     fill=AKZENT)
         dk.rectangle([x + FOKUS_PAD_L, d_oben + 1,
-                      x + FOKUS_PAD_L + 56, d_oben + DETAIL_TRENNER],
+                      x + FOKUS_PAD_L + _s(56), d_oben + DETAIL_TRENNER],
                      fill=LINIE)
         kaesten.append(kasten)
         bild = _leer()
@@ -559,27 +595,29 @@ def zitat_post(text: str, datum: str) -> Image.Image:
     gruener Anonymous-Name, Greentext-Zeilen in Boardgruen."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
-    font = folien._font(False, 27)
-    kw = 780
+    font = _font(False, 27)
+    kw = _s(780)
     zeilen: list[str] = []
     for roh in text.splitlines() or [text]:
-        zeilen += folien._umbrechen(d, roh.strip(), font, kw - 2 * 30) or [""]
+        zeilen += folien._umbrechen(d, roh.strip(), font,
+                                    kw - 2 * _s(30)) or [""]
     zeilen = zeilen[:7]
-    zh = 38
-    kh = 52 + len(zeilen) * zh + 30
-    x, y = (B - kw) // 2, max(120, (H - kh) // 2 - 40)
-    d.rounded_rectangle([x + 8, y + 10, x + kw + 8, y + kh + 10], radius=6,
-                        fill=(0, 0, 0, 130))
-    d.rounded_rectangle([x, y, x + kw, y + kh], radius=6, fill=POST_KARTE,
-                        outline=POST_RAND, width=2)
-    d.text((x + 30, y + 16), "Anonymous", font=folien._font(True, 26),
+    zh = _s(38)
+    kh = _s(52) + len(zeilen) * zh + _s(30)
+    x, y = (B - kw) // 2, max(_s(120), (H - kh) // 2 - _s(40))
+    d.rounded_rectangle(
+        [x + _s(8), y + _s(10), x + kw + _s(8), y + kh + _s(10)],
+        radius=_s(6), fill=(0, 0, 0, 130))
+    d.rounded_rectangle([x, y, x + kw, y + kh], radius=_s(6), fill=POST_KARTE,
+                        outline=POST_RAND, width=3)
+    d.text((x + _s(30), y + _s(16)), "Anonymous", font=_font(True, 26),
            fill=POST_NAME)
-    kopf_w = d.textlength("Anonymous", font=folien._font(True, 26))
-    d.text((x + 30 + kopf_w + 18, y + 20), f"{datum}  ·  /biz/",
-           font=folien._font(False, 22), fill=(52, 52, 92))
+    kopf_w = d.textlength("Anonymous", font=_font(True, 26))
+    d.text((x + _s(30) + kopf_w + _s(18), y + _s(20)), f"{datum}  ·  /biz/",
+           font=_font(False, 22), fill=(52, 52, 92))
     for i, z in enumerate(zeilen):
         farbe = POST_GRUEN if z.startswith(">") else POST_TEXT
-        d.text((x + 30, y + 56 + i * zh), z, font=font, fill=farbe)
+        d.text((x + _s(30), y + _s(56) + i * zh), z, font=font, fill=farbe)
     return bild
 
 
@@ -605,32 +643,34 @@ def zahl_tafel(wert: str, titel: str, sub: str) -> Image.Image:
     statt 128, dafuer eine hoehere Bande (154-574), die dem Moment die
     ganze Bildmitte gibt. Titel in VERSALIEN darunter, Quellenzeile zuletzt."""
     bild = _leer()
-    _bande(bild, 154, 574, alpha=166)
+    _bande(bild, _s(154), _s(574), alpha=166)
     d = ImageDraw.Draw(bild)
     for gr in (200, 160, 128, 96):
-        font = folien._font_mono(gr)
-        if d.textlength(wert, font=font) <= B - 2 * MARGIN - 140:
+        font = _font_mono(gr)
+        if d.textlength(wert, font=font) <= B - 2 * MARGIN - _s(140):
             break
     breite_wert = d.textlength(wert, font=font)
     richtung = _zahl_richtung(wert)
-    icon_groesse = int(gr * 0.48)
-    icon_luecke = 26 if richtung else 0
+    icon_groesse = _s(gr * 0.48)
+    icon_luecke = _s(26) if richtung else 0
     x0 = (B - breite_wert - icon_groesse - icon_luecke) / 2 \
         if richtung else (B - breite_wert) / 2
-    wert_oben = 296 - gr // 2
+    wert_oben = _s(296) - _s(gr) // 2
     if richtung:
         farbe_icon = AKZENT if richtung == "trending-up" else GEDIMMT
         ic = icons.icon(richtung, icon_groesse, farbe_icon)
         bild.alpha_composite(
-            ic, (int(x0), int(wert_oben + (gr - icon_groesse) / 2)))
+            ic, (int(x0), int(wert_oben + (_s(gr) - icon_groesse) / 2)))
         x0 += icon_groesse + icon_luecke
-    d.text((x0, wert_oben), wert, font=font, fill=AKZENT, stroke_width=4,
+    d.text((x0, wert_oben), wert, font=font, fill=AKZENT, stroke_width=6,
            stroke_fill=(0, 0, 0))
-    tf = folien._font(True, 44)
+    tf = _font(True, 44)
     t = titel.upper()
-    d.text(((B - d.textlength(t, font=tf)) / 2, 442), t, font=tf, fill=HELL)
-    sf = folien._font(False, 24)
-    d.text(((B - d.textlength(sub, font=sf)) / 2, 512), sub, font=sf, fill=GRAU)
+    d.text(((B - d.textlength(t, font=tf)) / 2, _s(442)), t, font=tf,
+           fill=HELL)
+    sf = _font(False, 24)
+    d.text(((B - d.textlength(sub, font=sf)) / 2, _s(512)), sub, font=sf,
+           fill=GRAU)
     return bild
 
 
@@ -644,25 +684,25 @@ def zahlen_uebersicht(karten: list[dict]) -> Image.Image:
     hoeren. Deshalb eine Zeilentafel statt vier weiterer Count-up-Momente:
     sie braucht keine eigene Sprechzeit."""
     bild = _leer()
-    _bande(bild, 150, 574, alpha=176)
+    _bande(bild, _s(150), _s(574), alpha=176)
     d = ImageDraw.Draw(bild)
-    wf = folien._font_mono(52)
-    tf = folien._font(True, 26)
-    sf = folien._font(False, 22)
+    wf = _font_mono(52)
+    tf = _font(True, 26)
+    sf = _font(False, 22)
     # Werte-Spalte an der breitesten Zahl ausrichten, damit die Titel eine
     # gemeinsame Kante bekommen - sonst franst die Tafel rechts aus.
     breite = max((d.textlength(str(k.get("wert") or ""), font=wf)
                   for k in karten[:4]), default=0.0)
     for i, k in enumerate(karten[:4]):
-        y = 186 + i * 98
-        d.text((MARGIN + 24, y), str(k.get("wert") or ""), font=wf,
-               fill=AKZENT, stroke_width=3, stroke_fill=(0, 0, 0))
-        x = MARGIN + 24 + breite + 40
-        d.text((x, y + 6), str(k.get("titel") or "").upper(), font=tf,
+        y = _s(186) + i * _s(98)
+        d.text((MARGIN + _s(24), y), str(k.get("wert") or ""), font=wf,
+               fill=AKZENT, stroke_width=4, stroke_fill=(0, 0, 0))
+        x = MARGIN + _s(24) + breite + _s(40)
+        d.text((x, y + _s(6)), str(k.get("titel") or "").upper(), font=tf,
                fill=HELL)
         sub = str(k.get("sub") or "")
         if sub:
-            d.text((x, y + 44), sub, font=sf, fill=GRAU)
+            d.text((x, y + _s(44)), sub, font=sf, fill=GRAU)
     return bild
 
 
@@ -678,24 +718,25 @@ def outro_tafel(frage: str = "") -> Image.Image:
     bild = _leer()
     _bande(bild, 0, H, alpha=219)
     d = ImageDraw.Draw(bild)
-    d.text((MARGIN, 252), BUG_TEXT, font=folien._font(True, 84),
+    d.text((MARGIN, _s(252)), BUG_TEXT, font=_font(True, 84),
            fill=HELL)
-    d.rectangle([MARGIN, 376, MARGIN + 548, 386], fill=AKZENT)
+    d.rectangle([MARGIN, _s(376), MARGIN + _s(548), _s(386)], fill=AKZENT)
     if frage:
         # Die Frage nimmt den Platz der Zeile "New every day" ein: zwei
         # Versprechen untereinander verwaessern beide, und die Frage ist
         # das staerkere - sie sagt konkret, was morgen auf dem Spiel steht.
-        ff = folien._font(True, 38)
+        ff = _font(True, 38)
         for i, z in enumerate(folien._umbrechen(d, frage, ff,
                                                 B - 2 * MARGIN)[:2]):
-            d.text((MARGIN, 420 + i * 46), z, font=ff, fill=AKZENT)
-        d.text((MARGIN, 522), "Answered in tomorrow's report",
-               font=folien._font(False, 28), fill=GRAU)
+            d.text((MARGIN, _s(420) + i * _s(46)), z, font=ff, fill=AKZENT)
+        d.text((MARGIN, _s(522)), "Answered in tomorrow's report",
+               font=_font(False, 28), fill=GRAU)
     else:
-        d.text((MARGIN, 420), "New every day", font=folien._font(False, 34),
+        d.text((MARGIN, _s(420)), "New every day", font=_font(False, 34),
                fill=GRAU)
-        d.text((MARGIN, 478), "Source threads and chapters in the description",
-               font=folien._font(False, 28), fill=design_tokens.NEUTRAL[5])
+        d.text((MARGIN, _s(478)),
+               "Source threads and chapters in the description",
+               font=_font(False, 28), fill=design_tokens.NEUTRAL[5])
     return bild
 
 

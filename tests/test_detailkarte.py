@@ -107,7 +107,8 @@ class StapelGeometrie(unittest.TestCase):
     def test_fragmente_fallen_weg_statt_zu_ueberlaufen(self) -> None:
         """Passt der Stapel nicht mehr zwischen Titel und Unterkante, kuerzt
         er sich von hinten - er waechst nicht in den Titel hinein."""
-        eng = szenen.STAPEL_UNTEN_MAX - 200   # kaum Platz unter dem Titel
+        # kaum Platz unter dem Titel (200 im 720p-Layoutmass, nativ skaliert)
+        eng = szenen.STAPEL_UNTEN_MAX - szenen._s(200)
         dk = szenen.detail_karte(PUNKT, FRAGMENTE, "left", eng)
         if dk is not None:
             self.assertLessEqual(_kasten(dk)[3], szenen.STAPEL_UNTEN_MAX)
