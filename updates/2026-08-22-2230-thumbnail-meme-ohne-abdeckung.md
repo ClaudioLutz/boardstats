@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: claude/video-thumbnail-meme-60c124
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 843d43f
 ---
 
 # Vorschaubild wird Meme: Titel frei über dem Motiv, keine dunkle Abdeckung mehr
