@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: worktree-anker-nachtrag-merge
 typ: bugfix
-commit: <wird beim Commit ergaenzt>
+commit: 9ef57d9
 ---
 
 # Anker-Nachforderung traegt Stichworte nach, statt das Drehbuch neu zu schreiben
