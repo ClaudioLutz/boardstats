@@ -9,9 +9,11 @@ einem oeffentlichen Video.
 from __future__ import annotations
 
 import sys
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -70,6 +72,36 @@ class NurUploadRiegel(unittest.TestCase):
             self.mp4, self.mp3, neu, neu)
         self.assertIsNotNone(h)
         self.assertIn("aelter", h or "")
+
+    def test_merk_stempelt_die_clips_des_bau_laufs(self):
+        """Der Upload-Lauf darf die Clips nicht neu zuordnen: das Bild steht
+        schon. Am 22.08.2026 tat er es doch - 6 gestempelt, 10 im Bild, vier
+        blieben faelschlich frei und haetten am Folgetag wiederkommen
+        koennen."""
+        merk = Path(self.tmp.name) / "zuordnung-2026-08-22.json"
+        merk.write_text(json.dumps({"0": ["a.webm", "b.mp4"], "1": ["c.webm"]}),
+                        encoding="utf-8")
+        katalog = {"clips": {
+            "m1": {"datei": "a.webm", "status": "frei"},
+            "m2": {"datei": "b.mp4", "status": "frei"},
+            "m3": {"datei": "c.webm", "status": "frei"},
+            "m4": {"datei": "ungenutzt.webm", "status": "frei"}}}
+        with mock.patch.object(video_report.klip_katalog,
+                               "katalog_speichern") as sp:
+            aus = video_report._klip_merk_stempeln(merk, katalog,
+                                                   "2026-08-22")
+        self.assertEqual(aus, {})           # keine Pfade noetig, nichts rendert
+        gestempelt = {m for m, e in katalog["clips"].items()
+                      if e.get("zuletzt_verwendet") == "2026-08-22"}
+        self.assertEqual(gestempelt, {"m1", "m2", "m3"})
+        sp.assert_called_once()
+
+    def test_ohne_merkdatei_kein_absturz(self):
+        """Fehlt die Auswahl des Bau-Laufs, laeuft der Upload trotzdem - die
+        Sperre bleibt dann nur offen, was die Logzeile auch sagt."""
+        fehlt = Path(self.tmp.name) / "gibtsnicht.json"
+        self.assertEqual(video_report._klip_merk_stempeln(
+            fehlt, {"clips": {}}, "2026-08-22"), {})
 
     def test_flag_impliziert_nicht_nur_video(self):
         """Wuerde --nur-upload nur_video setzen, kaeme main() vor dem Upload
