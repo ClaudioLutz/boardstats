@@ -114,6 +114,7 @@ import design_tokens
 import folien
 import klip_katalog
 import run_report as rr
+import sounds
 import szenen
 import thumbnail
 import youtube_auth
@@ -2693,6 +2694,10 @@ class Szene:
                                         # der Folgeszene und als Fallback,
                                         # falls der animierte Renderpfad
                                         # scheitert
+    kapitel_knall: bool = False    # Kapitel-Opener (Intent A#80/69): die
+                                   # Vorszene endet mit kurzer Schwarzblende
+                                   # statt Kreuzblende, der Impact aus B5
+                                   # traegt ueber das schwarze Bild
 
 
 @dataclass
@@ -2781,7 +2786,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float, thumb: str = "",
                  sprech_ende: float = 0.0,
-                 nur_video: bool = False) -> list[Szene]:
+                 nur_video: bool = False
+                 ) -> tuple[list[Szene], list[tuple[float, str]]]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, der Themen-Titel oben, die persistente
     Karte mit den geparkten Stichpunkten darunter (beide stehen bis zum
@@ -2790,7 +2796,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     liegen als zeitlich verankerte Overlays darauf - keine Sprechsekunde
     ohne Text im Bild. Die Motiv-Auswahl folgt der v6-Logik: frisches
     eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung
-    (siehe MotivWahl - shorts.py rechnet damit dieselbe Zuordnung)."""
+    (siehe MotivWahl - shorts.py rechnet damit dieselbe Zuordnung).
+
+    Zurueck kommen die Szenenfolge und die Klang-Ereignisse fuer das
+    Sound-Design (Intent B5): (Zeit, Art) fuer Whoosh/Klick der Fluege,
+    den Zahl-Impact am Count-up-Ende und den Kapitel-Knall - erzeugt aus
+    denselben Planwerten wie die Bewegungen, damit Ton und Bild exakt
+    uebereinanderliegen."""
     wahl = MotivWahl(datum)
     werte = wahl.werte
     typen = motiv_typen(datum)
@@ -2800,6 +2812,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     eigenes_bild = wahl.eigenes_bild
 
     ov_nr = 0
+    klang: list[tuple[float, str]] = []
     # [geplant, weggefallen] der Stichwort-Fragmente: seit die Lesezeit-Boeden
     # hoeher liegen (19.08.2026), muss im Log stehen, wie viele Fragmente die
     # Fenster-Pruefung von hinten wegkuerzt - frisst sie das Feature auf,
@@ -2969,7 +2982,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             if j + 1 == len(genutzt) and rest > 0 \
                     and bis - t >= ZAHL_COUNTUP_MIN + ZAHL_UEBERSICHT_MIN:
                 schnitt = bis - ZAHL_UEBERSICHT_MIN
-                _countup_overlays(z, karten[j], t + 0.2, schnitt, ov)
+                _countup_overlays(z, karten[j], t + 0.2, schnitt, ov,
+                                  klang)
                 z.overlays.append(ov(
                     szenen.zahlen_uebersicht(karten), schnitt, bis,
                     einflug="unten",
@@ -2980,7 +2994,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                       f"gesprochen, alle vier im Bild "
                       f"({ZAHL_UEBERSICHT_MIN:.1f}s Uebersicht)")
             else:
-                _countup_overlays(z, karten[j], t + 0.2, bis, ov)
+                _countup_overlays(z, karten[j], t + 0.2, bis, ov, klang)
                 if j + 1 == len(genutzt) and rest > 0:
                     print(f"TL;DR: Fenster zu kurz ({bis - t:.1f}s) - "
                           f"{rest} Zahl(en) nur als Karte, keine Uebersicht")
@@ -3064,6 +3078,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Bild-Kulisse - Clips sind eine Ergaenzung, kein Ersatz.
         akt = klip_zuordnung.get(nr, kapitel_motive[k])
         kapitel_szene = neu(akt, kopf_start)
+        # Kapitelwechsel als Rhythmus (Intent A#80/69): die Vorszene endet
+        # mit kurzer Schwarzblende, der Impact traegt ueber das Schwarz.
+        # Die 2.5-s-Sprechpause vor jeder Kapitel-Ueberschrift liefert die
+        # noetige Stille im Ton gratis mit.
+        kapitel_szene.kapitel_knall = True
+        klang.append((kopf_start, "kapitel"))
         # Der Boden gilt gegen die effektive Lesezeit: Einflug/Aufblende
         # kommen als EINBLEND_VERLUST obendrauf (Leitplanke 3, 22.08.2026).
         opener_bis = min(
@@ -3413,6 +3433,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     ziel[0] - (tx - fx), ziel[1] - (ty - fy),
                     text=punkt_text))
 
+        # Klang zu den Fluegen (Intent B5): Whoosh beim Abheben, Klick beim
+        # Einrasten in der Liste - aus denselben Planwerten wie der Flug.
+        for fk in fokus_plan:
+            if fk.flug_ab is not None:
+                klang.append((fk.flug_ab, "whoosh"))
+                klang.append((fk.flug_ab + FLUG_DAUER, "klick"))
+
         def karte_auflegen(sz: Szene, a: float, b: float) -> None:
             for st in titel_plan + karten_plan:
                 a0, b0 = max(a, st.von), min(b, st.bis)
@@ -3497,7 +3524,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                         von + 0.1, bis, einflug="unten",
                         lese_text=str(px["text"]), lese_boden=ZITAT_MIN))
                 else:
-                    _countup_overlays(sz, px, von + 0.2, bis, ov)
+                    _countup_overlays(sz, px, von + 0.2, bis, ov, klang)
 
     # Nach den Kapiteln gilt wieder das Serien-Amber (Intent A#136):
     # Zahlenblock alter Ordnung, Schluss-Zitat und Outro sind Serienrahmen.
@@ -3602,11 +3629,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                        and (o.start < s.start - 0.01 or o.ende > bis + 0.01))
     if zerschnitten:
         print(f"WARNUNG: {zerschnitten} Fluege ragen aus ihrer Szene")
-    return folge
+    return folge, klang
 
 
 def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
-                      ov) -> None:
+                      ov, klang: list[tuple[float, str]] | None = None
+                      ) -> None:
     """Kennzahl als Gross-Zahl mit echtem Count-up-Zaehlwerk (Intent A#82).
 
     Vorher vier Standbilder in 0,64 s - unter der Wahrnehmungsschwelle.
@@ -3624,6 +3652,9 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
         sz.overlays.append(ov(szenen.zahl_tafel(w, titel, sub),
                               ab + si * takt, ab + (si + 1) * takt, 0.0))
     final_ab = ab + len(stufen) * takt
+    if klang is not None and stufen:
+        # Impact genau auf dem Einrasten des Endwerts (Intent B5).
+        klang.append((final_ab, "zahl"))
     if stufen and bis - final_ab > COUNTUP_FLASH + 0.6:
         sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, flash=True),
                               final_ab, final_ab + COUNTUP_FLASH, 0.0))
@@ -3636,6 +3667,9 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
                                              f"{wert} {titel}".strip()))))
 
 
+SCHWARZ_BLENDE = 0.16     # Schwarzblende vor einem Kapitel-Opener
+                          # (Intent A#80/69); bewusst 0.1-0.25 s, siehe
+                          # Retention-Vorbehalt im Brainstorm-Intent
 KAMERA_RAUSCHEN_PX = 1.0  # Amplitude des Kamera-Rauschens im supersampelten
                           # Raster (Intent A#145); entspricht ~0.5 px im Bild
 UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
@@ -4035,7 +4069,7 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                 suffix: str, bug: Overlay, vig: Overlay,
                 naechstes: Path | None, naechster_zoom_rein: bool,
-                schluss: bool = False) -> Path:
+                schluss: bool = False, knall_folgt: bool = False) -> Path:
     """Eine Szene als eigenen kurzen Clip rendern: Motiv mit langsamem
     zoompan-Drift, darueber Vignette, die zeitgesteuerten Text-Overlays und
     zuoberst der Ecken-Bug. Bewusst je Szene ein kleiner, immer gleich
@@ -4082,7 +4116,8 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                   f"normalisiert ({e}) - Standbild-Fallback")
             ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
             return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
-                               naechstes, naechster_zoom_rein, schluss)
+                               naechstes, naechster_zoom_rein, schluss,
+                               knall_folgt)
         # -stream_loop -1 laesst das Motiv seine eigene, meist kuerzere
         # Laufzeit fuellend wiederholen; -t deckelt sie auf die von der TTS
         # vorgegebene Szenendauer (Analogie zu den geloopten Overlay-PNGs
@@ -4163,6 +4198,15 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
         teile.append(f"{kette}[o{j}]overlay=x={xa}:y={ya}"
                      f":enable='between(t,{o.start:.3f},{o.ende:.3f})'[v{j}]")
         kette = f"[v{j}]"
+    # Kapitelwechsel (Intent A#80/69): endet die naechste Szene-Grenze an
+    # einem Kapitel-Opener, geht dieses Clip-Ende kurz nach Schwarz - wenige
+    # Frames, nicht Sekunden (Retention-Vorbehalt: zu langes Schwarz liest
+    # sich als Videoende). Der Impact aus B5 liegt auf dem Opener-Start und
+    # signalisiert Absicht statt Abbruch.
+    if knall_folgt and dauer > SCHWARZ_BLENDE + 0.2:
+        teile.append(f"{kette}fade=t=out:st={dauer - SCHWARZ_BLENDE:.3f}"
+                     f":d={SCHWARZ_BLENDE}[sw]")
+        kette = "[sw]"
     # Letzte Szene: das ganze Bild geht nach Schwarz, waehrend die
     # Abschluss-Tafel darueber ausblendet. Ein Bericht, der am letzten Wort
     # hart abreisst, wirkt wie ein Verbindungsabbruch (Nutzerwunsch
@@ -4187,7 +4231,8 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
               f"Retry mit Standbild")
         ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
         return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
-                           naechstes, naechster_zoom_rein, schluss)
+                           naechstes, naechster_zoom_rein, schluss,
+                           knall_folgt)
     return ziel
 
 
@@ -4339,8 +4384,38 @@ def _intro_anhebung(kapitel1: float) -> str:
             f":eval=frame")
 
 
-def _ton_kette(start: int, ende: float,
-               kapitel1: float = 0.0) -> tuple[list[str], list[str], str]:
+# Aussetzer im Musikbett vor der groessten Zahl (Intent A#137): Spannung
+# ohne neues Material. Das Bett faehrt kurz vor dem ersten TL;DR-Count-up
+# fast auf null, haelt die Stille ueber das Zaehlwerk und kommt weich
+# zurueck - akustisch dieselbe Betonung wie der Impact im Bild.
+ZAHL_SENKE_VORLAUF = 0.5   # so lange vor dem Count-up beginnt die Absenkung
+ZAHL_SENKE_RAMPE_AB = 0.3
+ZAHL_SENKE_HALTEN = 1.8    # deckt Zaehlwerk (1.3 s) plus Flash
+ZAHL_SENKE_RAMPE_AUF = 0.9
+ZAHL_SENKE_REST = 0.05     # nicht ganz null - ein totes Bett klingt kaputt
+
+
+def _zahl_senke(moment: float) -> str:
+    """volume-Ausdruck fuer den Bett-Aussetzer vor der groessten Zahl.
+
+    moment ist der Startzeitpunkt des ersten TL;DR-Count-ups; Leerstring,
+    wenn keiner bekannt ist - dann bleibt das Bett unangetastet."""
+    if moment <= ZAHL_SENKE_VORLAUF:
+        return ""
+    a = moment - ZAHL_SENKE_VORLAUF
+    b = moment + ZAHL_SENKE_HALTEN
+    r1, r2 = ZAHL_SENKE_RAMPE_AB, ZAHL_SENKE_RAMPE_AUF
+    rest = ZAHL_SENKE_REST
+    return (f"volume=volume='if(lt(t,{a:.2f}),1,"
+            f"if(lt(t,{a + r1:.2f}),1-{1 - rest:.2f}*(t-{a:.2f})/{r1},"
+            f"if(lt(t,{b:.2f}),{rest},"
+            f"if(lt(t,{b + r2:.2f}),{rest}+{1 - rest:.2f}*(t-{b:.2f})/{r2},"
+            f"1))))':eval=frame")
+
+
+def _ton_kette(start: int, ende: float, kapitel1: float = 0.0,
+               zahl_moment: float = 0.0, effekte: Path | None = None
+               ) -> tuple[list[str], list[str], str]:
     """Eingaben, Filterteile und Ausgangs-Label der Tonspur (ohne Loudness).
 
     start ist der ffmpeg-Input-Index der Sprachdatei; der Messlauf zaehlt ab
@@ -4358,11 +4433,30 @@ def _ton_kette(start: int, ende: float,
     # -shortest kappt das Video an der kuerzesten Spur, und der stumme
     # Ausklang mit dem Schlussbild faellt sonst restlos weg (gemessen
     # 19.08.2026: Video 718.4s, letzter Cue 718.5s - der Puffer kam nie an).
+    # Effektspur (Intent B5): eigener Eingang HINTER dem Bett, bewusst ohne
+    # Ducking - die Geraeusche dauern Zehntel und duerfen auf der Sprache
+    # liegen. Pegel steuert sounds.PEGEL, den Rest richtet die zweipassige
+    # loudnorm auf der fertigen Mischung.
+    fx: list[str] = []
+    fx_teile: list[str] = []
+    if effekte is not None:
+        fx = ["-i", str(effekte)]
+        fx_idx = start + (2 if BETT.exists() else 1)
+        fx_teile = [f"[{fx_idx}:a]apad=whole_dur={ende:.3f}[fx]"]
     if not BETT.exists():
-        return [], [f"[{start}:a]apad=whole_dur={ende:.3f}[mix]"], "[mix]"
+        if effekte is None:
+            return [], [f"[{start}:a]apad=whole_dur={ende:.3f}[mix]"], "[mix]"
+        return (fx,
+                [f"[{start}:a]apad=whole_dur={ende:.3f}[sp]", *fx_teile,
+                 "[sp][fx]amix=inputs=2:duration=first:normalize=0[mix]"],
+                "[mix]")
     ab = max(ende - BETT_AUSBLENDE, 0.1)
-    anhebung = _intro_anhebung(kapitel1)
-    return (["-stream_loop", "-1", "-i", str(BETT)],
+    # Intro-Anhebung und Zahl-Senke (#137) formen das Bett NACH dem Ducking,
+    # in dieser Reihenfolge verkettet.
+    formen = ",".join(f for f in (_intro_anhebung(kapitel1),
+                                  _zahl_senke(zahl_moment)) if f)
+    anhebung = formen
+    return (["-stream_loop", "-1", "-i", str(BETT), *fx],
             # Die gepolsterte Sprache wird zweimal gebraucht - als Trigger des
             # Duckings und als Mischanteil - deshalb asplit. Gepolstert wird
             # vor dem Split, weil sidechaincompress keine framesync-Optionen
@@ -4385,17 +4479,21 @@ def _ton_kette(start: int, ende: float,
              f"ratio={DUCK_RATIO}:attack={DUCK_ATTACK}:release={DUCK_RELEASE}"
              f"[bettd]",
              f"[bettd]{anhebung}[bett]" if anhebung else "[bettd]anull[bett]",
+             *fx_teile,
              # normalize=0 ist Pflicht: mit dem Standard teilt amix durch die
              # Zahl der Eingaenge und die Sprache verliert 6 dB.
              # duration=first haelt die Laenge weiter an der Sprache, damit
              # ein zu kurzes Bett nicht ueber -shortest das Video kappt - die
              # Sprache reicht durch apad jetzt selbst bis `ende`.
-             "[sp][bett]amix=inputs=2:duration=first:normalize=0[mix]"],
+             ("[sp][bett][fx]amix=inputs=3:duration=first:normalize=0[mix]"
+              if effekte is not None else
+              "[sp][bett]amix=inputs=2:duration=first:normalize=0[mix]")],
             "[mix]")
 
 
 def _loudnorm_gemessen(audio_mp3: Path, ende: float,
-                       kapitel1: float = 0.0) -> str:
+                       kapitel1: float = 0.0, zahl_moment: float = 0.0,
+                       effekte: Path | None = None) -> str:
     """loudnorm-Filter mit den Messwerten eines Analysedurchlaufs.
 
     Zweipass, weil einpassiges loudnorm vorwaertsblickend regelt und hoerbar
@@ -4406,7 +4504,8 @@ def _loudnorm_gemessen(audio_mp3: Path, ende: float,
     Nachbarvideo. Scheitert die Messung, bleibt es bei einpassig: lieber
     ungenau normalisiert als kein Video."""
     ziel = f"loudnorm=I={ZIEL_LUFS}:TP=-1.5:LRA=11"
-    bett_ein, teile, quelle = _ton_kette(0, ende, kapitel1)
+    bett_ein, teile, quelle = _ton_kette(0, ende, kapitel1, zahl_moment,
+                                         effekte)
     kette = ";".join([*teile, f"{quelle}{ziel}:print_format=json[m]"])
     try:
         aus = subprocess.run(
@@ -4426,8 +4525,9 @@ def _loudnorm_gemessen(audio_mp3: Path, ende: float,
         return ziel
 
 
-def ton_argumente(audio_mp3: Path, ende: float,
-                  kapitel1: float = 0.0) -> tuple[list[str], list[str]]:
+def ton_argumente(audio_mp3: Path, ende: float, kapitel1: float = 0.0,
+                  zahl_moment: float = 0.0, effekte: Path | None = None
+                  ) -> tuple[list[str], list[str]]:
     """ffmpeg-Argumente fuer die Tonspur: Bett dazu, Endmix auf ZIEL_LUFS.
 
     Zurueck kommen die Eingabe-Argumente (hinter dem Video-Input) und die
@@ -4435,11 +4535,13 @@ def ton_argumente(audio_mp3: Path, ende: float,
     Fallback-Tag nicht anders klingt als die uebrigen. An der Sprachdatei
     selbst wird nichts geaendert: an ihren Wort-Zeitstempeln haengen
     Overlays, Kapitelmarken und Untertitel."""
-    bett_ein, teile, quelle = _ton_kette(1, ende, kapitel1)
+    bett_ein, teile, quelle = _ton_kette(1, ende, kapitel1, zahl_moment,
+                                         effekte)
     # level=false am Limiter ist wichtig: mit dem Standard normalisiert er den
     # Ausgang auf seinen limit-Wert und verschiebt damit die Lautheit, die
     # loudnorm gerade gesetzt hat. So greift er nur noch als Notbremse.
-    norm = _loudnorm_gemessen(audio_mp3, ende, kapitel1)
+    norm = _loudnorm_gemessen(audio_mp3, ende, kapitel1, zahl_moment,
+                              effekte)
     teile.append(f"{quelle}{norm},alimiter=limit=0.95:level=false[ton]")
     # Stereo und 48 kHz fest: die Sprachdatei ist Mono mit 24 kHz und wuerde
     # das Ausgabeformat sonst vorgeben (gemessen: Mono bei 96 kHz). Das Bett
@@ -4452,7 +4554,8 @@ def ton_argumente(audio_mp3: Path, ende: float,
 
 def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
                  arbeit: Path, suffix: str, datum: str, ende: float,
-                 kapitel1: float = 0.0) -> None:
+                 kapitel1: float = 0.0, zahl_moment: float = 0.0,
+                 effekte: Path | None = None) -> None:
     """Alle Szenen rendern, auf dem 25-fps-Frame-Raster nahtlos aneinander
     schneiden (kein Drift zur Tonspur) und mit dem Audio muxen."""
     if not folge:
@@ -4480,17 +4583,26 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
             return None
         return naechste.motiv_poster if naechste.motiv_animiert else naechste.motiv
 
+    def knall_folgt(i: int) -> bool:
+        return i + 1 < len(folge) and folge[i + 1].kapitel_knall
+
     clips = [_szene_clip(s, grenzen[i], grenzen[i + 1], i, arbeit, suffix,
                          bug, vig,
-                         crossfade_motiv(s, folge[i + 1]) if i + 1 < len(folge) else None,
+                         # Vor einem Kapitel-Knall gibt es keine Kreuzblende:
+                         # hart schwarz, dann hart das neue Bild (A#80/69).
+                         (crossfade_motiv(s, folge[i + 1])
+                          if i + 1 < len(folge) and not knall_folgt(i)
+                          else None),
                          folge[i + 1].zoom_rein if i + 1 < len(folge) else True,
-                         schluss=i + 1 == len(folge))
+                         schluss=i + 1 == len(folge),
+                         knall_folgt=knall_folgt(i))
              for i, s in enumerate(folge)]
     liste = arbeit / f"szenen{suffix}.txt"
     liste.write_text(
         "\n".join("file '" + str(c).replace("\\", "/") + "'" for c in clips)
         + "\n", encoding="utf-8")
-    ton_ein, ton_aus = ton_argumente(audio_mp3, ende, kapitel1)
+    ton_ein, ton_aus = ton_argumente(audio_mp3, ende, kapitel1,
+                                     zahl_moment, effekte)
     # Nativ gerenderte Clips (RENDER == YOUTUBE) brauchen keine Skalierung
     # mehr; der fruehere 1.5x-Upscale war genau der Weichzeichner, den
     # Intent A#4 abschafft.
@@ -4510,7 +4622,7 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
 
 def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
                    konkat: Path | None = None, ende: float = 0.0,
-                   kapitel1: float = 0.0) -> None:
+                   kapitel1: float = 0.0, zahl_moment: float = 0.0) -> None:
     """ass_datei=None ist der Praesentationsmodus: der Text steckt schon in
     den Standbildern der ffconcat-Liste, eingebrannt wird nichts mehr."""
     filter_teile: list[str] = []
@@ -4531,7 +4643,7 @@ def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
     # anders, an dem der Fallback greift. -vf trifft den Videostream,
     # -filter_complex nur die Tonspur - sie liegen nicht uebereinander.
     ton_ein, ton_aus = ton_argumente(audio_mp3, ende or _mp3_dauer(audio_mp3),
-                                     kapitel1)
+                                     kapitel1, zahl_moment)
     subprocess.run(
         ["ffmpeg", "-y", *eingabe, *ton_ein,
          "-vf", vf,
@@ -5050,7 +5162,7 @@ def main() -> None:
         # Szenen-Layout (v7): Drehbuch-folien.json mit Stichworten,
         # Zwischenthemen, Zitaten und Kennzahlen.
         try:
-            folge = szenen_bauen(bloecke_ton, block_worte, abschnitte,
+            folge, klang = szenen_bauen(bloecke_ton, block_worte, abschnitte,
                                  zuordnung, fdaten, hook, datum, arbeit, ende,
                                  thumb_text_laden(tag_dir, args.sprache,
                                                   titel),
@@ -5066,9 +5178,24 @@ def main() -> None:
                 folge = [s for s in folge if s.start < ende_bauen] or folge[:1]
                 print(f"Vorschau: nur die ersten {ende_bauen:.0f} s "
                       f"({len(folge)} von {voll} Szenen)")
+            # Effektspur (Intent B5) und Bett-Aussetzer vor der groessten
+            # Zahl (#137): der Moment ist der Count-up-Start der ersten
+            # gesprochenen TL;DR-Zahl.
+            zahl_moment = next(
+                (w[0].start + 0.2 for b, w in zip(bloecke_ton, block_worte)
+                 if b.rolle == "zahl" and w), 0.0)
+            effekte: Path | None = None
+            try:
+                effekte = sounds.effekt_spur(
+                    klang, ende_bauen, arbeit / f"sfx{cfg['suffix']}.wav")
+                if effekte is not None:
+                    print(f"Sound-Design: {len(klang)} Klang-Ereignisse "
+                          f"({effekte.name})")
+            except Exception as e:  # noqa: BLE001 - Effekte sind Beigabe
+                print(f"Effektspur nicht gebaut ({e}) - Ton ohne Effekte")
             print("baue Szenen-Video ...")
             szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
-                         datum, ende_bauen, kapitel1)
+                         datum, ende_bauen, kapitel1, zahl_moment, effekte)
             fertig = True
         except Exception as e:
             # Kein Layout-Problem darf den Upload verhindern.
