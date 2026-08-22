@@ -2819,7 +2819,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float, thumb: str = "",
                  sprech_ende: float = 0.0,
-                 nur_video: bool = False, ticker: list[str] | None = None
+                 nur_video: bool = False, ticker: list[str] | None = None,
+                 nur_upload: bool = False
                  ) -> tuple[list[Szene], list[tuple[float, str]]]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, der Themen-Titel oben, die persistente
@@ -2942,7 +2943,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     # _klip_zuordnung) - eine Ergaenzung zur Bild-Kulisse, kein Ersatz: die
     # meisten Abschnitte bleiben ohne Clip. Das Posterframe entsteht nur fuer
     # tatsaechlich zugeteilte Clips, nicht fuer den ganzen Katalog.
-    klip_zuordnung = _klip_zuordnung(datum, abschnitte, titel_map, nur_video)
+    klip_zuordnung = _klip_zuordnung(datum, abschnitte, titel_map, nur_video,
+                                     nur_upload)
     klip_poster: dict[Path, Path] = {}
     for pfade in klip_zuordnung.values():
         for pfad in pfade:
@@ -4266,8 +4268,8 @@ KLIP_JE_ABSCHNITT = 3    # so viele VERSCHIEDENE Clips darf ein Abschnitt
 
 
 def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
-                    titel_map: dict[str, str],
-                    nur_video: bool = False) -> dict[int, list[Path]]:
+                    titel_map: dict[str, str], nur_video: bool = False,
+                    nur_upload: bool = False) -> dict[int, list[Path]]:
     """Ordnet freigegebene Katalog-Clips (arbeit/clips/katalog.json)
     inhaltlich Abschnitten zu - ein claude_ruf()-Aufruf, analog den
     Sichtpruefungen, statt einer Rang-Sortierung wie bei der Bildkulisse
@@ -4288,6 +4290,15 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
     datum zaehlt weiterhin als frei - sonst sperrt sich ein erneuter Testlauf
     desselben Tages (z.B. nach einem Bugfix-Rebuild) selbst alle Clips."""
     katalog = klip_katalog.katalog_laden()
+    merk = klip_katalog.KLIP_DIR / f"zuordnung-{datum}.json"
+    if nur_upload:
+        # Kein zweiter Modellaufruf: das Bild steht schon, seine Clips sind
+        # entschieden. Wuerde hier neu zugeordnet, kaeme eine ANDERE Auswahl
+        # heraus (das Modell ist nicht deterministisch) und die
+        # Wiederverwendungssperre truege die Clips des Upload-Laufs statt
+        # der im Video sichtbaren - am 22.08.2026 real passiert: 6 gestempelt,
+        # 10 im Bild, vier davon blieben faelschlich frei.
+        return _klip_merk_stempeln(merk, katalog, datum)
     grenze = (date.fromisoformat(datum)
              - timedelta(days=rr.VERWENDET_TAGE)).isoformat()
 
@@ -4374,6 +4385,11 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
             vergeben.add(intro_md5)
             katalog["clips"][intro_md5]["zuletzt_verwendet"] = datum
     if vergeben:
+        # Die Auswahl merken - unabhaengig davon, ob gestempelt wird. Ein
+        # spaeterer --nur-upload-Lauf desselben Tages laedt genau das Bild
+        # hoch, das mit DIESER Auswahl gerendert wurde, und muss sie
+        # uebernehmen statt neu zu wuerfeln (siehe _klip_merk_stempeln).
+        _klip_merk_schreiben(merk, aus)
         if nur_video:
             print("Testlauf (--nur-video) - Clip-Katalog nicht gestempelt "
                   "(zuletzt_verwendet in arbeit/clips/katalog.json bleibt "
@@ -4381,6 +4397,49 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
         else:
             klip_katalog.katalog_speichern(katalog)
     return aus
+
+
+def _klip_merk_schreiben(merk: Path, aus: dict[int, list[Path]]) -> None:
+    """Die getroffene Clip-Auswahl neben dem Katalog ablegen (Dateinamen je
+    Abschnitt). Ein Fehlschlag ist folgenlos - dann faellt ein spaeterer
+    --nur-upload-Lauf nur auf "keine Clips gestempelt" zurueck."""
+    try:
+        merk.parent.mkdir(parents=True, exist_ok=True)
+        merk.write_text(json.dumps(
+            {str(nr): [p.name for p in pfade] for nr, pfade in aus.items()},
+            indent=2, sort_keys=True), encoding="utf-8")
+    except OSError as e:
+        print(f"Clip-Auswahl nicht gemerkt ({e})")
+
+
+def _klip_merk_stempeln(merk: Path, katalog: dict,
+                        datum: str) -> dict[int, list[Path]]:
+    """Die gemerkte Auswahl des Bau-Laufs im Katalog als verwendet stempeln.
+
+    Gibt bewusst ein leeres dict zurueck: bei --nur-upload wird nicht
+    gerendert, die Pfade braucht niemand mehr. Gebraucht wird allein der
+    Stempel, damit die Wiederverwendungssperre die Clips kennt, die im
+    hochgeladenen Bild tatsaechlich laufen."""
+    try:
+        gemerkt = json.loads(merk.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        print(f"--nur-upload: keine gemerkte Clip-Auswahl ({merk.name}) - "
+              f"die Wiederverwendungssperre bleibt fuer diese Clips offen")
+        return {}
+    namen = {n for liste in gemerkt.values() for n in liste}
+    nach = {e.get("datei"): md5 for md5, e in katalog.get("clips", {}).items()}
+    gestempelt = 0
+    for name in namen:
+        md5 = nach.get(name)
+        if md5 and katalog["clips"][md5].get("zuletzt_verwendet") != datum:
+            katalog["clips"][md5]["zuletzt_verwendet"] = datum
+            gestempelt += 1
+    if gestempelt:
+        klip_katalog.katalog_speichern(katalog)
+    print(f"--nur-upload: Clip-Auswahl des Bau-Laufs uebernommen "
+          f"({len(namen)} Clips, {gestempelt} neu gestempelt), "
+          f"keine neue Zuordnung")
+    return {}
 
 
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
@@ -5538,7 +5597,8 @@ def main() -> None:
                                  thumb_text_laden(tag_dir, args.sprache,
                                                   titel),
                                  sprech_ende=sprech_ende,
-                                 nur_video=args.nur_video, ticker=ticker)
+                                 nur_video=args.nur_video, ticker=ticker,
+                                 nur_upload=args.nur_upload)
             # Sicherheitsnetz Leitplanke 3: effektive Lesezeit jedes
             # Textelements gegen seinen Boden nachrechnen (warnt nur).
             lesezeit_verifizieren(folge, ende)
