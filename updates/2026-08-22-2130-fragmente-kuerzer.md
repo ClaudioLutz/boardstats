@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: worktree-fragment-fenster-messung
 typ: bugfix
-commit: <wird beim Commit ergaenzt>
+commit: 05aa902
 ---
 
 # Stichwort-Fragmente werden kuerzer gefordert, damit die zweite Zeile ins Fenster passt
