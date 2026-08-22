@@ -2674,6 +2674,9 @@ class Overlay:
     flug_ab: float | None = None   # ab dieser Zeit fliegt das Overlay nach
     flug_x: int = 0                # (flug_x, flug_y) und verblasst dabei -
     flug_y: int = 0                # so parkt ein Fokus-Punkt in der Karte
+    einflug_weg: int = 0           # eigener Einflug-Weg in Pixeln;
+                                   # 0 = Standard EINFLUG_WEG. Kleine
+                                   # Elemente (Detail-Zeilen) fahren kurz.
     lese_text: str = ""            # der Text, der gelesen werden soll -
     lese_boden: float = 0.0        # zusammen mit seinem Lesezeit-Boden die
                                    # Grundlage der Lauf-Verifikation
@@ -3462,6 +3465,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     sz.overlays.append(Overlay(
                         st.png, a0, b0, st.blende if a0 == st.von else 0.0,
                         st.x, st.y,
+                        # Gestaffelter Aufbau mit Bewegung (B2): jede
+                        # Detail-Zeile faehrt ein kurzes Stueck ein statt
+                        # nur aufzublenden - aber nur Zeilen (lese_boden
+                        # gesetzt), nie die Kastenstufen darunter.
+                        einflug=("unten" if st.lese_boden > 0
+                                 and a0 == st.von else ""),
+                        einflug_weg=szenen._s(16),
                         weiter=st.haelt or b0 < st.bis - 0.02,
                         lese_text=st.lese_text, lese_boden=st.lese_boden))
             for fk in fokus_plan:
@@ -3667,6 +3677,11 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
                                              f"{wert} {titel}".strip()))))
 
 
+# Ease-Konstanten des Feel-Pakets (B2): Standard-Back-Easing-Werte.
+EASE_C1 = 1.70158           # Overshoot-Staerke ease-out-back (Einflug)
+EASE_C3 = EASE_C1 + 1.0
+EASE_C2 = EASE_C1 * 1.525   # ease-in-out-back (Flug): Anticipation+Overshoot
+
 SCHWARZ_BLENDE = 0.16     # Schwarzblende vor einem Kapitel-Opener
                           # (Intent A#80/69); bewusst 0.1-0.25 s, siehe
                           # Retention-Vorbehalt im Brainstorm-Intent
@@ -3842,19 +3857,23 @@ def _lage(o: Overlay) -> tuple[str, str]:
     duerfen deshalb einfach summiert werden.
 
     Einflug: die Karte startet um EINFLUG_WEG Pixel versetzt und rueckt mit
-    cubic ease-out an ihren Platz - schnell los, sanft ankommen. Bewusst nur
-    ein kurzer Versatz und nicht ein Anfahren von der Bildkante, sonst waere
-    die Karte in den ersten Zehnteln teilweise ausserhalb des Bildes und die
-    Regel "keine Sprechsekunde ohne Text" nur noch auf dem Papier erfuellt.
-    Nach Ablauf der Einflugzeit haelt der if-Zweig die Karte bitgenau auf
-    ihrem Platz, damit der Anschluss an den naechsten Kartenstand (harter
-    Schnitt) nicht zittert.
+    ease-out-back an ihren Platz - schnell los, kurz ueber das Ziel hinaus
+    (~10 % Overshoot) und zurueck (Feel-Paket B2: der Unterschied zwischen
+    PowerPoint-Bewegung und After Effects). Bewusst nur ein kurzer Versatz
+    und nicht ein Anfahren von der Bildkante, sonst waere die Karte in den
+    ersten Zehnteln teilweise ausserhalb des Bildes und die Regel "keine
+    Sprechsekunde ohne Text" nur noch auf dem Papier erfuellt. Nach Ablauf
+    der Einflugzeit haelt der if-Zweig die Karte bitgenau auf ihrem Platz,
+    damit der Anschluss an den naechsten Kartenstand (harter Schnitt) nicht
+    zittert. o.einflug_weg erlaubt kleinen Elementen (Detail-Zeilen) einen
+    kuerzeren Weg als den Standard.
 
     Flug: der Fokus-Punkt wandert in FLUG_DAUER an seinen Platz in der
-    Themen-Karte, mit smoothstep - anfahren und abbremsen, damit das Auge
-    mitkommt. clip() haelt den Weg vor dem Start und nach der Ankunft fest;
-    ein negatives flug_ab (Flug begann in der Vorszene) rechnet dadurch
-    korrekt weiter.
+    Themen-Karte, mit ease-in-out-back statt smoothstep (B2): ein kurzes
+    Zuruecknehmen gegen die Flugrichtung (Anticipation), dann die Fahrt,
+    am Ziel ein leichtes Ueberschiessen. clip() haelt den Weg vor dem
+    Start und nach der Ankunft fest; ein negatives flug_ab (Flug begann in
+    der Vorszene) rechnet dadurch korrekt weiter.
 
     Standzeiten unter der doppelten Einflugdauer bleiben statisch: was kaum
     steht, soll nicht auch noch fahren. Bei Enge weicht der Einflug, nicht
@@ -3863,8 +3882,12 @@ def _lage(o: Overlay) -> tuple[str, str]:
     dy: list[str] = []
     steht = o.ende - o.start - (FLUG_DAUER if o.flug_ab is not None else 0.0)
     if o.einflug and steht >= 2 * EINFLUG_DAUER:
-        weg = (f"if(gt(t,{o.start + EINFLUG_DAUER:.3f}),0,{EINFLUG_WEG}"
-               f"*pow(1-(t-{o.start:.3f})/{EINFLUG_DAUER},3))")
+        w = o.einflug_weg or EINFLUG_WEG
+        # ease-out-back: offset = -W*q^2*(c3*q+c1) mit q = p-1; bei p=0
+        # steht die Karte um W versetzt, um p~0.6 schiesst sie ~10 % ueber.
+        q = f"((t-{o.start:.3f})/{EINFLUG_DAUER}-1)"
+        weg = (f"if(gt(t,{o.start + EINFLUG_DAUER:.3f}),0,"
+               f"-{w}*pow({q},2)*({EASE_C3:.5f}*{q}+{EASE_C1:.5f}))")
         if o.einflug == "links":
             dx.append(f"-({weg})")
         elif o.einflug == "rechts":
@@ -3875,7 +3898,12 @@ def _lage(o: Overlay) -> tuple[str, str]:
             dy.append(f"+({weg})")
     if o.flug_ab is not None:
         p = f"clip((t-{o.flug_ab:.3f})/{FLUG_DAUER},0,1)"
-        s = f"(({p})*({p})*(3-2*({p})))"
+        # ease-in-out-back (B2): Anticipation am Start, Overshoot am Ziel.
+        c2 = EASE_C2
+        s = (f"if(lt({p},0.5),"
+             f"pow(2*{p},2)*({c2 + 1:.5f}*2*{p}-{c2:.5f})/2,"
+             f"(pow(2*{p}-2,2)*({c2 + 1:.5f}*(2*{p}-2)+{c2:.5f})+2)/2)")
+        s = f"({s})"
         dx.append(f"+({o.flug_x - o.x})*{s}")
         dy.append(f"+({o.flug_y - o.y})*{s}")
     xa = f"'{o.x}{''.join(dx)}'" if dx else str(o.x)
