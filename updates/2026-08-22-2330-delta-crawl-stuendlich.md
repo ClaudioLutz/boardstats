@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: claude/delta-crawl-stuendlich (Worktree)
 typ: infra
-commit: <Hash, sobald bekannt>
+commit: 3713ad8
 ---
 
 # Delta-Crawl: stuendliche Snapshots zum Preis eines Viertel-Vollcrawls
