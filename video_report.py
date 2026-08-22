@@ -2944,18 +2944,22 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     # tatsaechlich zugeteilte Clips, nicht fuer den ganzen Katalog.
     klip_zuordnung = _klip_zuordnung(datum, abschnitte, titel_map, nur_video)
     klip_poster: dict[Path, Path] = {}
-    for pfad in klip_zuordnung.values():
-        try:
-            klip_poster[pfad] = _klip_poster(pfad, arbeit)
-        except Exception as e:
-            print(f"WARNUNG: Clip-Poster fuer {pfad.name} fehlgeschlagen "
-                 f"({e}) - Clip wird nicht verwendet")
-    klip_zuordnung = {nr: p for nr, p in klip_zuordnung.items()
-                      if p in klip_poster}
+    for pfade in klip_zuordnung.values():
+        for pfad in pfade:
+            try:
+                klip_poster[pfad] = _klip_poster(pfad, arbeit)
+            except Exception as e:
+                print(f"WARNUNG: Clip-Poster fuer {pfad.name} fehlgeschlagen "
+                     f"({e}) - Clip wird nicht verwendet")
+    klip_zuordnung = {nr: [p for p in pfade if p in klip_poster]
+                      for nr, pfade in klip_zuordnung.items()}
+    klip_zuordnung = {nr: pfade for nr, pfade in klip_zuordnung.items()
+                      if pfade}
     if klip_zuordnung:
         print("Clip-Zuordnung: " + ", ".join(
             ("Intro" if nr == INTRO_KLIP_KEY else f"Kapitel {nr}")
-            + f" -> {p.name}" for nr, p in klip_zuordnung.items()))
+            + " -> " + ", ".join(p.name for p in pfade)
+            for nr, pfade in klip_zuordnung.items()))
 
     # Intro. Kaltstart: in Sekunde 0 steht gross das Schlagwort des Tages im
     # Bild - dasselbe, das das Vorschaubild traegt. Damit loest das Video den
@@ -2975,8 +2979,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     intro_bis = (start_von(kopf_idx) if kopf_idx is not None
                  else start_von(zk_idx) if vorne and zk_idx is not None
                  else erster_kopf)
-    s = neu(klip_zuordnung.get(INTRO_KLIP_KEY) or tages_motiv or pool_bild(),
-           0.0)
+    intro_klips = klip_zuordnung.get(INTRO_KLIP_KEY) or []
+    s = neu((intro_klips[0] if intro_klips else None)
+            or tages_motiv or pool_bild(), 0.0)
     hook_ab = 0.4
     if thumb and intro_bis > KALTSTART_MIN + 1.0:
         # Das Schlagwort soll KALTSTART lange stehen (2.0s waren ein
@@ -3131,12 +3136,26 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             quelle = quelle[:59].rstrip() + "…"
 
         eigen_i = 0
+        # Die weiteren Clips dieses Kapitels (der erste traegt die
+        # Opener-Szene, siehe unten). Sie wandern abwechselnd in die
+        # Story-Szenen, damit Bewegtbild ueber das Kapitel verteilt statt
+        # nur an seinem Anfang steht.
+        rest_klips = list(klip_zuordnung.get(nr, []))[1:]
+        seit_klip = 0
 
         def naechstes_motiv(aktuell: Path | None) -> Path | None:
             """Frisches eigenes Thread-Bild vor frischem Pool-Bild vor
             Rotation durch die eigenen (in ihr stecken auch die
-            zurueckgestellten Textwaende)."""
-            nonlocal eigen_i
+            zurueckgestellten Textwaende).
+
+            Vorrang hat ein noch ungenutzter Clip dieses Kapitels - aber nie
+            zwei hintereinander: Bewegtbild wirkt als Abwechslung, nicht als
+            Dauerzustand, und die Bild-Kulisse bleibt die Grundlage."""
+            nonlocal eigen_i, seit_klip
+            if rest_klips and seit_klip >= 1:
+                seit_klip = 0
+                return rest_klips.pop(0)
+            seit_klip += 1
             p = eigenes_bild(eigene) or pool_bild(nur_frisch=True)
             if p is not None:
                 return p
@@ -3163,10 +3182,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
         # Opener: Kapiteltitel als Lower Third, solange die Ueberschrift
         # gesprochen wird; die Szene laeuft danach als erste Story weiter.
-        # Ein zugeteilter Clip (siehe _klip_zuordnung) ersetzt hier bewusst
-        # nur das Opener-Motiv dieses einen Abschnitts, nicht dessen ganze
-        # Bild-Kulisse - Clips sind eine Ergaenzung, kein Ersatz.
-        akt = klip_zuordnung.get(nr, kapitel_motive[k])
+        # Der erste zugeteilte Clip (siehe _klip_zuordnung) traegt die
+        # Opener-Szene, weitere gehen ueber naechstes_motiv() in die
+        # Story-Szenen. Clips bleiben eine Ergaenzung, kein Ersatz: die
+        # Bild-Kulisse traegt weiterhin die Mehrheit der Szenen.
+        kapitel_klips = klip_zuordnung.get(nr) or []
+        akt = kapitel_klips[0] if kapitel_klips else kapitel_motive[k]
         kapitel_szene = neu(akt, kopf_start)
         # Kapitelwechsel als Rhythmus (Intent A#80/69): die Vorszene endet
         # mit kurzer Schwarzblende, der Impact traegt ueber das Schwarz.
@@ -4214,8 +4235,12 @@ lieber zuteilen als weglassen; nur wenn ein Clip zu KEINEM Abschnitt passt,
 bleibt er ungenutzt.
 
 Unten stehen die Abschnitte (Nummer und Titel) sowie die freigegebenen
-Clips mit ihrer Beschreibung. Waehle fuer jeden Abschnitt HOECHSTENS EINEN
-Clip. Ein Clip darf hoechstens einem Abschnitt zugeteilt werden.
+Clips mit ihrer Beschreibung. Waehle fuer jeden Abschnitt bis zu %d Clips,
+als Liste, beste Passung zuerst. Ein Clip darf hoechstens EINEM Abschnitt
+zugeteilt werden und darf in keiner zweiten Liste auftauchen - dieselbe
+bewegte Kulisse ein zweites Mal faellt sofort unangenehm auf.
+Ein Abschnitt braucht keine volle Liste: lieber zwei passende Clips als
+drei, von denen einer danebenliegt.
 
 Zusaetzlich: nominiere unter "intro" den einen Clip (falls vorhanden), der
 sich am besten als Aufmerksamkeits-Fang fuer die allerersten Sekunden des
@@ -4226,14 +4251,23 @@ der Zuordnung heraus, wenn er als Aufhaenger klar am besten passt).
 
 Gib NUR ein JSON-Objekt aus, ohne Vor- oder Nachbemerkungen und ohne
 Code-Zaun:
-{"zuordnung": {"<abschnitt-nummer>": "<clip-md5>", ...},
+{"zuordnung": {"<abschnitt-nummer>": ["<clip-md5>", ...], ...},
  "intro": "<clip-md5-oder-null>"}
 """
+
+KLIP_JE_ABSCHNITT = 3    # so viele VERSCHIEDENE Clips darf ein Abschnitt
+# bekommen. Bis zum 22.08.2026 war es genau einer, und der lief nur auf der
+# ersten Szene des Kapitels - bei 3 zugeteilten Clips trugen 3 von 50 Szenen
+# Bewegtbild. Mehr Bewegung ueber laengere Standzeit desselben Clips zu holen
+# ist ausgeschlossen (Nutzer-Feedback 18.08.2026: "Clip 10x am Berichtsende
+# wiederholt, 0 Relevanz und 0 Unterhaltungswert", siehe die Sperre in
+# naechstes_motiv). Also mehr VERSCHIEDENE - moeglich geworden durch die
+# Ernte aus dem ganzen Snapshot (klip_katalog.klip_kandidaten).
 
 
 def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
                     titel_map: dict[str, str],
-                    nur_video: bool = False) -> dict[int, Path]:
+                    nur_video: bool = False) -> dict[int, list[Path]]:
     """Ordnet freigegebene Katalog-Clips (arbeit/clips/katalog.json)
     inhaltlich Abschnitten zu - ein claude_ruf()-Aufruf, analog den
     Sichtpruefungen, statt einer Rang-Sortierung wie bei der Bildkulisse
@@ -4275,8 +4309,9 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
     daten: dict = {}
     for versuch in (1, 2):
         try:
-            out = rr.claude_ruf(KLIP_PROMPT_ZUORDNUNG, eingabe, "sonnet",
-                                180, effort="low").strip()
+            out = rr.claude_ruf(KLIP_PROMPT_ZUORDNUNG % KLIP_JE_ABSCHNITT,
+                                eingabe, "sonnet", 180,
+                                effort="low").strip()
             daten = json.loads(rr._json_schneiden(out))
         except Exception as e:
             print(f"WARNUNG: Clip-Zuordnung fehlgeschlagen ({e}) - Kulisse "
@@ -4297,22 +4332,30 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
     if not isinstance(roh, dict):
         roh = {}
     ziel_dir = klip_katalog.KLIP_DIR / datum
-    aus: dict[int, Path] = {}
+    aus: dict[int, list[Path]] = {}
     vergeben: set[str] = set()
-    for k, md5 in roh.items():
+    for k, wert in roh.items():
         try:
             idx = int(k)
         except (TypeError, ValueError):
             continue
-        if not (0 <= idx < len(abschnitte)) or not isinstance(md5, str) \
-                or md5 in vergeben or md5 not in frei:
+        if not (0 <= idx < len(abschnitte)):
             continue
-        pfad = klip_katalog.klip_datei(md5, katalog, ziel_dir)
-        if pfad is None:
+        # Das Modell soll eine Liste liefern; ein einzelner String bleibt
+        # gueltig (aeltere Antwortform, und bei effort="low" faellt es
+        # gelegentlich darauf zurueck).
+        md5s = [wert] if isinstance(wert, str) else wert
+        if not isinstance(md5s, list):
             continue
-        aus[idx] = pfad
-        vergeben.add(md5)
-        katalog["clips"][md5]["zuletzt_verwendet"] = datum
+        for md5 in md5s[:KLIP_JE_ABSCHNITT]:
+            if not isinstance(md5, str) or md5 in vergeben or md5 not in frei:
+                continue
+            pfad = klip_katalog.klip_datei(md5, katalog, ziel_dir)
+            if pfad is None:
+                continue
+            aus.setdefault(idx, []).append(pfad)
+            vergeben.add(md5)
+            katalog["clips"][md5]["zuletzt_verwendet"] = datum
     intro_md5 = daten.get("intro")
     # Backstop zum Prompt: nominiert das Modell trotz der Vorgabe einen
     # bereits einem Kapitel zugeteilten Clip, laeuft er sonst zweimal im
@@ -4327,7 +4370,7 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
     if isinstance(intro_md5, str) and intro_md5 in frei:
         pfad = klip_katalog.klip_datei(intro_md5, katalog, ziel_dir)
         if pfad is not None:
-            aus[INTRO_KLIP_KEY] = pfad
+            aus[INTRO_KLIP_KEY] = [pfad]
             vergeben.add(intro_md5)
             katalog["clips"][intro_md5]["zuletzt_verwendet"] = datum
     if vergeben:
