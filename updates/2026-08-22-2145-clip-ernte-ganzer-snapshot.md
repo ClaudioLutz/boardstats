@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: worktree-clip-ernte-ganzer-snapshot
 typ: bugfix
-commit: <wird beim Commit ergaenzt>
+commit: 1fb9dfc
 ---
 
 # Clip-Ernte nimmt den ganzen Snapshot statt nur der ausgewerteten Threads
