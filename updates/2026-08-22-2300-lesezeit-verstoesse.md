@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: worktree-lesezeit-verstoesse
 typ: bugfix
-commit: <wird beim Commit ergaenzt>
+commit: 9343181
 ---
 
 # Lesezeit-Verstoesse: Quelle in der Warnung, Schluss-Zitat bekommt Vorlauf
