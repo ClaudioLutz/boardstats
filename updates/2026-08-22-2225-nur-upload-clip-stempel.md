@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: worktree-nur-upload-clip-stempel
 typ: bugfix
-commit: <wird beim Commit ergaenzt>
+commit: b3ab301
 ---
 
 # `--nur-upload` ordnet die Clips nicht mehr neu zu, sondern uebernimmt die Auswahl des Bau-Laufs
