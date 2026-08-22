@@ -155,5 +155,41 @@ class DetailFelder(unittest.TestCase):
         self.assertNotIn("detail", aus)
 
 
+class FragmentlaengePasstInsFenster(unittest.TestCase):
+    """Die Kappung muss an der Zeit im Bild gemessen werden, nicht an der
+    Kartenbreite. Bei DETAIL_MAX_ZEICHEN=40 brauchten zwei Fragmente 8.7s -
+    weit ueber jedem real gemessenen Fenster (Median 4.93s am 21.08.2026),
+    weshalb die zweite Zeile bei 13 von 24 Punkten wegfiel."""
+
+    #: Oberes Drittel der am 22.08.2026 gemessenen freien Fenster. Wer
+    #: DETAIL_MAX_ZEICHEN wieder anhebt, laesst diesen Test fallen und sieht
+    #: an ihm, was er der zweiten Fragmentzeile damit nimmt.
+    FENSTER_GUT = 6.0
+
+    def test_zwei_maximale_fragmente_passen_in_ein_gutes_fenster(self) -> None:
+        lang = "x" * run_report.DETAIL_MAX_ZEICHEN
+        noetig = (video_report.detail_boden([lang, lang])
+                  + video_report.DETAIL_BLENDEN)
+        self.assertLessEqual(
+            noetig, self.FENSTER_GUT,
+            f"zwei Fragmente à {run_report.DETAIL_MAX_ZEICHEN} Zeichen "
+            f"brauchen {noetig:.2f}s - mehr als ein gutes Fenster hergibt")
+
+    def test_kurzes_fragmentpaar_liegt_auf_dem_boden(self) -> None:
+        """Unter 20 Zeichen bringt Kuerzen nichts mehr: dort greift
+        DETAIL_FRAG_MIN, zwei Fragmente kosten immer 4.0s. Das ist die
+        Grenze, an der die Messung ausgelaufen ist (17 vollstaendig bei
+        Kappung 22 wie bei 20)."""
+        self.assertEqual(video_report.detail_frag_boden("x" * 12),
+                         video_report.DETAIL_FRAG_MIN)
+        self.assertEqual(video_report.detail_boden(["x" * 12] * 2),
+                         2 * video_report.DETAIL_FRAG_MIN)
+
+    def test_prompt_nennt_das_kuerzere_ziel(self) -> None:
+        """Das Sicherheitsnetz kappt, den Text schreibt der Prompt - steht
+        die Zielmarke nicht darin, kappt die Grenze nur mitten im Wort."""
+        self.assertIn("22 characters or less", run_report.FOLIEN_PROMPT)
+
+
 if __name__ == "__main__":
     unittest.main()
