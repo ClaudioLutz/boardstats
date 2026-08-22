@@ -2651,6 +2651,9 @@ EREIGNIS_ABSTAND = 4.0   # Ruhe zwischen zwei Sonderszenen
 SZENE_MIN_FRAMES = 8     # kuerzer darf keine Szene sein (0,32 s)
 COUNTUP_TAKT = 0.09      # Zielabstand zweier Zaehlwerk-Staende (Intent A#82)
 COUNTUP_DAUER = 1.3      # Ziellaenge des Zaehlwerks; vorher 4 x 0.16 s
+COUNTUP_MIN_DAUER = 0.4  # kuerzer ist das Zaehlwerk kein Zaehlwerk mehr,
+                         # sondern ein Zucken - dann lieber keins und die
+                         # Zeit dem Endwert lassen (siehe zahl_countup)
 COUNTUP_FLASH = 0.14     # der Endwert blitzt beim Einrasten kurz weiss
                          # (C1 Flash-on-change)
 
@@ -2688,6 +2691,12 @@ class Overlay:
                                    # (lesezeit_verifizieren); 0.0 = dieses
                                    # Overlay traegt keinen pruefbaren Text
                                    # (Vignette, Count-up-Stufe, Kastengrund)
+    lese_quelle: str = ""          # welcher Beat den Text gesetzt hat
+                                   # (kapitel-titel, schluss-zitat, ...). Die
+                                   # Verstoss-Meldung nennt ihn: ohne die
+                                   # Herkunft muss man den Text im Code
+                                   # suchen, um zu wissen, wo der Boden
+                                   # herkommt - am 22.08.2026 selbst erlebt.
 
 
 @dataclass
@@ -2726,6 +2735,7 @@ class KartenStand:
                               # Folgestufe desselben Kastens uebernimmt
     lese_text: str = ""       # Text + Boden fuer die Lesezeit-Verifikation
     lese_boden: float = 0.0   # (siehe Overlay)
+    lese_quelle: str = ""     # welcher Beat ihn gesetzt hat
 
 
 @dataclass
@@ -2861,10 +2871,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
     def ov(bild, start: float, bis: float, fade: float = 0.35,
            einflug: str = "", lese_text: str = "",
-           lese_boden: float = 0.0) -> Overlay:
+           lese_boden: float = 0.0, lese_quelle: str = "") -> Overlay:
         pfad, x, y = png(bild)
         return Overlay(pfad, start, bis, fade, x, y, einflug,
-                       lese_text=lese_text, lese_boden=lese_boden)
+                       lese_text=lese_text, lese_boden=lese_boden,
+                       lese_quelle=lese_quelle)
 
     # Tickerband (C-News): segmentweise statt permanent - ein durchgehend
     # laufendes Band verbraucht das Aufmerksamkeits-Budget (Leitplanke 1/2)
@@ -2902,6 +2913,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         sz_.overlays.append(ov(grund, von, bis, fade=0.2, einflug="links"))
         o = ov(textbild, von + LT_VERSATZ, bis, fade=0.25, einflug="unten",
                lese_text=text,
+               lese_quelle="lower-third",
                lese_boden=(lese_boden_allgemein(text) if boden is None
                            else boden))
         o.einflug_weg = szenen._s(20)
@@ -2997,6 +3009,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         s.overlays.append(ov(szenen.zahl_tafel(thumb, "", ""), 0.0,
                              hook_ab, fade=0.0,
                              lese_text=thumb,
+                             lese_quelle="kaltstart-schlagwort",
                              lese_boden=min(KALTSTART_MIN,
                                             lese_boden_allgemein(thumb))))
     # boden=0: der Hook wird wortgleich als erster Satz gesprochen und
@@ -3015,6 +3028,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                                                 label="AGENDA"),
                              t0 + 0.2, start_von(agenda_idx[0]),
                              einflug="unten", lese_text="Coming up today",
+                             lese_quelle="agenda-kopf",
                              lese_boden=lese_boden_allgemein(
                                  "Coming up today")))
         for k, i in enumerate(agenda_idx):
@@ -3028,6 +3042,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                                    label=f"COMING UP · {k + 1:02d}",
                                    gross=False),
                 t + 0.15, bis, einflug="unten", lese_text=eintraege[k],
+                lese_quelle="agenda-eintrag",
                 lese_boden=lese_boden_allgemein(eintraege[k])))
 
     # Zahlen des Tages: je Kennzahl eine eigene Gross-Zahl-Szene mit
@@ -3077,6 +3092,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     z.overlays.append(ov(
                         kbild, schnitt + ki * MULTIPLES_VERSATZ, bis,
                         einflug="unten", lese_text=ktext,
+                        lese_quelle="tldr-uebersicht",
                         lese_boden=min(ZAHL_UEBERSICHT_MIN,
                                        lese_boden_allgemein(ktext))))
                 print(f"TL;DR: {len(genutzt)} von {len(karten)} Zahlen "
@@ -3399,7 +3415,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Der Boden gilt gegen die effektive Lesezeit: Einflug und
                 # Aufblende (EINBLEND_VERLUST) fressen vom Fenster, bevor
                 # der Text voll lesbar steht (Leitplanke 3, 22.08.2026).
-                boden = fokus_boden(texte[n]) + EINBLEND_VERLUST
+                boden = (fokus_boden(texte[n]) + EINBLEND_VERLUST
+                         + FRAME_PUFFER)
                 f = (sicht_bis(zeit[n], ab) - zeit[n] >= boden
                      and naht_nach(ab) >= ab + FLUG_DAUER)
                 z = ab + FLUG_DAUER if f else halt
@@ -3550,6 +3567,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                             detail_plan.append(KartenStand(
                                 zpfad, zx, zy, zvon, det_bis,
                                 lese_text=ztext,
+                                lese_quelle="detail-fragment",
                                 lese_boden=detail_frag_boden(ztext)))
                 # Bewegt wird das zugeschnittene Overlay: sein Ziel ist die
                 # Kartenposition minus dem Textversatz innerhalb des Bildes.
@@ -3620,7 +3638,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                                  and a0 == st.von else ""),
                         einflug_weg=szenen._s(16),
                         weiter=st.haelt or b0 < st.bis - 0.02,
-                        lese_text=st.lese_text, lese_boden=st.lese_boden))
+                        lese_text=st.lese_text, lese_boden=st.lese_boden,
+                        lese_quelle=st.lese_quelle))
             for fk in fokus_plan:
                 a0, b0 = max(a, fk.von), min(b, fk.bis)
                 if b0 - a0 <= 0.02:
@@ -3642,6 +3661,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     flug_x=fk.ziel_x, flug_y=fk.ziel_y,
                     weiter=b0 < fk.bis - 0.02,
                     lese_text=fk.text,
+                    lese_quelle="fokus-punkt",
                     lese_boden=fokus_boden(fk.text) if fk.text else 0.0))
             # Zahl-Puls NACH der Fokus-Karte auflegen (Overlays werden in
             # Listenreihenfolge gestapelt): die farbigen Zahl-Glyphen liegen
@@ -3682,12 +3702,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                                            gross=False),
                         von + 0.1, bis, einflug="unten",
                         lese_text=str(px["titel"]),
+                        lese_quelle="zwischenthema",
                         lese_boden=lese_boden_allgemein(str(px["titel"]))))
                 elif art == "zitat":
                     sz.overlays.append(ov(
                         szenen.zitat_post(str(px["text"]), _post_datum(datum)),
                         von + 0.1, bis, einflug="unten",
-                        lese_text=str(px["text"]), lese_boden=ZITAT_MIN))
+                        lese_text=str(px["text"]), lese_boden=ZITAT_MIN,
+                        lese_quelle="kapitel-zitat"))
                     _zitat_rahmen_auflegen(sz, str(px["text"]), von, bis, ov)
                 else:
                     _countup_overlays(sz, px, von + 0.2, bis, ov, klang)
@@ -3713,13 +3735,30 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         t = start_von(zit_idx)
         bis = next((start_von(i) for i in (frage_idx, outro_idx)
                     if i is not None and block_worte[i]), ende)
-        s = neu(pool_bild() or tages_motiv, t)
+        # Das Fenster zwischen Zitat und Cliffhanger gibt die Sprechzeit vor
+        # und traegt ZITAT_MIN oft nicht: am 22.08.2026 standen 3.8s gegen
+        # 4.0s Boden plus Blenden, das Zitat war 1.17s zu kurz im Bild.
+        # Verlaengern nach hinten geht nicht (dort spricht schon die Frage),
+        # also faengt der Beat frueher an - die Karte steht dann bereits in
+        # der Sprechpause davor, was ein Zitat ohnehin vertraegt: gelesen
+        # wird es, waehrend es vorgelesen wird. Grenze ist das Ende des
+        # vorherigen Satzes, dort laeuft noch dessen Bild.
+        noetig = ZITAT_MIN + EINFLUG_DAUER + 0.35 + FRAME_PUFFER
+        vor_ende = (block_worte[zit_idx - 1][-1].end
+                    if zit_idx > 0 and block_worte[zit_idx - 1] else t)
+        zeige_ab = min(t + 0.2, max(vor_ende, bis - noetig))
+        if zeige_ab < t:
+            print(f"Schluss-Zitat: {t - zeige_ab:.1f}s Vorlauf, damit es "
+                  f"seine Lesezeit bekommt")
+        s = neu(pool_bild() or tages_motiv, zeige_ab)
         schluss_text = bloecke[zit_idx].text.split(": ", 1)[-1].strip('"')
         s.overlays.append(ov(
             szenen.zitat_post(schluss_text, _post_datum(datum)),
-            t + 0.2, bis, einflug="unten",
-            lese_text=bloecke[zit_idx].text, lese_boden=ZITAT_MIN))
-        _zitat_rahmen_auflegen(s, schluss_text, t + 0.1, bis, ov)
+            zeige_ab, bis, einflug="unten",
+            lese_text=bloecke[zit_idx].text, lese_boden=ZITAT_MIN,
+            lese_quelle="schluss-zitat"))
+        _zitat_rahmen_auflegen(s, schluss_text, max(zeige_ab - 0.1, 0.0),
+                               bis, ov)
         print(f"Schluss-Zitat: {bis - t:.1f}s")
 
     if outro_idx is not None:
@@ -3885,10 +3924,20 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
     # Endstands (ZAHL_COUNTUP_MIN) uebrig bleibt - der Endwert ist die
     # Aussage, das Zaehlen nur der Weg dorthin (Smoke-Befund 22.08.2026:
     # 45 %-Deckel liess den TL;DR-Endstaenden nur noch 1.1-1.5 s).
-    budget = (bis - ab) - ZAHL_COUNTUP_MIN - COUNTUP_FLASH
-    dauer = max(0.4, min(COUNTUP_DAUER, budget))
-    stufen = szenen.countup_werte(wert, max(4, round(dauer / COUNTUP_TAKT)))
-    takt = dauer / max(1, len(stufen))
+    budget = (bis - ab) - ZAHL_COUNTUP_MIN - COUNTUP_FLASH - FRAME_PUFFER
+    # Reicht das Fenster nicht fuer beides, faellt das Zaehlwerk weg statt
+    # die Lesezeit des Endwerts zu fressen: der Endwert ist die Aussage, das
+    # Zaehlen nur der Weg dorthin. Frueher erzwang max(0.4, ...) ein
+    # Zaehlwerk auch dann - am 22.08.2026 stand der Endstand dadurch 1.65s
+    # statt der geforderten 1.80s.
+    if budget < COUNTUP_MIN_DAUER:
+        stufen: list[str] = []
+        takt = 0.0
+    else:
+        dauer = min(COUNTUP_DAUER, budget)
+        stufen = szenen.countup_werte(
+            wert, max(4, round(dauer / COUNTUP_TAKT)))
+        takt = dauer / max(1, len(stufen))
     for si, w in enumerate(stufen):
         sz.overlays.append(ov(szenen.zahl_tafel(w, titel, sub),
                               ab + si * takt, ab + (si + 1) * takt, 0.0))
@@ -3911,6 +3960,7 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
                           lese_text=f"{wert} {titel}".strip(),
                           # Nur der Zahl-Boden: Wert und Titel werden auch
                           # gesprochen, das Bild ergaenzt den Ton.
+                          lese_quelle="zahl-countup",
                           lese_boden=ZAHL_COUNTUP_MIN))
 
 
@@ -4003,6 +4053,16 @@ DETAIL_FRAG_MIN = 2.0    # Boden je einzelnem Fragment (der Kasten als
 # Lesezeit-Boeden gelten gegen die EFFEKTIVE Lesezeit - die Planung rechnet
 # diesen Verlust deshalb auf ihre Fenster-Pruefungen drauf, und
 # lesezeit_verifizieren() rechnet ihn am fertigen Plan nach.
+# Die Planung rechnet in Sekunden, gerendert wird in Frames: szenen_video()
+# rundet jede Szenengrenze mit round(start * FPS). Anfang und Ende eines
+# Fensters koennen dabei je bis zu einen halben Frame nach innen wandern, ein
+# Beat verliert also bis zu zwei Frames gegenueber der Planung. Genau in
+# dieser Groesse lagen drei der vier Lesezeit-Verstoesse vom 22.08.2026
+# (0.07s und 0.10s bei Fokus-Punkten, 0.15s beim Count-up) - keine falsche
+# Formel, sondern ein fehlender Puffer. Die Planungs-Boeden rechnen ihn
+# seither mit, damit die Verifikation am fertigen Plan nicht knapp
+# darunter landet.
+FRAME_PUFFER = 2 / FPS   # 0.08s
 EINBLEND_VERLUST = 0.40
 # Sichtzuschlaege je Elementtyp: was der Boden zusaetzlich braucht, damit
 # die EFFEKTIVE Lesezeit ihn haelt (Smoke-Messung 22.08.2026 am echten
@@ -4048,6 +4108,7 @@ class LeseVerstoss:
     text: str
     boden: float
     effektiv: float
+    quelle: str = ""
 
 
 def lesezeit_verifizieren(folge: list[Szene], ende: float
@@ -4100,11 +4161,12 @@ def lesezeit_verifizieren(folge: list[Szene], ende: float
         effektiv = (bis - start) - einblend - ausblend
         if effektiv + 1e-6 < erst.lese_boden:
             verstoesse.append(LeseVerstoss(erst.lese_text, erst.lese_boden,
-                                           effektiv))
+                                           effektiv, erst.lese_quelle))
     if verstoesse:
         for v in sorted(verstoesse, key=lambda v: v.effektiv - v.boden):
-            print(f"LESEZEIT-VERSTOSS: {v.text[:60]!r} effektiv "
-                  f"{v.effektiv:.2f}s, Boden {v.boden:.2f}s")
+            print(f"LESEZEIT-VERSTOSS [{v.quelle or 'unbekannt'}]: "
+                  f"{v.text[:52]!r} effektiv {v.effektiv:.2f}s, Boden "
+                  f"{v.boden:.2f}s (fehlen {v.boden - v.effektiv:.2f}s)")
         print(f"Lesezeit-Verifikation: {len(stuecke)} Textelemente, "
               f"{len(verstoesse)} unter dem Boden - Planung pruefen")
     else:
