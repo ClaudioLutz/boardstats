@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: main
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 737dcdb
 ---
 
 # Analytics: Traffic-Quellen fest in der Erfolgskontrolle
