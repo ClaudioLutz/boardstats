@@ -1588,10 +1588,15 @@ geeignet, ist die Wahl null.
 """
 
 
-def _snapshot_posts(threads: set[str]) -> dict[str, list[dict]]:
+def _snapshot_posts(threads: set[str] | None) -> dict[str, list[dict]]:
     """Posts der genannten Threads aus dem juengsten Crawl-Snapshot. Leer,
     wenn keiner da ist: mit --host laeuft der Crawl auf einem anderen Rechner,
-    dann gibt es hier keine Rohdaten und damit kein Board-Bild."""
+    dann gibt es hier keine Rohdaten und damit kein Board-Bild.
+
+    `threads=None` liefert ALLE Threads des Snapshots. Das braucht die
+    Clip-Ernte: Bilder gehoeren zu dem Thread, ueber den der Bericht spricht,
+    Clips dagegen sind reine Kulisse und werden spaeter per Beschreibung
+    zugeordnet - ihre Herkunft spielt fuer die Verwendung keine Rolle."""
     snapshots = sorted((BASE / "raw").glob("*.jsonl.gz"))
     # Seit dem atomaren Rename in crawl_biz.py kann der juengste Snapshot nicht
     # mehr mitten im Schreiben stehen. Aeltere Torsi aus der Zeit davor - oder
@@ -1607,7 +1612,8 @@ def _snapshot_posts(threads: set[str]) -> dict[str, list[dict]]:
     return {}
 
 
-def _posts_lesen(snapshot: Path, threads: set[str]) -> dict[str, list[dict]]:
+def _posts_lesen(snapshot: Path,
+                 threads: set[str] | None) -> dict[str, list[dict]]:
     posts: dict[str, list[dict]] = {}
     with gzip.open(snapshot, "rt", encoding="utf-8") as f:
         for zeile in f:
@@ -1616,7 +1622,7 @@ def _posts_lesen(snapshot: Path, threads: set[str]) -> dict[str, list[dict]]:
             except json.JSONDecodeError:
                 continue
             no = str(daten.get("thread"))
-            if no in threads:
+            if threads is None or no in threads:
                 posts[no] = daten.get("posts") or []
     return posts
 
