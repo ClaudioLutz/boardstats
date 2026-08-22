@@ -110,9 +110,11 @@ from xml.sax.saxutils import escape as xml_escape
 
 from PIL import ImageFont
 
+import design_tokens
 import folien
 import klip_katalog
 import run_report as rr
+import sounds
 import szenen
 import thumbnail
 import youtube_auth
@@ -220,10 +222,13 @@ EIGENES_REPO = "github.com/ClaudioLutz"
 
 CANVAS_W = 1280
 CANVAS_H = 720
-# Das Kompositions-Raster bleibt bei 1280x720 (Fonts/Positionen ueberall im
-# Rendering sind darauf abgestimmt); erst beim finalen Mux fuer YouTube wird
-# auf 1080p hochskaliert. Gleiches Seitenverhaeltnis (16:9), also reine
-# Vergroesserung ohne Crop/Padding.
+# 1280x720 gilt nur noch fuer die Ersatzpfade (v5-ASS-Text, v6-Folien), die
+# beim finalen Mux hochskaliert werden. Der Szenen-Weg (v7) rendert seit dem
+# 22.08.2026 NATIV in 1920x1080 (Intent A#4): Overlays kommen aus szenen.py
+# bereits im 1080p-Raster (szenen.SK), die Szenen-Clips entstehen direkt in
+# RENDER_W x RENDER_H - der 1.5x-Weichzeichner am Ende entfaellt.
+RENDER_W = szenen.B
+RENDER_H = szenen.H
 YOUTUBE_W = 1920
 YOUTUBE_H = 1080
 FONTSIZE = 34
@@ -2262,7 +2267,9 @@ def _detail_zeiten(fragmente: list[str], worte: list[Wort], von: float,
     zeiten = [max(von, t if t is not None else von) for t in roh]
     for i in range(1, len(zeiten)):      # Reihenfolge des Kastens erzwingen
         zeiten[i] = max(zeiten[i], zeiten[i - 1] + DETAIL_VERSATZ)
-    rest = 0.0                           # Lesezeit von hinten freihalten
+    # Lesezeit von hinten freihalten - inklusive der Blendphasen, die
+    # der Zeile am Anfang und Ende nicht lesbar sind (Leitplanke 3).
+    rest = DETAIL_BLENDEN
     for i in range(len(zeiten) - 1, -1, -1):
         rest += detail_frag_boden(fragmente[i])
         zeiten[i] = max(von, min(zeiten[i], bis - rest))
@@ -2642,7 +2649,10 @@ ZWISCHEN_MAX = 6.0       # Hoechstdauer eines Zwischenthema-Openers
 KARTE_MAX = 9.0          # Hoechstdauer der Kennzahl-Szene im Kapitel
 EREIGNIS_ABSTAND = 4.0   # Ruhe zwischen zwei Sonderszenen
 SZENE_MIN_FRAMES = 8     # kuerzer darf keine Szene sein (0,32 s)
-COUNTUP_TAKT = 0.16      # Standzeit je Count-up-Stufe
+COUNTUP_TAKT = 0.09      # Zielabstand zweier Zaehlwerk-Staende (Intent A#82)
+COUNTUP_DAUER = 1.3      # Ziellaenge des Zaehlwerks; vorher 4 x 0.16 s
+COUNTUP_FLASH = 0.14     # der Endwert blitzt beim Einrasten kurz weiss
+                         # (C1 Flash-on-change)
 
 
 @dataclass
@@ -2666,6 +2676,18 @@ class Overlay:
     flug_ab: float | None = None   # ab dieser Zeit fliegt das Overlay nach
     flug_x: int = 0                # (flug_x, flug_y) und verblasst dabei -
     flug_y: int = 0                # so parkt ein Fokus-Punkt in der Karte
+    lauf_px: float = 0.0           # Lauftext (Tickerband): so viele Pixel
+    lauf_breite: int = 0           # pro Sekunde nach links; lauf_breite ist
+                                   # die Streifenbreite fuer den Umlauf
+    einflug_weg: int = 0           # eigener Einflug-Weg in Pixeln;
+                                   # 0 = Standard EINFLUG_WEG. Kleine
+                                   # Elemente (Detail-Zeilen) fahren kurz.
+    lese_text: str = ""            # der Text, der gelesen werden soll -
+    lese_boden: float = 0.0        # zusammen mit seinem Lesezeit-Boden die
+                                   # Grundlage der Lauf-Verifikation
+                                   # (lesezeit_verifizieren); 0.0 = dieses
+                                   # Overlay traegt keinen pruefbaren Text
+                                   # (Vignette, Count-up-Stufe, Kastengrund)
 
 
 @dataclass
@@ -2680,6 +2702,10 @@ class Szene:
                                         # der Folgeszene und als Fallback,
                                         # falls der animierte Renderpfad
                                         # scheitert
+    kapitel_knall: bool = False    # Kapitel-Opener (Intent A#80/69): die
+                                   # Vorszene endet mit kurzer Schwarzblende
+                                   # statt Kreuzblende, der Impact aus B5
+                                   # traegt ueber das schwarze Bild
 
 
 @dataclass
@@ -2698,6 +2724,8 @@ class KartenStand:
     blende: float = 0.3       # Aufblendzeit; 0.0 = harter Schnitt
     haelt: bool = False       # am Ende nicht ausblenden, weil eine
                               # Folgestufe desselben Kastens uebernimmt
+    lese_text: str = ""       # Text + Boden fuer die Lesezeit-Verifikation
+    lese_boden: float = 0.0   # (siehe Overlay)
 
 
 @dataclass
@@ -2713,6 +2741,7 @@ class FokusKarte:
     flug_ab: float | None     # None: der Punkt parkt ohne Flug (harter Schnitt)
     ziel_x: int
     ziel_y: int
+    text: str = ""            # der Stichpunkt-Text (Lesezeit-Verifikation)
 
 
 def _post_datum(datum: str) -> str:
@@ -2721,12 +2750,77 @@ def _post_datum(datum: str) -> str:
     return f"{m}/{t}/{j[2:]}"
 
 
+# Akzentfarbe je Kapitelthema (Intent A#136): Stichwortlisten fuer die drei
+# Themenfamilien des Boards. Klassifiziert wird ueber Ueberschrift, Titel
+# und die Drehbuch-Stichworte des Kapitels; ohne klaren Treffer bleibt das
+# Serien-Amber. Bewusst simple Wortlisten statt eines Modellaufrufs: die
+# Farbe ist Orientierung, kein Urteil - ein Fehlgriff kostet nichts.
+_THEMA_WOERTER: dict[str, frozenset[str]] = {
+    "krypto": frozenset("""
+        crypto bitcoin btc eth ethereum sol solana xrp ripple doge shib
+        monero xmr ada cardano coin coins token tokens altcoin altcoins
+        shitcoin shitcoins defi chain onchain staking stablecoin wallet
+        exchange binance coinbase tether halving airdrop nft mining miner
+        miners satoshi hodl
+        """.split()),
+    "aktien": frozenset("""
+        stock stocks share shares equity equities earnings nasdaq dow spy
+        sp500 market markets fed rates rate bond bonds yield yields ipo etf
+        etfs options calls puts short squeeze dividend macro inflation cpi
+        gdp gold silver oil commodity commodities housing mortgage bank
+        banks treasury tariff tariffs recession buyback ceo sec
+        """.split()),
+    "meme": frozenset("""
+        meme memes board anon anons larp bait cope seethe wagie neet
+        gambler gambling casino lottery poverty life stories advice makeit
+        rope kek based schizo
+        """.split()),
+}
+
+
+def kapitel_akzent(*texte: str) -> tuple[int, int, int] | None:
+    """Akzentfarbe des Kapitels aus seinen Texten; None = Serien-Amber."""
+    woerter = set(_norm_text(" ".join(texte)).split())
+    bester, punkte = "", 0
+    for thema, schluessel in _THEMA_WOERTER.items():
+        n = len(woerter & schluessel)
+        if n > punkte:
+            bester, punkte = thema, n
+    return design_tokens.KAPITEL_AKZENT.get(bester) if bester else None
+
+
+def _breaking_kapitel(karten: list[dict], bloecke: list[Block],
+                      block_worte: list[list[Wort]],
+                      koepfe: list[tuple[int, int]]) -> int | None:
+    """Abschnitts-Nummer des Kapitels, in dem die erste TL;DR-Zahl des
+    Tages gesprochen wird - Kriterium fuer den einen BREAKING-Kicker
+    (C-News). None, wenn keine Zahl da ist oder keiner ihrer Ziffernblocks
+    in einem Kapitelrumpf faellt."""
+    if not karten or not koepfe:
+        return None
+    ziffern = {tok for tok in
+               _norm_text(str(karten[0].get("wert") or "")).split()
+               if any(z.isdigit() for z in tok)}
+    if not ziffern:
+        return None
+    for _, nr in koepfe:
+        toks = {tok for i, b in enumerate(bloecke)
+                if b.abschnitt == nr and not b.rolle
+                and b.art != "ueberschrift"
+                for w in block_worte[i]
+                for tok in _norm_text(w.text).split()}
+        if ziffern & toks:
+            return nr
+    return None
+
+
 def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float, thumb: str = "",
                  sprech_ende: float = 0.0,
-                 nur_video: bool = False) -> list[Szene]:
+                 nur_video: bool = False, ticker: list[str] | None = None
+                 ) -> tuple[list[Szene], list[tuple[float, str]]]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, der Themen-Titel oben, die persistente
     Karte mit den geparkten Stichpunkten darunter (beide stehen bis zum
@@ -2735,7 +2829,13 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     liegen als zeitlich verankerte Overlays darauf - keine Sprechsekunde
     ohne Text im Bild. Die Motiv-Auswahl folgt der v6-Logik: frisches
     eigenes Thread-Bild vor frischem Pool-Bild vor Wiederholung
-    (siehe MotivWahl - shorts.py rechnet damit dieselbe Zuordnung)."""
+    (siehe MotivWahl - shorts.py rechnet damit dieselbe Zuordnung).
+
+    Zurueck kommen die Szenenfolge und die Klang-Ereignisse fuer das
+    Sound-Design (Intent B5): (Zeit, Art) fuer Whoosh/Klick der Fluege,
+    den Zahl-Impact am Count-up-Ende und den Kapitel-Knall - erzeugt aus
+    denselben Planwerten wie die Bewegungen, damit Ton und Bild exakt
+    uebereinanderliegen."""
     wahl = MotivWahl(datum)
     werte = wahl.werte
     typen = motiv_typen(datum)
@@ -2745,6 +2845,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     eigenes_bild = wahl.eigenes_bild
 
     ov_nr = 0
+    klang: list[tuple[float, str]] = []
     # [geplant, weggefallen] der Stichwort-Fragmente: seit die Lesezeit-Boeden
     # hoeher liegen (19.08.2026), muss im Log stehen, wie viele Fragmente die
     # Fenster-Pruefung von hinten wegkuerzt - frisst sie das Feature auf,
@@ -2758,9 +2859,52 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         return lage
 
     def ov(bild, start: float, bis: float, fade: float = 0.35,
-           einflug: str = "") -> Overlay:
+           einflug: str = "", lese_text: str = "",
+           lese_boden: float = 0.0) -> Overlay:
         pfad, x, y = png(bild)
-        return Overlay(pfad, start, bis, fade, x, y, einflug)
+        return Overlay(pfad, start, bis, fade, x, y, einflug,
+                       lese_text=lese_text, lese_boden=lese_boden)
+
+    # Tickerband (C-News): segmentweise statt permanent - ein durchgehend
+    # laufendes Band verbraucht das Aufmerksamkeits-Budget (Leitplanke 1/2)
+    # durchgehend. Es laeuft im Vorspann, in den ersten Sekunden jedes
+    # Kapitel-Openers und im Abspann.
+    ticker_liste = [t_ for t_ in (ticker or []) if t_][:14]
+    streifen_cache: list[tuple[Path, int, int, int]] = []
+
+    def ticker_overlays(sz_: Szene, von: float, bis: float) -> None:
+        if not ticker_liste or bis - von < TICKER_MIN:
+            return
+        if not streifen_cache:
+            band_pfad, bx_, by_ = png(szenen.ticker_band())
+            streifen = szenen.ticker_streifen(ticker_liste)
+            s_pfad, _, _ = png(streifen)
+            streifen_cache.append((band_pfad, bx_, by_, streifen.width))
+            streifen_cache.append((s_pfad, 0, 0, streifen.width))
+        band_pfad, bx_, by_, breite = streifen_cache[0]
+        s_pfad = streifen_cache[1][0]
+        sz_.overlays.append(Overlay(band_pfad, von, bis, 0.25, bx_, by_))
+        sz_.overlays.append(Overlay(
+            s_pfad, von, bis, 0.25, RENDER_W,
+            RENDER_H - szenen._s(szenen.TICKER_HOEHE),
+            lauf_px=szenen._s(TICKER_TEMPO), lauf_breite=breite))
+
+    def lower_third(sz_: Szene, text: str, von: float, bis: float,
+                    label: str = "", quelle: str = "", gross: bool = True,
+                    kicker: str = "",
+                    boden: float | None = None) -> None:
+        """Zweistufiges Lower Third (C1/C-News): erst faehrt der Grund mit
+        dem Farbbalken ein, LT_VERSATZ spaeter erscheint der Text darin.
+        Beide Stufen enden gemeinsam."""
+        grund, textbild = szenen.titel_karte_teile(text, label, quelle,
+                                                   gross, kicker)
+        sz_.overlays.append(ov(grund, von, bis, fade=0.2, einflug="links"))
+        o = ov(textbild, von + LT_VERSATZ, bis, fade=0.25, einflug="unten",
+               lese_text=text,
+               lese_boden=(lese_boden_allgemein(text) if boden is None
+                           else boden))
+        o.einflug_weg = szenen._s(20)
+        sz_.overlays.append(o)
 
     folge: list[Szene] = []
 
@@ -2844,10 +2988,16 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                       max(KALTSTART_MIN,
                           intro_bis - (HOOK_VORLAUF + len(hook) / HOOK_CPS)))
         s.overlays.append(ov(szenen.zahl_tafel(thumb, "", ""), 0.0,
-                             hook_ab, fade=0.0))
-    s.overlays.append(ov(szenen.titel_karte(hook, label="TODAY'S TOP STORY"),
-                         hook_ab, max(intro_bis, hook_ab + 0.6),
-                         einflug="unten"))
+                             hook_ab, fade=0.0,
+                             lese_text=thumb,
+                             lese_boden=min(KALTSTART_MIN,
+                                            lese_boden_allgemein(thumb))))
+    # boden=0: der Hook wird wortgleich als erster Satz gesprochen und
+    # kann strukturell nicht laenger stehen als bis intro_bis - der Ton
+    # traegt ihn (dieselbe Regel wie beim Zahlen-Kopf).
+    lower_third(s, hook, hook_ab, max(intro_bis, hook_ab + 0.6),
+                label="TODAY'S TOP STORY", boden=0.0)
+    ticker_overlays(s, 0.4, intro_bis - 0.2)
 
     # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
     # Motiv seines Kapitels als Vorschau.
@@ -2857,7 +3007,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         s.overlays.append(ov(szenen.titel_karte("Coming up today",
                                                 label="AGENDA"),
                              t0 + 0.2, start_von(agenda_idx[0]),
-                             einflug="unten"))
+                             einflug="unten", lese_text="Coming up today",
+                             lese_boden=lese_boden_allgemein(
+                                 "Coming up today")))
         for k, i in enumerate(agenda_idx):
             t = start_von(i)
             bis = start_von(agenda_idx[k + 1]) if k + 1 < len(agenda_idx) \
@@ -2868,7 +3020,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 szenen.titel_karte(eintraege[k],
                                    label=f"COMING UP · {k + 1:02d}",
                                    gross=False),
-                t + 0.15, bis, einflug="unten"))
+                t + 0.15, bis, einflug="unten", lese_text=eintraege[k],
+                lese_boden=lese_boden_allgemein(eintraege[k])))
 
     # Zahlen des Tages: je Kennzahl eine eigene Gross-Zahl-Szene mit
     # Count-up. Als TL;DR direkt nach dem Cold Open (vorne) oder - bei einer
@@ -2884,10 +3037,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             return
         t0 = start_von(zk_idx)
         z = neu(pool_bild(), t0)
-        z.overlays.append(ov(szenen.titel_karte(kopf_titel, label=kopf_label),
-                             t0 + 0.2,
-                             start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
-                             einflug="unten"))
+        # boden=0: die Ansage wird wortgleich gesprochen und steht nur,
+        # bis die erste Zahl beginnt - der Ton traegt sie (keine Pruefung).
+        lower_third(z, kopf_titel, t0 + 0.2,
+                    start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
+                    label=kopf_label, boden=0.0)
         genutzt = zahl_idx[:len(karten)]
         for j, i in enumerate(genutzt):
             t = start_von(i)
@@ -2902,16 +3056,27 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             # Zuschauer sie alle gesehen.
             rest = len(karten) - len(genutzt)
             if j + 1 == len(genutzt) and rest > 0 \
-                    and bis - t >= ZAHL_COUNTUP_MIN + ZAHL_UEBERSICHT_MIN:
-                schnitt = bis - ZAHL_UEBERSICHT_MIN
-                _countup_overlays(z, karten[j], t + 0.2, schnitt, ov)
-                z.overlays.append(ov(szenen.zahlen_uebersicht(karten),
-                                     schnitt, bis, einflug="unten"))
+                    and bis - t >= ZAHL_COUNTUP_MIN \
+                    + ZAHL_UEBERSICHT_FENSTER:
+                schnitt = bis - ZAHL_UEBERSICHT_FENSTER
+                _countup_overlays(z, karten[j], t + 0.2, schnitt, ov,
+                                  klang)
+                # Small Multiples (C2) mit gestaffeltem Einflug (die
+                # Null-Objekt-Hierarchie aus C1: eine Bewegung, die
+                # Elemente folgen versetzt).
+                for ki, kbild in enumerate(szenen.zahlen_multiples(karten)):
+                    ktext = (f"{karten[ki].get('wert') or ''} "
+                             f"{karten[ki].get('titel') or ''}").strip()
+                    z.overlays.append(ov(
+                        kbild, schnitt + ki * MULTIPLES_VERSATZ, bis,
+                        einflug="unten", lese_text=ktext,
+                        lese_boden=min(ZAHL_UEBERSICHT_MIN,
+                                       lese_boden_allgemein(ktext))))
                 print(f"TL;DR: {len(genutzt)} von {len(karten)} Zahlen "
                       f"gesprochen, alle vier im Bild "
                       f"({ZAHL_UEBERSICHT_MIN:.1f}s Uebersicht)")
             else:
-                _countup_overlays(z, karten[j], t + 0.2, bis, ov)
+                _countup_overlays(z, karten[j], t + 0.2, bis, ov, klang)
                 if j + 1 == len(genutzt) and rest > 0:
                     print(f"TL;DR: Fenster zu kurz ({bis - t:.1f}s) - "
                           f"{rest} Zahl(en) nur als Karte, keine Uebersicht")
@@ -2920,6 +3085,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Karte und Ansage sagen dasselbe: der gesprochene Kopf ist
         # PRAES_ZAHLEN.
         zahlen_szenen(erster_kopf, ZAHLEN_LABEL, "TL;DR")
+
+    # Roter BREAKING-Kicker (C-News): genau EINE Story pro Video - die,
+    # in deren Kapiteltext die erste TL;DR-Zahl des Tages faellt. Ohne
+    # Treffer gibt es an diesem Tag keinen Kicker (ein BREAKING an jedem
+    # Kapitel entwertet sich selbst).
+    breaking_nr = _breaking_kapitel(karten, bloecke, block_worte, koepfe)
+    if breaking_nr is not None:
+        print(f"BREAKING-Kicker: Abschnitt {breaking_nr}")
 
     # Kapitel. Das Ende des letzten Kapitels ist der erste Rahmen-Block NACH
     # den Kapiteln (Outro; bei alter Ordnung der Zahlen-Kopf) - der
@@ -2941,6 +3114,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
         eintrag = zuordnung.get(nr, {})
         titel = _folien_titel(zuordnung, bloecke, nr) or bloecke[kopf].text
+        # Akzentfarbe des Kapitels (Intent A#136): gilt fuer alle Overlays,
+        # die in diesem Schleifendurchlauf gerendert werden (Opener, Rand-
+        # spalte, Fokus, Detail, Kennzahl); nach der Schleife wird auf das
+        # Serien-Amber zurueckgestellt.
+        szenen.akzent_setzen(kapitel_akzent(
+            bloecke[kopf].text, titel,
+            " ".join(str(p.get("text") or "")
+                     for p in eintrag.get("stichworte") or []
+                     if isinstance(p, dict))))
         eigene = kapitel_eigene[k]
         quelle = (titel_map.get(abschnitte[nr].threads[0])
                   or f"thread {abschnitte[nr].threads[0]}") \
@@ -2986,9 +3168,18 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Bild-Kulisse - Clips sind eine Ergaenzung, kein Ersatz.
         akt = klip_zuordnung.get(nr, kapitel_motive[k])
         kapitel_szene = neu(akt, kopf_start)
+        # Kapitelwechsel als Rhythmus (Intent A#80/69): die Vorszene endet
+        # mit kurzer Schwarzblende, der Impact traegt ueber das Schwarz.
+        # Die 2.5-s-Sprechpause vor jeder Kapitel-Ueberschrift liefert die
+        # noetige Stille im Ton gratis mit.
+        kapitel_szene.kapitel_knall = True
+        klang.append((kopf_start, "kapitel"))
+        # Der Boden gilt gegen die effektive Lesezeit: Einflug/Aufblende
+        # kommen als EINBLEND_VERLUST obendrauf (Leitplanke 3, 22.08.2026).
         opener_bis = min(
             max(rumpf_start,
-                kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)),
+                kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)
+                + OPENER_SICHT_ZUSCHLAG),
             naechster - 0.5)
         # Tempo-Badge am Kapitelzaehler: seit 21.08.2026 ersetzt er den
         # frueheren eigenen Abschnitt "FILLING FAST". Dass ein Thread
@@ -2997,11 +3188,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Strecke am Videoende.
         tempo = str(eintrag.get("tempo") or "").strip()
         label = f"CHAPTER {k + 1:02d} / {len(koepfe)}"
-        kapitel_szene.overlays.append(ov(
-            szenen.titel_karte(titel,
-                               label=f"{label}  ·  {tempo}" if tempo else label,
-                               quelle=f"Source: {quelle}" if quelle else ""),
-            kopf_start + 0.2, opener_bis, einflug="unten"))
+        ticker_overlays(kapitel_szene, kopf_start + 0.3,
+                        min(opener_bis, kopf_start + TICKER_OPENER_DAUER))
+        lower_third(kapitel_szene, titel,
+                    kopf_start + 0.2, opener_bis,
+                    label=f"{label}  ·  {tempo}" if tempo else label,
+                    quelle=f"Source: {quelle}" if quelle else "",
+                    kicker="BREAKING" if nr == breaking_nr else "",
+                    boden=OPENER_QUELLE_MIN if quelle else OPENER_MIN)
 
         # Sonderereignisse des Drehbuchs im Kapitelrumpf verorten
         # Der vierte Eintrag ist das natuerliche Ende: die Zeit, zu der der
@@ -3025,8 +3219,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # 19.08.2026: XOM-Zitat bei 10:31, gesprochen rund 4s).
                 natur = (_satz_ende(rumpf_worte, sp[1]) or sp[1]) \
                     + ZITAT_NACHLAUF
+                # ZITAT_MIN gilt gegen die effektive Lesezeit, also plus
+                # Einblendverlust (Leitplanke 3, 22.08.2026).
                 ereignisse.append((max(sp[0], rumpf_start + 1.0), "zitat",
-                                   zit, max(natur, sp[0] + ZITAT_MIN)))
+                                   zit, max(natur, sp[0] + ZITAT_MIN
+                                            + ZITAT_SICHT_ZUSCHLAG)))
         kar = eintrag.get("karte")
         if isinstance(kar, dict) and str(kar.get("wert") or "").strip():
             tz = _anker_zeit(str(kar.get("anker") or ""), rumpf_worte)
@@ -3128,6 +3325,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         titel_plan: list[KartenStand] = []
         detail_plan: list[KartenStand] = []
         fokus_plan: list[FokusKarte] = []
+        puls_plan: list[KartenStand] = []
         for gi, (g0, gtitel, glage) in enumerate(segmente):
             g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
             texte = [str(p["text"]) for t, p in tags if g0 <= t < g1]
@@ -3175,11 +3373,18 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Lesezeit-Boden nach Textlaenge statt Konstante: 1.1s
                 # reichten fuer 29 Zeichen nicht (bis 30 cps gemessen,
                 # 19.08.2026), waehrend parallel ein anderer Satz laeuft.
-                boden = fokus_boden(texte[n])
+                # Der Boden gilt gegen die effektive Lesezeit: Einflug und
+                # Aufblende (EINBLEND_VERLUST) fressen vom Fenster, bevor
+                # der Text voll lesbar steht (Leitplanke 3, 22.08.2026).
+                boden = fokus_boden(texte[n]) + EINBLEND_VERLUST
                 f = (sicht_bis(zeit[n], ab) - zeit[n] >= boden
                      and naht_nach(ab) >= ab + FLUG_DAUER)
                 z = ab + FLUG_DAUER if f else halt
-                steht = sicht_bis(zeit[n], z) - zeit[n] >= boden
+                # Ein Punkt, der ohne Flug hart parkt, blendet am Ende aus
+                # (0.35) - fliegende lesen bis zum Flugbeginn, dort ueber-
+                # nimmt der Flug die Ausblende.
+                steht = sicht_bis(zeit[n], z) - zeit[n] \
+                    >= boden + (0.0 if f else 0.35)
                 if not steht:
                     # Zu kurz fuer eine Fokus-Karte: der Punkt erscheint
                     # sofort in der Liste, wie vor der Bewegung.
@@ -3190,9 +3395,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # mehreren kurzen Punkten hintereinander aufsummieren und die
                 # Liste gegen die Anker verschieben.
                 gerade = min(max(z, land[-1]) if land else z, g1)
-                fliegt.append(f and abs(gerade - z) < 0.01)
+                f_ok = f and abs(gerade - z) < 0.01
+                fliegt.append(f_ok)
+                # Lesbar ist der Punkt nur bis zum Flugbeginn - die
+                # Flugphase zaehlt nicht als Lesezeit (Leitplanke 3).
+                lesbar_ende = gerade - (FLUG_DAUER if f_ok else 0.0)
                 zeigt.append(steht
-                             and sicht_bis(zeit[n], gerade) - zeit[n] >= boden)
+                             and sicht_bis(zeit[n], lesbar_ende) - zeit[n]
+                             >= boden + (0.0 if f_ok else 0.35))
                 land.append(gerade)
             marken = [g0] + land
             beginn = g0
@@ -3263,7 +3473,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # aufspringen - die Staffelung ist sonst genau dort dahin,
                 # wo es am engsten ist.
                 frag = list(details[n])
-                fenster_frei = sicht_bis(det_von, det_bis) - det_von
+                # Auch hier effektive Lesezeit: die erste Kastenstufe blendet
+                # 0.3s auf, bevor die Zeile voll steht (Leitplanke 3).
+                fenster_frei = (sicht_bis(det_von, det_bis) - det_von
+                                - DETAIL_BLENDEN)
                 while frag and detail_boden(frag) > fenster_frei:
                     frag = frag[:-1]
                 frag_stat[0] += len(details[n])
@@ -3309,16 +3522,50 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                                 det_bis if letzte else dz[k + 1],
                                 blende=0.3 if k == 0 else 0.0,
                                 haelt=not letzte))
-                        for zbild, zvon in zip(zeilen_bilder, dz):
+                        for zbild, zvon, ztext in zip(zeilen_bilder, dz, frag):
                             zpfad, zx, zy = png(zbild)
                             detail_plan.append(KartenStand(
-                                zpfad, zx, zy, zvon, det_bis))
+                                zpfad, zx, zy, zvon, det_bis,
+                                lese_text=ztext,
+                                lese_boden=detail_frag_boden(ztext)))
                 # Bewegt wird das zugeschnittene Overlay: sein Ziel ist die
                 # Kartenposition minus dem Textversatz innerhalb des Bildes.
                 fokus_plan.append(FokusKarte(
                     pfad, fx, fy, t_n, land[n],
                     land[n] - FLUG_DAUER if fliegt[n] else None,
-                    ziel[0] - (tx - fx), ziel[1] - (ty - fy)))
+                    ziel[0] - (tx - fx), ziel[1] - (ty - fy),
+                    text=punkt_text))
+                # Wortebene (Intent B3): die Zahl im Stichpunkt faerbt sich
+                # exakt in dem Moment, in dem sie gesprochen wird - gefunden
+                # ueber dieselbe Fundort-Suche wie die Detail-Fragmente.
+                zahl_tok = next((tok for tok in punkt_text.split()
+                                 if szenen._ZAHL.search(tok)), "")
+                if zahl_tok:
+                    lesbar_bis = (land[n] - FLUG_DAUER if fliegt[n]
+                                  else land[n])
+                    fenster = [w for w in rumpf_worte
+                               if t_n - 0.4 <= w.start <= lesbar_bis]
+                    moment = _detail_fundort(zahl_tok, fenster)
+                    if moment is not None:
+                        von_p = max(t_n + 0.3, moment)
+                        bis_p = min(von_p + ZAHL_PULS_DAUER,
+                                    lesbar_bis - 0.1)
+                        if bis_p - von_p > 0.4:
+                            puls = szenen.fokus_zahl_overlay(
+                                punkt_text, glage,
+                                frag if zeigt_detail else None)
+                            if puls is not None:
+                                ppfad, px_, py_ = png(puls)
+                                puls_plan.append(KartenStand(
+                                    ppfad, px_, py_, von_p, bis_p,
+                                    blende=0.18))
+
+        # Klang zu den Fluegen (Intent B5): Whoosh beim Abheben, Klick beim
+        # Einrasten in der Liste - aus denselben Planwerten wie der Flug.
+        for fk in fokus_plan:
+            if fk.flug_ab is not None:
+                klang.append((fk.flug_ab, "whoosh"))
+                klang.append((fk.flug_ab + FLUG_DAUER, "klick"))
 
         def karte_auflegen(sz: Szene, a: float, b: float) -> None:
             for st in titel_plan + karten_plan:
@@ -3342,7 +3589,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     sz.overlays.append(Overlay(
                         st.png, a0, b0, st.blende if a0 == st.von else 0.0,
                         st.x, st.y,
-                        weiter=st.haelt or b0 < st.bis - 0.02))
+                        # Gestaffelter Aufbau mit Bewegung (B2): jede
+                        # Detail-Zeile faehrt ein kurzes Stueck ein statt
+                        # nur aufzublenden - aber nur Zeilen (lese_boden
+                        # gesetzt), nie die Kastenstufen darunter.
+                        einflug=("unten" if st.lese_boden > 0
+                                 and a0 == st.von else ""),
+                        einflug_weg=szenen._s(16),
+                        weiter=st.haelt or b0 < st.bis - 0.02,
+                        lese_text=st.lese_text, lese_boden=st.lese_boden))
             for fk in fokus_plan:
                 a0, b0 = max(a, fk.von), min(b, fk.bis)
                 if b0 - a0 <= 0.02:
@@ -3362,7 +3617,17 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                              and a0 <= fk.flug_ab + 0.001
                              and b0 >= fk.bis - 0.001 else None),
                     flug_x=fk.ziel_x, flug_y=fk.ziel_y,
-                    weiter=b0 < fk.bis - 0.02))
+                    weiter=b0 < fk.bis - 0.02,
+                    lese_text=fk.text,
+                    lese_boden=fokus_boden(fk.text) if fk.text else 0.0))
+            # Zahl-Puls NACH der Fokus-Karte auflegen (Overlays werden in
+            # Listenreihenfolge gestapelt): die farbigen Zahl-Glyphen liegen
+            # deckungsgleich ueber den weissen der Karte.
+            for st in puls_plan:
+                a0, b0 = max(a, st.von), min(b, st.bis)
+                if b0 - a0 > 0.02:
+                    sz.overlays.append(Overlay(
+                        st.png, a0, b0, st.blende, st.x, st.y))
 
         erste_story = True
         sz: Szene | None = None
@@ -3392,13 +3657,21 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     sz.overlays.append(ov(
                         szenen.titel_karte(str(px["titel"]), label="NEXT UP",
                                            gross=False),
-                        von + 0.1, bis, einflug="unten"))
+                        von + 0.1, bis, einflug="unten",
+                        lese_text=str(px["titel"]),
+                        lese_boden=lese_boden_allgemein(str(px["titel"]))))
                 elif art == "zitat":
                     sz.overlays.append(ov(
                         szenen.zitat_post(str(px["text"]), _post_datum(datum)),
-                        von + 0.1, bis, einflug="unten"))
+                        von + 0.1, bis, einflug="unten",
+                        lese_text=str(px["text"]), lese_boden=ZITAT_MIN))
+                    _zitat_rahmen_auflegen(sz, str(px["text"]), von, bis, ov)
                 else:
-                    _countup_overlays(sz, px, von + 0.2, bis, ov)
+                    _countup_overlays(sz, px, von + 0.2, bis, ov, klang)
+
+    # Nach den Kapiteln gilt wieder das Serien-Amber (Intent A#136):
+    # Zahlenblock alter Ordnung, Schluss-Zitat und Outro sind Serienrahmen.
+    szenen.akzent_setzen()
 
     if not vorne:
         # Blockliste alter Ordnung: Zahlen wie frueher vor dem Outro.
@@ -3418,10 +3691,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         bis = next((start_von(i) for i in (frage_idx, outro_idx)
                     if i is not None and block_worte[i]), ende)
         s = neu(pool_bild() or tages_motiv, t)
+        schluss_text = bloecke[zit_idx].text.split(": ", 1)[-1].strip('"')
         s.overlays.append(ov(
-            szenen.zitat_post(bloecke[zit_idx].text.split(": ", 1)[-1]
-                              .strip('"'), _post_datum(datum)),
-            t + 0.2, bis, einflug="unten"))
+            szenen.zitat_post(schluss_text, _post_datum(datum)),
+            t + 0.2, bis, einflug="unten",
+            lese_text=bloecke[zit_idx].text, lese_boden=ZITAT_MIN))
+        _zitat_rahmen_auflegen(s, schluss_text, t + 0.1, bis, ov)
         print(f"Schluss-Zitat: {bis - t:.1f}s")
 
     if outro_idx is not None:
@@ -3455,17 +3730,29 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             reihe = aktivitaet.taegliche_extrakt_zahlen(EXTRAKTE)
             chart_dauer = (gesprochen - outro_start) - OUTRO_TAFEL_MIN_SEC
             if len(reihe) >= 2 and chart_dauer >= AKTIVITAET_MIN_SEC:
-                s.overlays.append(ov(aktivitaet.aktivitaets_chart(reihe),
-                                     outro_start, outro_start + chart_dauer,
-                                     einflug="unten"))
+                s.overlays.append(ov(
+                    aktivitaet.aktivitaets_chart(reihe, sk=szenen.SK),
+                    outro_start, outro_start + chart_dauer,
+                    einflug="unten"))
                 outro_start += chart_dauer
         except Exception as e:
             print(f"Aktivitaets-Chart uebersprungen ({e})")
         # Die Tafel steht bis zum letzten Frame und blendet dabei laenger aus
         # als jedes andere Overlay - das Bild dahinter geht ueber SCHLUSS_FADE
         # gleichzeitig nach Schwarz (siehe _szene_clip).
-        s.overlays.append(ov(szenen.outro_tafel(frage), outro_start, ende,
+        s.overlays.append(ov(szenen.outro_tafel(frage, linie=False),
+                             outro_start, ende,
                              fade=SCHLUSS_FADE, einflug="unten"))
+        # Die Amber-Linie zeichnet sich selbst (C1 Trim Paths): Stufen in
+        # harten Schnitten, sobald die Tafel eingefahren ist.
+        stufen = szenen.outro_linie_stufen()
+        linie_ab = outro_start + 0.55
+        for si, stufe in enumerate(stufen):
+            letzte = si + 1 == len(stufen)
+            s.overlays.append(ov(
+                stufe, linie_ab + si * 0.07,
+                ende if letzte else linie_ab + (si + 1) * 0.07, 0.0))
+        ticker_overlays(s, outro_start + 0.3, ende - SCHLUSS_FADE)
         print(f"Schlussbild: {ende - outro_start:.1f}s "
               f"(davon {ende - gesprochen:.1f}s stummer Ausklang)"
               + (f", Cliffhanger {frage!r}" if frage else ""))
@@ -3497,27 +3784,127 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                        and (o.start < s.start - 0.01 or o.ende > bis + 0.01))
     if zerschnitten:
         print(f"WARNUNG: {zerschnitten} Fluege ragen aus ihrer Szene")
-    return folge
+    return folge, klang
+
+
+ZITAT_RAHMEN_NACH = 0.9   # so lange nach der Karte erscheint der Rahmen
+ZITAT_RAHMEN_DAUER = 2.2
+
+
+def _zitat_rahmen_auflegen(sz: Szene, text: str, von: float, bis: float,
+                           ov) -> None:
+    """Highlight-Rahmen um die Zitat-Karte (C2): blendet kurz nach der
+    Karte auf und wieder aus - der Blick geht zum Beleg. Entfaellt bei zu
+    kurzen Fenstern, ein Aufblitzen waere Laerm statt Fuehrung."""
+    von_r = von + ZITAT_RAHMEN_NACH
+    bis_r = min(von_r + ZITAT_RAHMEN_DAUER, bis - 0.3)
+    if bis_r - von_r > 0.8:
+        sz.overlays.append(ov(szenen.zitat_rahmen(text), von_r, bis_r,
+                              fade=0.25))
+
+
+# Sparkline aus dem Text (C2): "down 12% from 61k" traegt zwei belegte
+# Punkte - den Bezugswert hinter "from" und den Wert der Karte selbst.
+# Nur wenn BEIDE im Text stehen, entsteht eine Grafik (Leitplanke 7).
+_SPARK_BASIS = re.compile(
+    r"\b(down|up)\b[^.;]{0,40}?\bfrom\s+\$?([\d.,]+)\s*([kKmMbB]?)")
+_SPARK_SUFFIX = {"k": 1e3, "m": 1e6, "b": 1e9}
+
+
+def _sparkline_daten(karte: dict) -> tuple[float, float, str, str] | None:
+    """(wert_von, wert_bis, label_von, label_bis) fuer szenen.zahl_tafel,
+    None ohne belegten Bezugswert. Ist der Kartenwert ein Prozentsatz,
+    ergibt sich der zweite Punkt aus genau der behaupteten Relation; ist
+    er absolut, wird er direkt gezeichnet. Die Labels bleiben die
+    Original-Schreibweisen aus dem Bericht."""
+    text = " ".join(str(karte.get(f) or "") for f in ("wert", "sub", "satz"))
+    m = _SPARK_BASIS.search(text, )
+    if not m:
+        return None
+    try:
+        basis = float(m.group(2).replace(",", "")) \
+            * _SPARK_SUFFIX.get(m.group(3).lower(), 1.0)
+    except ValueError:
+        return None
+    wert_str = str(karte.get("wert") or "")
+    zm = szenen._ZAHL.search(wert_str)
+    if not zm or basis <= 0:
+        return None
+    zahl = abs(float(zm.group(0).replace(",", "")))
+    runter = m.group(1).lower() == "down" or zm.group(0).startswith("-")
+    if "%" in wert_str:
+        if zahl >= 100:
+            return None     # "up 300% from x" spraengt die Mini-Skala
+        aktuell = basis * (1 - zahl / 100) if runter \
+            else basis * (1 + zahl / 100)
+    else:
+        suffix = wert_str[zm.end():zm.end() + 1].lower()
+        aktuell = zahl * _SPARK_SUFFIX.get(suffix, 1.0)
+    if aktuell <= 0:
+        return None
+    return basis, aktuell, m.group(2) + m.group(3), wert_str
 
 
 def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
-                      ov) -> None:
-    """Kennzahl als Gross-Zahl mit hart geschnittenen Count-up-Stufen."""
+                      ov, klang: list[tuple[float, str]] | None = None
+                      ) -> None:
+    """Kennzahl als Gross-Zahl mit echtem Count-up-Zaehlwerk (Intent A#82).
+
+    Vorher vier Standbilder in 0,64 s - unter der Wahrnehmungsschwelle.
+    Jetzt laeuft das Zaehlwerk COUNTUP_DAUER lang (gedeckelt auf knapp die
+    Haelfte des Fensters, damit der Endwert seine Lesezeit behaelt), und
+    beim Einrasten blitzt der Endwert einen Moment weiss auf
+    (C1 Flash-on-change), bevor er in seiner Farbe stehen bleibt."""
     wert = str(karte["wert"])
     titel = str(karte.get("titel") or "")
     sub = str(karte.get("sub") or "")
-    stufen = szenen.countup_werte(wert)
+    # Das Zaehlwerk bekommt nur die Zeit, die nach dem Lesezeit-Boden des
+    # Endstands (ZAHL_COUNTUP_MIN) uebrig bleibt - der Endwert ist die
+    # Aussage, das Zaehlen nur der Weg dorthin (Smoke-Befund 22.08.2026:
+    # 45 %-Deckel liess den TL;DR-Endstaenden nur noch 1.1-1.5 s).
+    budget = (bis - ab) - ZAHL_COUNTUP_MIN - COUNTUP_FLASH
+    dauer = max(0.4, min(COUNTUP_DAUER, budget))
+    stufen = szenen.countup_werte(wert, max(4, round(dauer / COUNTUP_TAKT)))
+    takt = dauer / max(1, len(stufen))
     for si, w in enumerate(stufen):
         sz.overlays.append(ov(szenen.zahl_tafel(w, titel, sub),
-                              ab + si * COUNTUP_TAKT,
-                              ab + (si + 1) * COUNTUP_TAKT, 0.0))
-    sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub),
-                          ab + len(stufen) * COUNTUP_TAKT, bis, 0.0))
+                              ab + si * takt, ab + (si + 1) * takt, 0.0))
+    final_ab = ab + len(stufen) * takt
+    if klang is not None and stufen:
+        # Impact genau auf dem Einrasten des Endwerts (Intent B5).
+        klang.append((final_ab, "zahl"))
+    # Sparkline (C2) erst auf dem Endstand: waehrend des Zaehlwerks wuerde
+    # sie nur ablenken, und der Bezugswert gehoert zum fertigen Wert.
+    spark = _sparkline_daten(karte)
+    if spark:
+        print(f"Sparkline: {wert!r} von {spark[2]!r}")
+    if stufen and bis - final_ab > COUNTUP_FLASH + 0.6:
+        sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, flash=True,
+                                                spark=spark),
+                              final_ab, final_ab + COUNTUP_FLASH, 0.0))
+        final_ab += COUNTUP_FLASH
+    sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, spark=spark),
+                          final_ab, bis, 0.0,
+                          lese_text=f"{wert} {titel}".strip(),
+                          # Nur der Zahl-Boden: Wert und Titel werden auch
+                          # gesprochen, das Bild ergaenzt den Ton.
+                          lese_boden=ZAHL_COUNTUP_MIN))
 
 
+# Ease-Konstanten des Feel-Pakets (B2): Standard-Back-Easing-Werte.
+EASE_C1 = 1.70158           # Overshoot-Staerke ease-out-back (Einflug)
+EASE_C3 = EASE_C1 + 1.0
+EASE_C2 = EASE_C1 * 1.525   # ease-in-out-back (Flug): Anticipation+Overshoot
+
+SCHWARZ_BLENDE = 0.16     # Schwarzblende vor einem Kapitel-Opener
+                          # (Intent A#80/69); bewusst 0.1-0.25 s, siehe
+                          # Retention-Vorbehalt im Brainstorm-Intent
+KAMERA_RAUSCHEN_PX = 1.0  # Amplitude des Kamera-Rauschens im supersampelten
+                          # Raster (Intent A#145); entspricht ~0.5 px im Bild
 UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
 EINFLUG_DAUER = 0.40     # so lange rueckt eine Karte in ihre Endlage
-EINFLUG_WEG = 72         # aus so vielen Pixeln Versatz kommt sie
+EINFLUG_WEG = szenen._s(72)   # aus so vielen Pixeln Versatz kommt sie
+                         # (720p-Layoutmass, nativ skaliert)
 FLUG_DAUER = 0.35        # so lange fliegt ein Fokus-Punkt in die Themen-Karte
 FLUG_VORLAUF = 0.25      # so viel vor dem Wechsel setzt er sich in Bewegung:
                          # der abgeloeste Punkt ist damit rund 0.1 s nach dem
@@ -3539,7 +3926,12 @@ AKTIVITAET_MIN_SEC = 3.5  # kuerzer lohnt sich die Balkengrafik im Outro nicht
 ZAHL_COUNTUP_MIN = 1.8   # so lange muss der Count-up der letzten gesprochenen
                          # Zahl mindestens stehen bleiben, bevor die stille
                          # Uebersicht sein Fenster uebernehmen darf
-ZAHL_UEBERSICHT_MIN = 2.2  # Lesezeit der Uebersichtstafel mit allen vier
+MULTIPLES_VERSATZ = 0.12  # Staffelversatz der Small-Multiples-Karten (C1/C2)
+ZAHL_UEBERSICHT_MIN = 2.2  # effektive Lesezeit je Multiples-Karte
+ZAHL_UEBERSICHT_FENSTER = ZAHL_UEBERSICHT_MIN + 1.2  # Standzeit-Fenster der
+                           # Uebersicht: Boden plus Ein-/Ausblende (0.75)
+                           # plus Staffelversatz der letzten Karte (0.36)
+                           # (Smoke-Messung 22.08.2026)
                            # Zahlen; passt das Fenster nicht, entfaellt sie
                            # ersatzlos statt aufzublitzen
                          # (Balken + Titel brauchen einen Moment zum Lesen)
@@ -3552,6 +3944,13 @@ SCHLUSS_FADE = 1.5    # Ausblende des Schlussbilds (Tafel-Alpha und Bild nach
                       # Schwarz); muss kleiner als AUSKLANG bleiben.
 OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
                            # die Aktivitaets-Grafik bekommt nur den Rest
+TICKER_MIN = 3.0         # kuerzer lohnt kein Tickerband-Segment
+TICKER_TEMPO = 90        # Laufgeschwindigkeit in 720p-Pixeln pro Sekunde
+TICKER_OPENER_DAUER = 6.0  # so lange laeuft das Band am Kapitelanfang
+LT_VERSATZ = 0.25        # zweistufiges Lower Third (C1/C-News): erst der
+                         # Grund mit Balken, so viel spaeter der Text darin
+ZAHL_PULS_DAUER = 1.1    # so lange steht die farbige Zahl im Fokus-Punkt,
+                         # wenn sie gesprochen wird (Intent B3 / Idee 28/32)
 FOKUS_MIN = 1.1          # absoluter Boden; die Lesezeit rechnet fokus_boden()
 DETAIL_MIN = 2.6         # kuerzer bekommt ein Punkt keine Stichwort-Fragmente:
                          # zwei bis drei Zeilen Kleintext wollen gelesen
@@ -3575,9 +3974,31 @@ DETAIL_FRAG_MIN = 2.0    # Boden je einzelnem Fragment (der Kasten als
                          # 1.4 war ein Aufblitzen, siehe DETAIL_CPS
 
 
+# Effektive Lesezeit statt Standzeit (Leitplanke 3, 22.08.2026): Einflug
+# (EINFLUG_DAUER) und Aufblende (fade 0.35) laufen parallel und nehmen dem
+# Text zusammen rund 0.4s, in denen er nicht voll lesbar steht. Die
+# Lesezeit-Boeden gelten gegen die EFFEKTIVE Lesezeit - die Planung rechnet
+# diesen Verlust deshalb auf ihre Fenster-Pruefungen drauf, und
+# lesezeit_verifizieren() rechnet ihn am fertigen Plan nach.
+EINBLEND_VERLUST = 0.40
+# Sichtzuschlaege je Elementtyp: was der Boden zusaetzlich braucht, damit
+# die EFFEKTIVE Lesezeit ihn haelt (Smoke-Messung 22.08.2026 am echten
+# Tag 21.08.): Textstart-Versatz + Einflug + Ausblende.
+OPENER_SICHT_ZUSCHLAG = 1.1   # 0.45 Versatz (0.2+LT) + 0.4 Einflug + 0.25 aus
+ZITAT_SICHT_ZUSCHLAG = 0.9    # 0.1 Versatz + 0.4 Einflug + 0.35 Ausblende
+DETAIL_BLENDEN = 0.7          # Ein- plus Ausblende einer Detail-Zeile
+
+
 def fokus_boden(text: str) -> float:
     """Mindest-Standzeit eines Fokus-Punkts nach seiner Zeichenzahl."""
     return max(FOKUS_MIN, FOKUS_VORLAUF + len(text) / FOKUS_CPS)
+
+
+def lese_boden_allgemein(text: str, cps: float = FOKUS_CPS) -> float:
+    """Lesezeit-Boden fuer Karten ohne eigene Spezialregel (Agenda-Eintraege,
+    Zwischenthemen, Ansage-Karten): Blickwechsel plus Zeichenzahl im
+    konservativen Nebenher-Lesetempo."""
+    return FOKUS_VORLAUF + len(text) / cps
 
 
 def detail_frag_boden(fragment: str) -> float:
@@ -3598,6 +4019,77 @@ LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
                          # der letzte Punkt im laufenden Satz wegfliegen
 
 
+@dataclass
+class LeseVerstoss:
+    """Ein Textelement, dessen effektive Lesezeit unter seinem Boden liegt."""
+    text: str
+    boden: float
+    effektiv: float
+
+
+def lesezeit_verifizieren(folge: list[Szene], ende: float
+                          ) -> list[LeseVerstoss]:
+    """Lauf-Verifikation der Lesbarkeit (Leitplanke 3, 22.08.2026).
+
+    Rechnet fuer jedes Textelement des FERTIGEN Szenenplans die effektive
+    Lesezeit nach: Standzeit minus Einblendphase (Einflug und Aufblende
+    laufen parallel, es zaehlt die laengere), minus Ausblende, minus der
+    Zeit ab Flugbeginn (ein fliegender Text ist nicht lesbar). Ein Element
+    kann ueber Szenengrenzen in mehrere Overlay-Stuecke geteilt sein
+    (gleicher PNG-Pfad) - gezaehlt wird das Gesamtfenster ueber alle
+    Stuecke. Elemente ohne lese_boden (Vignette, Count-up-Stufen,
+    Kastengruende, geparkte Listen) sind bewusst aussen vor.
+
+    Entscheid warnen vs. korrigieren: dieser Schritt WARNT nur. Die
+    Korrekturen sitzen in der Planung selbst (zu kurze Fenster bekommen
+    keine Fokus-Karte, Fragmente fallen von hinten weg, Bullets werden
+    gekappt) - dort existiert der Kontext fuer eine sinnvolle Korrektur.
+    Eine nachtraegliche pauschale Verlaengerung wuerde gegen die
+    TTS-verankerten Zeitpunkte arbeiten. Diese Pruefung ist das
+    Sicherheitsnetz, das anschlagen muss, sobald ein kuenftiger Beat die
+    Planungs-Boeden umgeht - ohne sie zerstoert jeder zusaetzliche
+    Animations-Beat schleichend die Lesbarkeit."""
+    def fliegt_vor(teile: list[Overlay]) -> bool:
+        return any(o.flug_ab is not None for o in teile)
+
+    stuecke: dict[Path, list[Overlay]] = {}
+    for s in folge:
+        for o in s.overlays:
+            if o.lese_boden > 0:
+                stuecke.setdefault(o.png, []).append(o)
+    verstoesse: list[LeseVerstoss] = []
+    for teile in stuecke.values():
+        start = min(o.start for o in teile)
+        bis = min((o.flug_ab for o in teile if o.flug_ab is not None),
+                  default=max(o.ende for o in teile))
+        bis = min(bis, ende)
+        erst = min(teile, key=lambda o: o.start)
+        letzt = max(teile, key=lambda o: o.ende)
+        # Einflug kostet nur Lesezeit, wenn _lage ihn wirklich faehrt
+        # (Standzeiten unter 2x EINFLUG_DAUER bleiben statisch).
+        faehrt = bool(erst.einflug) and (
+            max(o.ende for o in teile) - start
+            - (FLUG_DAUER if fliegt_vor(teile) else 0.0)
+            >= 2 * EINFLUG_DAUER)
+        einblend = max(erst.fade, EINFLUG_DAUER if faehrt else 0.0)
+        fliegt = any(o.flug_ab is not None for o in teile)
+        ausblend = 0.0 if fliegt else letzt.fade
+        effektiv = (bis - start) - einblend - ausblend
+        if effektiv + 1e-6 < erst.lese_boden:
+            verstoesse.append(LeseVerstoss(erst.lese_text, erst.lese_boden,
+                                           effektiv))
+    if verstoesse:
+        for v in sorted(verstoesse, key=lambda v: v.effektiv - v.boden):
+            print(f"LESEZEIT-VERSTOSS: {v.text[:60]!r} effektiv "
+                  f"{v.effektiv:.2f}s, Boden {v.boden:.2f}s")
+        print(f"Lesezeit-Verifikation: {len(stuecke)} Textelemente, "
+              f"{len(verstoesse)} unter dem Boden - Planung pruefen")
+    else:
+        print(f"Lesezeit-Verifikation: {len(stuecke)} Textelemente, "
+              f"alle ueber ihrem Boden")
+    return verstoesse
+
+
 def _lage(o: Overlay) -> tuple[str, str]:
     """x- und y-Angabe fuer overlay=, bei Bedarf als Bewegungs-Ausdruck.
 
@@ -3606,29 +4098,42 @@ def _lage(o: Overlay) -> tuple[str, str]:
     duerfen deshalb einfach summiert werden.
 
     Einflug: die Karte startet um EINFLUG_WEG Pixel versetzt und rueckt mit
-    cubic ease-out an ihren Platz - schnell los, sanft ankommen. Bewusst nur
-    ein kurzer Versatz und nicht ein Anfahren von der Bildkante, sonst waere
-    die Karte in den ersten Zehnteln teilweise ausserhalb des Bildes und die
-    Regel "keine Sprechsekunde ohne Text" nur noch auf dem Papier erfuellt.
-    Nach Ablauf der Einflugzeit haelt der if-Zweig die Karte bitgenau auf
-    ihrem Platz, damit der Anschluss an den naechsten Kartenstand (harter
-    Schnitt) nicht zittert.
+    ease-out-back an ihren Platz - schnell los, kurz ueber das Ziel hinaus
+    (~10 % Overshoot) und zurueck (Feel-Paket B2: der Unterschied zwischen
+    PowerPoint-Bewegung und After Effects). Bewusst nur ein kurzer Versatz
+    und nicht ein Anfahren von der Bildkante, sonst waere die Karte in den
+    ersten Zehnteln teilweise ausserhalb des Bildes und die Regel "keine
+    Sprechsekunde ohne Text" nur noch auf dem Papier erfuellt. Nach Ablauf
+    der Einflugzeit haelt der if-Zweig die Karte bitgenau auf ihrem Platz,
+    damit der Anschluss an den naechsten Kartenstand (harter Schnitt) nicht
+    zittert. o.einflug_weg erlaubt kleinen Elementen (Detail-Zeilen) einen
+    kuerzeren Weg als den Standard.
 
     Flug: der Fokus-Punkt wandert in FLUG_DAUER an seinen Platz in der
-    Themen-Karte, mit smoothstep - anfahren und abbremsen, damit das Auge
-    mitkommt. clip() haelt den Weg vor dem Start und nach der Ankunft fest;
-    ein negatives flug_ab (Flug begann in der Vorszene) rechnet dadurch
-    korrekt weiter.
+    Themen-Karte, mit ease-in-out-back statt smoothstep (B2): ein kurzes
+    Zuruecknehmen gegen die Flugrichtung (Anticipation), dann die Fahrt,
+    am Ziel ein leichtes Ueberschiessen. clip() haelt den Weg vor dem
+    Start und nach der Ankunft fest; ein negatives flug_ab (Flug begann in
+    der Vorszene) rechnet dadurch korrekt weiter.
 
     Standzeiten unter der doppelten Einflugdauer bleiben statisch: was kaum
     steht, soll nicht auch noch fahren. Bei Enge weicht der Einflug, nicht
     der Flug - das Parken ist die eigentliche Aussage."""
+    if o.lauf_px:
+        # Tickerband (C-News): der Streifen faehrt von der rechten Kante
+        # nach links und laeuft um, sobald er durch ist.
+        return (f"'{RENDER_W}-mod((t-{o.start:.3f})*{o.lauf_px:.1f},"
+                f"{o.lauf_breite + RENDER_W})'", str(o.y))
     dx: list[str] = []
     dy: list[str] = []
     steht = o.ende - o.start - (FLUG_DAUER if o.flug_ab is not None else 0.0)
     if o.einflug and steht >= 2 * EINFLUG_DAUER:
-        weg = (f"if(gt(t,{o.start + EINFLUG_DAUER:.3f}),0,{EINFLUG_WEG}"
-               f"*pow(1-(t-{o.start:.3f})/{EINFLUG_DAUER},3))")
+        w = o.einflug_weg or EINFLUG_WEG
+        # ease-out-back: offset = -W*q^2*(c3*q+c1) mit q = p-1; bei p=0
+        # steht die Karte um W versetzt, um p~0.6 schiesst sie ~10 % ueber.
+        q = f"((t-{o.start:.3f})/{EINFLUG_DAUER}-1)"
+        weg = (f"if(gt(t,{o.start + EINFLUG_DAUER:.3f}),0,"
+               f"-{w}*pow({q},2)*({EASE_C3:.5f}*{q}+{EASE_C1:.5f}))")
         if o.einflug == "links":
             dx.append(f"-({weg})")
         elif o.einflug == "rechts":
@@ -3639,7 +4144,12 @@ def _lage(o: Overlay) -> tuple[str, str]:
             dy.append(f"+({weg})")
     if o.flug_ab is not None:
         p = f"clip((t-{o.flug_ab:.3f})/{FLUG_DAUER},0,1)"
-        s = f"(({p})*({p})*(3-2*({p})))"
+        # ease-in-out-back (B2): Anticipation am Start, Overshoot am Ziel.
+        c2 = EASE_C2
+        s = (f"if(lt({p},0.5),"
+             f"pow(2*{p},2)*({c2 + 1:.5f}*2*{p}-{c2:.5f})/2,"
+             f"(pow(2*{p}-2,2)*({c2 + 1:.5f}*(2*{p}-2)+{c2:.5f})+2)/2)")
+        s = f"({s})"
         dx.append(f"+({o.flug_x - o.x})*{s}")
         dy.append(f"+({o.flug_y - o.y})*{s}")
     xa = f"'{o.x}{''.join(dx)}'" if dx else str(o.x)
@@ -3833,7 +4343,7 @@ def _klip_zuordnung(datum: str, abschnitte: list[Abschnitt],
 def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                 suffix: str, bug: Overlay, vig: Overlay,
                 naechstes: Path | None, naechster_zoom_rein: bool,
-                schluss: bool = False) -> Path:
+                schluss: bool = False, knall_folgt: bool = False) -> Path:
     """Eine Szene als eigenen kurzen Clip rendern: Motiv mit langsamem
     zoompan-Drift, darueber Vignette, die zeitgesteuerten Text-Overlays und
     zuoberst der Ecken-Bug. Bewusst je Szene ein kleiner, immer gleich
@@ -3880,7 +4390,8 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
                   f"normalisiert ({e}) - Standbild-Fallback")
             ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
             return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
-                               naechstes, naechster_zoom_rein, schluss)
+                               naechstes, naechster_zoom_rein, schluss,
+                               knall_folgt)
         # -stream_loop -1 laesst das Motiv seine eigene, meist kuerzere
         # Laufzeit fuellend wiederholen; -t deckelt sie auf die von der TTS
         # vorgegebene Szenendauer (Analogie zu den geloopten Overlay-PNGs
@@ -3897,15 +4408,22 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
     if s.motiv is not None:
         z = f"1+{ZOOM_HUB}*on/{n}" if s.zoom_rein \
             else f"1+{ZOOM_HUB}*({n}-on)/{n}"
+        # Sub-Pixel-Rauschen auf der Kameraposition (Intent A#145): ~0.5 px
+        # im Ausgabebild bei ~1 Hz, x und y mit inkommensurablen Frequenzen -
+        # lebendig, ohne bemerkt zu werden. Gerechnet im 2x-supersampelten
+        # Eingaberaster, deshalb Amplitude 1 px.
+        rx = f"+{KAMERA_RAUSCHEN_PX}*sin(2*PI*on/{FPS})"
+        ry = f"+{KAMERA_RAUSCHEN_PX}*cos(2*PI*on*0.73/{FPS})"
         # 2x-Supersampling vor zoompan gegen das bekannte Zittern des Filters
-        teile = [f"[0:v]scale={2 * CANVAS_W}:{2 * CANVAS_H}"
+        teile = [f"[0:v]scale={2 * RENDER_W}:{2 * RENDER_H}"
                  f":force_original_aspect_ratio=increase,"
-                 f"crop={2 * CANVAS_W}:{2 * CANVAS_H},"
-                 f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                 f":d={d}:s={CANVAS_W}x{CANVAS_H}:fps={FPS}[bg]"]
+                 f"crop={2 * RENDER_W}:{2 * RENDER_H},"
+                 f"zoompan=z='{z}':x='iw/2-(iw/zoom/2){rx}'"
+                 f":y='ih/2-(ih/zoom/2){ry}'"
+                 f":d={d}:s={RENDER_W}x{RENDER_H}:fps={FPS}[bg]"]
     else:
         cmd += ["-f", "lavfi", "-i",
-                f"color=c={HINTERGRUND}:s={CANVAS_W}x{CANVAS_H}:r={FPS}"
+                f"color=c={HINTERGRUND}:s={RENDER_W}x{RENDER_H}:r={FPS}"
                 f":d={dauer + 0.3:.3f}"]
         teile = ["[0:v]null[bg]"]
     for o in ovs:
@@ -3922,10 +4440,10 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
         # ist der Anschluss stetig) - sonst springt es an der Naht.
         z0 = 1.0 if naechster_zoom_rein else 1 + ZOOM_HUB
         teile.append(
-            f"[{len(ovs) + 1}:v]scale={2 * CANVAS_W}:{2 * CANVAS_H}"
+            f"[{len(ovs) + 1}:v]scale={2 * RENDER_W}:{2 * RENDER_H}"
             f":force_original_aspect_ratio=increase,"
-            f"crop={2 * CANVAS_W}:{2 * CANVAS_H},"
-            f"crop=iw/{z0:.3f}:ih/{z0:.3f},scale={CANVAS_W}:{CANVAS_H},"
+            f"crop={2 * RENDER_W}:{2 * RENDER_H},"
+            f"crop=iw/{z0:.3f}:ih/{z0:.3f},scale={RENDER_W}:{RENDER_H},"
             f"format=rgba,fade=t=in:st={dauer - UEBERGANG:.3f}"
             f":d={UEBERGANG}:alpha=1[nx]")
         teile.append(f"{kette}[nx]overlay=0:0[bgx]")
@@ -3954,6 +4472,15 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
         teile.append(f"{kette}[o{j}]overlay=x={xa}:y={ya}"
                      f":enable='between(t,{o.start:.3f},{o.ende:.3f})'[v{j}]")
         kette = f"[v{j}]"
+    # Kapitelwechsel (Intent A#80/69): endet die naechste Szene-Grenze an
+    # einem Kapitel-Opener, geht dieses Clip-Ende kurz nach Schwarz - wenige
+    # Frames, nicht Sekunden (Retention-Vorbehalt: zu langes Schwarz liest
+    # sich als Videoende). Der Impact aus B5 liegt auf dem Opener-Start und
+    # signalisiert Absicht statt Abbruch.
+    if knall_folgt and dauer > SCHWARZ_BLENDE + 0.2:
+        teile.append(f"{kette}fade=t=out:st={dauer - SCHWARZ_BLENDE:.3f}"
+                     f":d={SCHWARZ_BLENDE}[sw]")
+        kette = "[sw]"
     # Letzte Szene: das ganze Bild geht nach Schwarz, waehrend die
     # Abschluss-Tafel darueber ausblendet. Ein Bericht, der am letzten Wort
     # hart abreisst, wirkt wie ein Verbindungsabbruch (Nutzerwunsch
@@ -3978,7 +4505,8 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
               f"Retry mit Standbild")
         ersatz = replace(s, motiv=s.motiv_poster, motiv_animiert=False)
         return _szene_clip(ersatz, f0, f1, idx, arbeit, suffix, bug, vig,
-                           naechstes, naechster_zoom_rein, schluss)
+                           naechstes, naechster_zoom_rein, schluss,
+                           knall_folgt)
     return ziel
 
 
@@ -4130,8 +4658,38 @@ def _intro_anhebung(kapitel1: float) -> str:
             f":eval=frame")
 
 
-def _ton_kette(start: int, ende: float,
-               kapitel1: float = 0.0) -> tuple[list[str], list[str], str]:
+# Aussetzer im Musikbett vor der groessten Zahl (Intent A#137): Spannung
+# ohne neues Material. Das Bett faehrt kurz vor dem ersten TL;DR-Count-up
+# fast auf null, haelt die Stille ueber das Zaehlwerk und kommt weich
+# zurueck - akustisch dieselbe Betonung wie der Impact im Bild.
+ZAHL_SENKE_VORLAUF = 0.5   # so lange vor dem Count-up beginnt die Absenkung
+ZAHL_SENKE_RAMPE_AB = 0.3
+ZAHL_SENKE_HALTEN = 1.8    # deckt Zaehlwerk (1.3 s) plus Flash
+ZAHL_SENKE_RAMPE_AUF = 0.9
+ZAHL_SENKE_REST = 0.05     # nicht ganz null - ein totes Bett klingt kaputt
+
+
+def _zahl_senke(moment: float) -> str:
+    """volume-Ausdruck fuer den Bett-Aussetzer vor der groessten Zahl.
+
+    moment ist der Startzeitpunkt des ersten TL;DR-Count-ups; Leerstring,
+    wenn keiner bekannt ist - dann bleibt das Bett unangetastet."""
+    if moment <= ZAHL_SENKE_VORLAUF:
+        return ""
+    a = moment - ZAHL_SENKE_VORLAUF
+    b = moment + ZAHL_SENKE_HALTEN
+    r1, r2 = ZAHL_SENKE_RAMPE_AB, ZAHL_SENKE_RAMPE_AUF
+    rest = ZAHL_SENKE_REST
+    return (f"volume=volume='if(lt(t,{a:.2f}),1,"
+            f"if(lt(t,{a + r1:.2f}),1-{1 - rest:.2f}*(t-{a:.2f})/{r1},"
+            f"if(lt(t,{b:.2f}),{rest},"
+            f"if(lt(t,{b + r2:.2f}),{rest}+{1 - rest:.2f}*(t-{b:.2f})/{r2},"
+            f"1))))':eval=frame")
+
+
+def _ton_kette(start: int, ende: float, kapitel1: float = 0.0,
+               zahl_moment: float = 0.0, effekte: Path | None = None
+               ) -> tuple[list[str], list[str], str]:
     """Eingaben, Filterteile und Ausgangs-Label der Tonspur (ohne Loudness).
 
     start ist der ffmpeg-Input-Index der Sprachdatei; der Messlauf zaehlt ab
@@ -4149,11 +4707,30 @@ def _ton_kette(start: int, ende: float,
     # -shortest kappt das Video an der kuerzesten Spur, und der stumme
     # Ausklang mit dem Schlussbild faellt sonst restlos weg (gemessen
     # 19.08.2026: Video 718.4s, letzter Cue 718.5s - der Puffer kam nie an).
+    # Effektspur (Intent B5): eigener Eingang HINTER dem Bett, bewusst ohne
+    # Ducking - die Geraeusche dauern Zehntel und duerfen auf der Sprache
+    # liegen. Pegel steuert sounds.PEGEL, den Rest richtet die zweipassige
+    # loudnorm auf der fertigen Mischung.
+    fx: list[str] = []
+    fx_teile: list[str] = []
+    if effekte is not None:
+        fx = ["-i", str(effekte)]
+        fx_idx = start + (2 if BETT.exists() else 1)
+        fx_teile = [f"[{fx_idx}:a]apad=whole_dur={ende:.3f}[fx]"]
     if not BETT.exists():
-        return [], [f"[{start}:a]apad=whole_dur={ende:.3f}[mix]"], "[mix]"
+        if effekte is None:
+            return [], [f"[{start}:a]apad=whole_dur={ende:.3f}[mix]"], "[mix]"
+        return (fx,
+                [f"[{start}:a]apad=whole_dur={ende:.3f}[sp]", *fx_teile,
+                 "[sp][fx]amix=inputs=2:duration=first:normalize=0[mix]"],
+                "[mix]")
     ab = max(ende - BETT_AUSBLENDE, 0.1)
-    anhebung = _intro_anhebung(kapitel1)
-    return (["-stream_loop", "-1", "-i", str(BETT)],
+    # Intro-Anhebung und Zahl-Senke (#137) formen das Bett NACH dem Ducking,
+    # in dieser Reihenfolge verkettet.
+    formen = ",".join(f for f in (_intro_anhebung(kapitel1),
+                                  _zahl_senke(zahl_moment)) if f)
+    anhebung = formen
+    return (["-stream_loop", "-1", "-i", str(BETT), *fx],
             # Die gepolsterte Sprache wird zweimal gebraucht - als Trigger des
             # Duckings und als Mischanteil - deshalb asplit. Gepolstert wird
             # vor dem Split, weil sidechaincompress keine framesync-Optionen
@@ -4176,17 +4753,21 @@ def _ton_kette(start: int, ende: float,
              f"ratio={DUCK_RATIO}:attack={DUCK_ATTACK}:release={DUCK_RELEASE}"
              f"[bettd]",
              f"[bettd]{anhebung}[bett]" if anhebung else "[bettd]anull[bett]",
+             *fx_teile,
              # normalize=0 ist Pflicht: mit dem Standard teilt amix durch die
              # Zahl der Eingaenge und die Sprache verliert 6 dB.
              # duration=first haelt die Laenge weiter an der Sprache, damit
              # ein zu kurzes Bett nicht ueber -shortest das Video kappt - die
              # Sprache reicht durch apad jetzt selbst bis `ende`.
-             "[sp][bett]amix=inputs=2:duration=first:normalize=0[mix]"],
+             ("[sp][bett][fx]amix=inputs=3:duration=first:normalize=0[mix]"
+              if effekte is not None else
+              "[sp][bett]amix=inputs=2:duration=first:normalize=0[mix]")],
             "[mix]")
 
 
 def _loudnorm_gemessen(audio_mp3: Path, ende: float,
-                       kapitel1: float = 0.0) -> str:
+                       kapitel1: float = 0.0, zahl_moment: float = 0.0,
+                       effekte: Path | None = None) -> str:
     """loudnorm-Filter mit den Messwerten eines Analysedurchlaufs.
 
     Zweipass, weil einpassiges loudnorm vorwaertsblickend regelt und hoerbar
@@ -4197,7 +4778,8 @@ def _loudnorm_gemessen(audio_mp3: Path, ende: float,
     Nachbarvideo. Scheitert die Messung, bleibt es bei einpassig: lieber
     ungenau normalisiert als kein Video."""
     ziel = f"loudnorm=I={ZIEL_LUFS}:TP=-1.5:LRA=11"
-    bett_ein, teile, quelle = _ton_kette(0, ende, kapitel1)
+    bett_ein, teile, quelle = _ton_kette(0, ende, kapitel1, zahl_moment,
+                                         effekte)
     kette = ";".join([*teile, f"{quelle}{ziel}:print_format=json[m]"])
     try:
         aus = subprocess.run(
@@ -4217,8 +4799,9 @@ def _loudnorm_gemessen(audio_mp3: Path, ende: float,
         return ziel
 
 
-def ton_argumente(audio_mp3: Path, ende: float,
-                  kapitel1: float = 0.0) -> tuple[list[str], list[str]]:
+def ton_argumente(audio_mp3: Path, ende: float, kapitel1: float = 0.0,
+                  zahl_moment: float = 0.0, effekte: Path | None = None
+                  ) -> tuple[list[str], list[str]]:
     """ffmpeg-Argumente fuer die Tonspur: Bett dazu, Endmix auf ZIEL_LUFS.
 
     Zurueck kommen die Eingabe-Argumente (hinter dem Video-Input) und die
@@ -4226,11 +4809,13 @@ def ton_argumente(audio_mp3: Path, ende: float,
     Fallback-Tag nicht anders klingt als die uebrigen. An der Sprachdatei
     selbst wird nichts geaendert: an ihren Wort-Zeitstempeln haengen
     Overlays, Kapitelmarken und Untertitel."""
-    bett_ein, teile, quelle = _ton_kette(1, ende, kapitel1)
+    bett_ein, teile, quelle = _ton_kette(1, ende, kapitel1, zahl_moment,
+                                         effekte)
     # level=false am Limiter ist wichtig: mit dem Standard normalisiert er den
     # Ausgang auf seinen limit-Wert und verschiebt damit die Lautheit, die
     # loudnorm gerade gesetzt hat. So greift er nur noch als Notbremse.
-    norm = _loudnorm_gemessen(audio_mp3, ende, kapitel1)
+    norm = _loudnorm_gemessen(audio_mp3, ende, kapitel1, zahl_moment,
+                              effekte)
     teile.append(f"{quelle}{norm},alimiter=limit=0.95:level=false[ton]")
     # Stereo und 48 kHz fest: die Sprachdatei ist Mono mit 24 kHz und wuerde
     # das Ausgabeformat sonst vorgeben (gemessen: Mono bei 96 kHz). Das Bett
@@ -4243,13 +4828,14 @@ def ton_argumente(audio_mp3: Path, ende: float,
 
 def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
                  arbeit: Path, suffix: str, datum: str, ende: float,
-                 kapitel1: float = 0.0) -> None:
+                 kapitel1: float = 0.0, zahl_moment: float = 0.0,
+                 effekte: Path | None = None, datenstand: str = "") -> None:
     """Alle Szenen rendern, auf dem 25-fps-Frame-Raster nahtlos aneinander
     schneiden (kein Drift zur Tonspur) und mit dem Audio muxen."""
     if not folge:
         raise RuntimeError("keine Szenen")
     bug_pfad, bx, by = szenen.speichern(
-        szenen.bug(datum), arbeit / f"overlay{suffix}_bug.png")
+        szenen.bug(datum, datenstand), arbeit / f"overlay{suffix}_bug.png")
     bug = Overlay(bug_pfad, 0.0, 0.0, 0.0, bx, by)
     vig_pfad, vx, vy = szenen.speichern(
         szenen.vignette(), arbeit / f"overlay{suffix}_vignette.png")
@@ -4271,21 +4857,35 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
             return None
         return naechste.motiv_poster if naechste.motiv_animiert else naechste.motiv
 
+    def knall_folgt(i: int) -> bool:
+        return i + 1 < len(folge) and folge[i + 1].kapitel_knall
+
     clips = [_szene_clip(s, grenzen[i], grenzen[i + 1], i, arbeit, suffix,
                          bug, vig,
-                         crossfade_motiv(s, folge[i + 1]) if i + 1 < len(folge) else None,
+                         # Vor einem Kapitel-Knall gibt es keine Kreuzblende:
+                         # hart schwarz, dann hart das neue Bild (A#80/69).
+                         (crossfade_motiv(s, folge[i + 1])
+                          if i + 1 < len(folge) and not knall_folgt(i)
+                          else None),
                          folge[i + 1].zoom_rein if i + 1 < len(folge) else True,
-                         schluss=i + 1 == len(folge))
+                         schluss=i + 1 == len(folge),
+                         knall_folgt=knall_folgt(i))
              for i, s in enumerate(folge)]
     liste = arbeit / f"szenen{suffix}.txt"
     liste.write_text(
         "\n".join("file '" + str(c).replace("\\", "/") + "'" for c in clips)
         + "\n", encoding="utf-8")
-    ton_ein, ton_aus = ton_argumente(audio_mp3, ende, kapitel1)
+    ton_ein, ton_aus = ton_argumente(audio_mp3, ende, kapitel1,
+                                     zahl_moment, effekte)
+    # Nativ gerenderte Clips (RENDER == YOUTUBE) brauchen keine Skalierung
+    # mehr; der fruehere 1.5x-Upscale war genau der Weichzeichner, den
+    # Intent A#4 abschafft.
+    skala = ([] if (RENDER_W, RENDER_H) == (YOUTUBE_W, YOUTUBE_H)
+             else ["-vf", f"scale={YOUTUBE_W}:{YOUTUBE_H}"])
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error",
          "-f", "concat", "-safe", "0", "-i", str(liste),
-         *ton_ein, "-vf", f"scale={YOUTUBE_W}:{YOUTUBE_H}",
+         *ton_ein, *skala,
          "-c:v", "libx264", "-preset", "medium", "-crf", "18",
          "-pix_fmt", "yuv420p", *ton_aus, "-shortest", str(ziel_mp4)],
         check=True, timeout=900, capture_output=True)
@@ -4296,7 +4896,7 @@ def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
 
 def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
                    konkat: Path | None = None, ende: float = 0.0,
-                   kapitel1: float = 0.0) -> None:
+                   kapitel1: float = 0.0, zahl_moment: float = 0.0) -> None:
     """ass_datei=None ist der Praesentationsmodus: der Text steckt schon in
     den Standbildern der ffconcat-Liste, eingebrannt wird nichts mehr."""
     filter_teile: list[str] = []
@@ -4317,7 +4917,7 @@ def video_erzeugen(audio_mp3: Path, ass_datei: Path | None, ziel_mp4: Path,
     # anders, an dem der Fallback greift. -vf trifft den Videostream,
     # -filter_complex nur die Tonspur - sie liegen nicht uebereinander.
     ton_ein, ton_aus = ton_argumente(audio_mp3, ende or _mp3_dauer(audio_mp3),
-                                     kapitel1)
+                                     kapitel1, zahl_moment)
     subprocess.run(
         ["ffmpeg", "-y", *eingabe, *ton_ein,
          "-vf", vf,
@@ -4836,12 +5436,20 @@ def main() -> None:
         # Szenen-Layout (v7): Drehbuch-folien.json mit Stichworten,
         # Zwischenthemen, Zitaten und Kennzahlen.
         try:
-            folge = szenen_bauen(bloecke_ton, block_worte, abschnitte,
+            # Ticker des Tages fuer das C-News-Band: stehen im Bericht
+            # in Klammern hinter den Firmennamen (wie in shorts._TICKER).
+            ticker = [t_ for t_ in dict.fromkeys(
+                          re.findall(r"\(([A-Z]{2,5})\)", markdown))
+                      if t_.lower() not in STOPP_TAGS]
+            folge, klang = szenen_bauen(bloecke_ton, block_worte, abschnitte,
                                  zuordnung, fdaten, hook, datum, arbeit, ende,
                                  thumb_text_laden(tag_dir, args.sprache,
                                                   titel),
                                  sprech_ende=sprech_ende,
-                                 nur_video=args.nur_video)
+                                 nur_video=args.nur_video, ticker=ticker)
+            # Sicherheitsnetz Leitplanke 3: effektive Lesezeit jedes
+            # Textelements gegen seinen Boden nachrechnen (warnt nur).
+            lesezeit_verifizieren(folge, ende)
             ende_bauen = ende
             if args.vorschau is not None:
                 voll = len(folge)
@@ -4849,9 +5457,30 @@ def main() -> None:
                 folge = [s for s in folge if s.start < ende_bauen] or folge[:1]
                 print(f"Vorschau: nur die ersten {ende_bauen:.0f} s "
                       f"({len(folge)} von {voll} Szenen)")
+            # Effektspur (Intent B5) und Bett-Aussetzer vor der groessten
+            # Zahl (#137): der Moment ist der Count-up-Start der ersten
+            # gesprochenen TL;DR-Zahl.
+            zahl_moment = next(
+                (w[0].start + 0.2 for b, w in zip(bloecke_ton, block_worte)
+                 if b.rolle == "zahl" and w), 0.0)
+            effekte: Path | None = None
+            try:
+                effekte = sounds.effekt_spur(
+                    klang, ende_bauen, arbeit / f"sfx{cfg['suffix']}.wav")
+                if effekte is not None:
+                    print(f"Sound-Design: {len(klang)} Klang-Ereignisse "
+                          f"({effekte.name})")
+            except Exception as e:  # noqa: BLE001 - Effekte sind Beigabe
+                print(f"Effektspur nicht gebaut ({e}) - Ton ohne Effekte")
             print("baue Szenen-Video ...")
+            # Zeitstempel (C-News): der Datenstand aus der Kopfzeile des
+            # Berichts als Bildschirm-Metadatum im Ecken-Bug.
+            m_stand = DATENSTAND_RE.search(markdown)
+            datenstand = (f"{int(m_stand.group(4)):02d}:{m_stand.group(5)}"
+                          if m_stand else "")
             szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
-                         datum, ende_bauen, kapitel1)
+                         datum, ende_bauen, kapitel1, zahl_moment, effekte,
+                         datenstand)
             fertig = True
         except Exception as e:
             # Kein Layout-Problem darf den Upload verhindern.

@@ -83,7 +83,11 @@ ALT = design_tokens.NEUTRAL[2]
 KARTE_BG = design_tokens.NEUTRAL[8]
 
 KOPF_Y = 96
-KOPF_TEXT = "4CHAN /biz/  ·  BOARD REPORT"
+# Serientitel "BIZ-NEWS" (C5, 22.08.2026) - Begruendung in szenen.BUG_TEXT.
+# Die YouTube-Metadaten (Beschreibung "4chan /biz/", #4chan-Tags) ziehen
+# bewusst NICHT mit: ueber #4chan wird gesucht, das ist eine getrennt zu
+# entscheidende Reichweitenfrage.
+KOPF_TEXT = "BIZ-NEWS"
 TITEL_Y = 250
 TITEL_FONT = 84
 TITEL_ZEILE = 98

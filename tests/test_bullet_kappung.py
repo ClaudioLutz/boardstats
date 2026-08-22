@@ -87,7 +87,9 @@ class KartenBreite(unittest.TestCase):
 
     def test_keine_zeile_laeuft_aus_dem_kasten(self):
         d = ImageDraw.Draw(szenen._leer())
-        f = folien._font_medium(szenen.KARTE_PUNKT_FONT)
+        # szenen._font_medium skaliert auf das native Raster - dieselbe
+        # Schrift, mit der karte_text/karte_passt wirklich messen.
+        f = szenen._font_medium(szenen.KARTE_PUNKT_FONT)
         platz = szenen.KARTE_BREITE - szenen.KARTE_TEXT_X - szenen.KARTE_PAD_R
         for satz in KORPUS:
             punkt = szenen.karte_text(vr._luecken_bullet(satz))

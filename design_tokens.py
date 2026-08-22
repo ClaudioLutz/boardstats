@@ -44,6 +44,24 @@ AKZENT: dict[int, Farbe] = {
     8: (214, 158, 46),
 }
 
+# Signalfarben fuer gerichtete Zahlen (Intent A#35, 22.08.2026): Gruen fuer
+# explizites Plus, Rot fuer explizites Minus. Nur die DARSTELLUNG - ob eine
+# Zahl gerichtet ist, entscheidet weiterhin szenen._zahl_richtung() streng
+# am Vorzeichen im Text (kein erfundenes Trendurteil, Leitplanke 7).
+GRUEN: Farbe = (94, 205, 124)
+ROT: Farbe = (240, 98, 98)
+
+# Akzentfarbe je Kapitelthema (Intent A#136, 22.08.2026): staerkstes Mittel
+# gegen "wer Minute 3 sah, sah Minute 8" - Krypto behaelt das Serien-Amber,
+# Aktien laufen kuehl-blau, Meme/Boardleben gruen. Alle drei bestehen auf
+# den dunklen Text-Kaesten (Alpha 228 auf Schwarz) denselben Kontrasttest
+# wie das Amber. Kapitel ohne erkennbares Thema bleiben beim Amber.
+KAPITEL_AKZENT: dict[str, Farbe] = {
+    "krypto": AKZENT[6],
+    "aktien": (112, 182, 255),
+    "meme": (129, 214, 128),
+}
+
 # 4chan blue board (/biz/): eigene Skala, weil das Motiv (helles Papier)
 # gegen den dunklen Rest der Karten steht - als eigener Theme-Eintrag
 # unten trotzdem im selben Dict-Muster gefuehrt statt als Sonderfall.
