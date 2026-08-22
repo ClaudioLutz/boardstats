@@ -701,7 +701,25 @@ Für echte Zählerstände die Data API (`videos.list part=statistics`) nehmen.
 2. **24.08.:** steht in `traffic` ein `EXT_URL`-Ausschlag für den 21./22.08.?
    Das ist die Antwort auf das /biz/-Seeding. Bleibt er aus, hat das Seeding
    nichts gebracht.
-3. **Laufend:** taucht `YT_BROWSE` in der Tagesreihe auf, ist das der Tag, an
+3. **24.08., zweite Frage:** taugen die Shorts-Aufrufe etwas? Der Nutzer hat
+   dem „Faktor 15" (44 Shorts- gegen 3 Langformat-Aufrufe) zu Recht
+   widersprochen: ein Short wird im Feed serviert, der Daumen scrollt weiter,
+   das zählt als Aufruf. Seit `ENGAGED`/`engagedViews` (siehe unten) steht die
+   Antwort im 23:30-Lauf. **Entscheidungsregel vorab, nicht nachträglich
+   deuten:**
+   - **Haupttest** ist die `Ø Dauer`-Spalte je Short. Zweistelliger
+     Sekundenbereich → echte Aufrufe, der Formathebel ist belegt. Wenige
+     Sekunden → Vorbeiscroller, das Format ist **kein** Hebel, es bleibt
+     allein die Klickrate des Langformats.
+   - **Zweittest, nachrangig:** die Zeile „Aufrufe ohne Wiedergabe". Eine
+     Abweichung ist aussagekräftig; Gleichheit ist es **nicht** — ob
+     `engagedViews` bei Shorts überhaupt von `views` abweichen kann, ist offen
+     (möglicherweise stecken die Vorbeiscroller nur in der `viewCount` der
+     Data API).
+   - Der Nutzer hat die Shorts inzwischen selbst gesichtet und für schlecht
+     befunden. Diese Sichtung wiegt schwerer als die Zahl — die Messung
+     entscheidet nur noch, ob die Reichweite trotzdem echt ist.
+4. **Laufend:** taucht `YT_BROWSE` in der Tagesreihe auf, ist das der Tag, an
    dem der Feed anspringt — dann wird die Klickrate zur entscheidenden Grösse.
 
 ## Wartung dieses Skills

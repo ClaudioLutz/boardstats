@@ -102,7 +102,7 @@ def tageszahlen(token: str, tage: int = 30) -> list[dict]:
     antwort = _abfrage(token, {
         "ids": "channel==MINE", "startDate": von, "endDate": bis,
         "metrics": "views,estimatedMinutesWatched,averageViewDuration,"
-                   "averageViewPercentage,subscribersGained",
+                   f"averageViewPercentage,subscribersGained,{ENGAGED}",
         "dimensions": "day", "sort": "day",
     })
     return _zeilen(antwort)
@@ -111,12 +111,25 @@ def tageszahlen(token: str, tage: int = 30) -> list[dict]:
 def je_video(token: str, tage: int = 90, grenze: int = 50) -> list[dict]:
     """Rangliste der Videos im Zeitraum, nach Aufrufen absteigend."""
     von, bis = zeitraum(tage)
-    antwort = _abfrage(token, {
-        "ids": "channel==MINE", "startDate": von, "endDate": bis,
-        "metrics": "views,estimatedMinutesWatched,averageViewDuration,"
-                   "averageViewPercentage",
-        "dimensions": "video", "sort": "-views", "maxResults": str(grenze),
-    })
+    grund = ("views,estimatedMinutesWatched,averageViewDuration,"
+             "averageViewPercentage")
+
+    def hole(metriken: str) -> dict:
+        return _abfrage(token, {
+            "ids": "channel==MINE", "startDate": von, "endDate": bis,
+            "metrics": metriken, "dimensions": "video", "sort": "-views",
+            "maxResults": str(grenze),
+        })
+
+    # Rueckfall ohne engagedViews: an dieser Abfrage haengt kurven_erheben()
+    # und damit die Retention-Rueckkopplung an run_report. Sollte YouTube die
+    # Metrik hier je ablehnen, ist der Verlust die Zusatzspalte - nicht die
+    # Abbruchkurven des Tages.
+    try:
+        antwort = hole(f"{grund},{ENGAGED}")
+    except RuntimeError as e:
+        log.warning("Video-Rangliste ohne %s (%s)", ENGAGED, e)
+        antwort = hole(grund)
     zeilen = _zeilen(antwort)
     for z, meta in zip(zeilen, _video_meta(token, [z["video"] for z in zeilen])):
         z.update(meta)
@@ -130,6 +143,15 @@ def je_video(token: str, tage: int = 90, grenze: int = 50) -> list[dict]:
 # filters=-Parameter laufen statt ueber eine zweite Dimension.
 SUCH_BEGRIFFE_MAX = 25          # zugleich das API-Maximum dieser Dimension
 
+# engagedViews zaehlt nur Aufrufe mit tatsaechlicher Wiedergabe. Bei Shorts ist
+# das der Unterschied zwischen "im Feed serviert und weggewischt" und "wirklich
+# geschaut" - ohne diese Metrik ueberschaetzt jede Shorts-Zahl den Erfolg.
+# Beim Langformat fallen beide Werte zusammen; eine Abweichung ist also selbst
+# schon der Befund. Ergaenzend bleibt averageViewDuration der belastbarere
+# Test: ob engagedViews bei Shorts ueberhaupt von views abweichen kann, ist
+# offen - Gleichheit beweist deshalb nichts, eine Abweichung sehr wohl.
+ENGAGED = "engagedViews"
+
 
 def traffic_quellen(token: str, tage: int = 30) -> list[dict]:
     """Aufrufe je Tag und Traffic-Quelle (YT_SEARCH, RELATED_VIDEO, ...).
@@ -142,7 +164,7 @@ def traffic_quellen(token: str, tage: int = 30) -> list[dict]:
     von, bis = zeitraum(tage)
     return _zeilen(_abfrage(token, {
         "ids": "channel==MINE", "startDate": von, "endDate": bis,
-        "metrics": "views,estimatedMinutesWatched",
+        "metrics": f"views,estimatedMinutesWatched,{ENGAGED}",
         "dimensions": "day,insightTrafficSourceType", "sort": "day",
         "maxResults": "300",
     }))
@@ -354,6 +376,26 @@ def kurve_zeigen(kurve: list[dict], laufzeit_s: int = 0) -> None:
         print(f"{marke:>8}  {wert * 100:7.1f}%  {'#' * max(0, round(wert * 40))}")
 
 
+def engagement_luecke(zeilen: list[dict]) -> list[dict]:
+    """Eintraege, bei denen engagedViews unter views liegt - Vorbeiscroller.
+
+    Genau der Fall, der Shorts-Zahlen aufblaeht: im Feed serviert, weggewischt,
+    trotzdem als Aufruf gezaehlt. Fehlt die Metrik (aeltere Messung, Rueckfall
+    in je_video), gilt der Eintrag als unauffaellig statt als Luecke.
+    """
+    aus = []
+    for z in zeilen:
+        if ENGAGED not in z:
+            continue
+        views = int(z.get("views", 0) or 0)
+        echt = int(z.get(ENGAGED, 0) or 0)
+        if views > echt:
+            aus.append({"kennung": str(z.get("video") or z.get("day") or "?"),
+                        "views": views, "engaged": echt,
+                        "verloren": views - echt})
+    return sorted(aus, key=lambda e: -e["verloren"])
+
+
 def _traffic_ausgeben(traffic: list[dict], begriffe: list[dict],
                       land_reihe: list[dict], land: str = "CH") -> None:
     """Traffic-Quellen, Suchbegriffe und Landesreihe als Tabellen."""
@@ -394,9 +436,14 @@ def _traffic_ausgeben(traffic: list[dict], begriffe: list[dict],
 
 def _ausgeben(tage: list[dict], videos: list[dict]) -> None:
     print("\n=== Tageszahlen ===")
-    print(f"{'Tag':<12}{'Aufrufe':>9}{'Minuten':>9}{'Ø Dauer':>9}{'Ø Anteil':>10}{'Abos':>6}")
+    print(f"{'Tag':<12}{'Aufrufe':>9}{'davon echt':>11}{'Minuten':>9}"
+          f"{'Ø Dauer':>9}{'Ø Anteil':>10}{'Abos':>6}")
     for z in tage:
-        print(f"{z.get('day',''):<12}{z.get('views',0):>9.0f}"
+        echt = z.get(ENGAGED)
+        # Punkt statt Null: aeltere Messungen kennen die Metrik nicht, das ist
+        # etwas anderes als "null echte Aufrufe".
+        spalte = f"{'.':>11}" if echt is None else f"{echt:>11.0f}"
+        print(f"{z.get('day',''):<12}{z.get('views',0):>9.0f}{spalte}"
               f"{z.get('estimatedMinutesWatched',0):>9.0f}"
               f"{z.get('averageViewDuration',0):>8.0f}s"
               f"{z.get('averageViewPercentage',0):>9.1f}%"
@@ -412,11 +459,27 @@ def _ausgeben(tage: list[dict], videos: list[dict]) -> None:
         print(f"{'Summe/Mittel':<12}{summe:>9.0f}{minuten:>9.0f}{'':>9}{schnitt:>9.1f}%")
 
     print("\n=== Videos (nach Aufrufen) ===")
-    print(f"{'Datum':<12}{'Aufrufe':>8}{'Ø Anteil':>10}  {'ID':<13}Titel")
+    print(f"{'Datum':<12}{'Aufrufe':>8}{'echt':>7}{'Ø Dauer':>9}{'Ø Anteil':>10}"
+          f"  {'ID':<13}Titel")
     for v in videos:
-        print(f"{v.get('veroeffentlicht','?'):<12}{v.get('views',0):>8.0f}"
+        echt = v.get(ENGAGED)
+        spalte = f"{'.':>7}" if echt is None else f"{echt:>7.0f}"
+        print(f"{v.get('veroeffentlicht','?'):<12}{v.get('views',0):>8.0f}{spalte}"
+              f"{v.get('averageViewDuration',0):>8.0f}s"
               f"{v.get('averageViewPercentage',0):>9.1f}%  "
-              f"{v.get('video',''):<13}{v.get('titel','')[:52]}")
+              f"{v.get('video',''):<13}{v.get('titel','')[:44]}")
+
+    # Der Befund, wegen dem die Metrik ueberhaupt erhoben wird: wo Aufrufe
+    # gezaehlt, aber nicht angeschaut wurden. Ohne diesen Hinweis liest man
+    # eine Shorts-Zahl als Erfolg, die nur Vorbeiscroller sind.
+    luecken = engagement_luecke(videos)
+    if luecken:
+        print("  Aufrufe ohne Wiedergabe (serviert, nicht angeschaut):")
+        for e in luecken[:5]:
+            print(f"    {e['kennung']:<13}{e['views']:>4} Aufrufe, davon "
+                  f"{e['engaged']} echt - {e['verloren']} weggewischt")
+    elif any(ENGAGED in v for v in videos):
+        print("  keine Luecke zwischen Aufrufen und Wiedergaben.")
 
 
 def main() -> None:

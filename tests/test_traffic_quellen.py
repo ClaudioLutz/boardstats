@@ -75,7 +75,49 @@ class AblageVorwaertskompatibel(unittest.TestCase):
         self.assertEqual(ohne, mit)
 
 
+class EngagementLuecke(unittest.TestCase):
+    """engagedViews trennt "im Feed serviert" von "tatsaechlich geschaut" -
+    genau der Unterschied, der Shorts-Zahlen aufblaeht."""
+
+    def test_findet_weggewischte_aufrufe(self):
+        luecken = ab.engagement_luecke([
+            {"video": "short1", "views": 44, ab.ENGAGED: 6},
+            {"video": "lang1", "views": 30, ab.ENGAGED: 30},
+        ])
+        self.assertEqual(len(luecken), 1)
+        self.assertEqual(luecken[0]["kennung"], "short1")
+        self.assertEqual(luecken[0]["verloren"], 38)
+
+    def test_sortiert_nach_groesse_der_luecke(self):
+        luecken = ab.engagement_luecke([
+            {"video": "a", "views": 10, ab.ENGAGED: 8},
+            {"video": "b", "views": 50, ab.ENGAGED: 5},
+        ])
+        self.assertEqual([e["kennung"] for e in luecken], ["b", "a"])
+
+    def test_fehlende_metrik_ist_keine_luecke(self):
+        """Aeltere Messungen und der Rueckfall in je_video() kennen die Metrik
+        nicht - das darf nicht als 'alles weggewischt' erscheinen."""
+        self.assertEqual(ab.engagement_luecke([{"video": "alt", "views": 30}]), [])
+
+    def test_gleichstand_ist_keine_luecke(self):
+        self.assertEqual(
+            ab.engagement_luecke([{"video": "v", "views": 9, ab.ENGAGED: 9}]), [])
+
+    def test_tageszeilen_werden_ueber_day_benannt(self):
+        """Dieselbe Funktion dient Video- und Tageszeilen."""
+        luecken = ab.engagement_luecke([{"day": "2026-08-22", "views": 5, ab.ENGAGED: 1}])
+        self.assertEqual(luecken[0]["kennung"], "2026-08-22")
+
+    def test_leere_eingabe(self):
+        self.assertEqual(ab.engagement_luecke([]), [])
+
+
 class Konstanten(unittest.TestCase):
+    def test_engaged_metrik_heisst_wie_die_api(self):
+        """Tippfehler hier faellt sonst erst im Cron als HTTP 400 auf."""
+        self.assertEqual(ab.ENGAGED, "engagedViews")
+
     def test_suchbegriff_grenze_im_api_maximum(self):
         """25 ist das Maximum dieser Dimension - hoehere Werte quittiert die
         API mit 400, was der weiche Pfad zwar auffinge, aber als stillen
