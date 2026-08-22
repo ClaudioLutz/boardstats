@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: worktree-clip-ernte-ganzer-snapshot
 typ: feature
-commit: <wird beim Commit ergaenzt>
+commit: a625289
 ---
 
 # Ein Kapitel bekommt bis zu drei verschiedene Clips statt einem
