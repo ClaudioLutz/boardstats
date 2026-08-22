@@ -705,11 +705,12 @@ def detail_karte(text: str, detail: list[str], lage: str = "left",
     return bild
 
 
-def zitat_post(text: str, datum: str) -> Image.Image:
-    """Board-Zitat als 4chan-Antwortkarte (blue board): heller Karton,
-    gruener Anonymous-Name, Greentext-Zeilen in Boardgruen."""
-    bild = _leer()
-    d = ImageDraw.Draw(bild)
+def _zitat_kasten(text: str) -> tuple[int, int, int, int, list[str],
+                                      ImageFont.FreeTypeFont, int]:
+    """Geometrie der Zitat-Karte (x, y, Breite, Hoehe, Zeilen, Schrift,
+    Zeilenschritt) - geteilt zwischen zitat_post und zitat_rahmen, damit
+    der Highlight-Rahmen exakt auf der Karte liegt."""
+    d = ImageDraw.Draw(_leer())
     font = _font(False, 27)
     kw = _s(780)
     zeilen: list[str] = []
@@ -720,6 +721,29 @@ def zitat_post(text: str, datum: str) -> Image.Image:
     zh = _s(38)
     kh = _s(52) + len(zeilen) * zh + _s(30)
     x, y = (B - kw) // 2, max(_s(120), (H - kh) // 2 - _s(40))
+    return x, y, kw, kh, zeilen, font, zh
+
+
+def zitat_rahmen(text: str) -> Image.Image:
+    """Highlight-Rahmen um die selbst gerenderte Zitat-Karte (C2):
+    Akzent-Kontur knapp ausserhalb der Karte, blendet kurz nach der Karte
+    auf und lenkt den Blick auf den Beleg. Nur fuer die eigene Post-Karte,
+    wo die Geometrie bekannt ist - nie in einen fremden Screenshot."""
+    x, y, kw, kh, _, _, _ = _zitat_kasten(text)
+    bild = _leer()
+    r = _s(4)
+    ImageDraw.Draw(bild).rounded_rectangle(
+        [x - r, y - r, x + kw + r, y + kh + r], radius=_s(8),
+        outline=AKZENT, width=_s(3))
+    return bild
+
+
+def zitat_post(text: str, datum: str) -> Image.Image:
+    """Board-Zitat als 4chan-Antwortkarte (blue board): heller Karton,
+    gruener Anonymous-Name, Greentext-Zeilen in Boardgruen."""
+    bild = _leer()
+    d = ImageDraw.Draw(bild)
+    x, y, kw, kh, zeilen, font, zh = _zitat_kasten(text)
     d.rounded_rectangle(
         [x + _s(8), y + _s(10), x + kw + _s(8), y + kh + _s(10)],
         radius=_s(6), fill=(0, 0, 0, 130))
@@ -899,7 +923,22 @@ def zahlen_uebersicht(karten: list[dict]) -> Image.Image:
     return bild
 
 
-def outro_tafel(frage: str = "") -> Image.Image:
+def outro_linie_stufen(stufen: int = 6) -> list[Image.Image]:
+    """Die Amber-Linie der Outro-Tafel zeichnet sich selbst (C1 Trim
+    Paths): je Stufe ein Stueck mehr, video_report schneidet die Stufen
+    hart hintereinander - derselbe Weg wie beim Count-up-Zaehlwerk."""
+    aus: list[Image.Image] = []
+    for i in range(1, max(2, stufen) + 1):
+        bild = _leer()
+        breite = _s(548) * i / max(2, stufen)
+        ImageDraw.Draw(bild).rectangle(
+            [MARGIN, _s(376), MARGIN + breite, _s(386)],
+            fill=AKZENT_STANDARD)
+        aus.append(bild)
+    return aus
+
+
+def outro_tafel(frage: str = "", linie: bool = True) -> Image.Image:
     """Abbinder: fast schwarzer Grund (das Motiv scheint nur noch als
     Ahnung durch), Serientitel linksbuendig mit Amber-Linie darunter -
     das ruhige Ende statt einer weiteren zentrierten Tafel.
@@ -913,7 +952,9 @@ def outro_tafel(frage: str = "") -> Image.Image:
     d = ImageDraw.Draw(bild)
     d.text((MARGIN, _s(252)), BUG_TEXT, font=_font(True, 84),
            fill=HELL)
-    d.rectangle([MARGIN, _s(376), MARGIN + _s(548), _s(386)], fill=AKZENT)
+    if linie:
+        d.rectangle([MARGIN, _s(376), MARGIN + _s(548), _s(386)],
+                    fill=AKZENT)
     if frage:
         # Die Frage nimmt den Platz der Zeile "New every day" ein: zwei
         # Versprechen untereinander verwaessern beide, und die Frage ist

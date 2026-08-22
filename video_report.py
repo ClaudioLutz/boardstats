@@ -3646,6 +3646,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                         szenen.zitat_post(str(px["text"]), _post_datum(datum)),
                         von + 0.1, bis, einflug="unten",
                         lese_text=str(px["text"]), lese_boden=ZITAT_MIN))
+                    _zitat_rahmen_auflegen(sz, str(px["text"]), von, bis, ov)
                 else:
                     _countup_overlays(sz, px, von + 0.2, bis, ov, klang)
 
@@ -3671,11 +3672,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         bis = next((start_von(i) for i in (frage_idx, outro_idx)
                     if i is not None and block_worte[i]), ende)
         s = neu(pool_bild() or tages_motiv, t)
+        schluss_text = bloecke[zit_idx].text.split(": ", 1)[-1].strip('"')
         s.overlays.append(ov(
-            szenen.zitat_post(bloecke[zit_idx].text.split(": ", 1)[-1]
-                              .strip('"'), _post_datum(datum)),
+            szenen.zitat_post(schluss_text, _post_datum(datum)),
             t + 0.2, bis, einflug="unten",
             lese_text=bloecke[zit_idx].text, lese_boden=ZITAT_MIN))
+        _zitat_rahmen_auflegen(s, schluss_text, t + 0.1, bis, ov)
         print(f"Schluss-Zitat: {bis - t:.1f}s")
 
     if outro_idx is not None:
@@ -3719,8 +3721,18 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Die Tafel steht bis zum letzten Frame und blendet dabei laenger aus
         # als jedes andere Overlay - das Bild dahinter geht ueber SCHLUSS_FADE
         # gleichzeitig nach Schwarz (siehe _szene_clip).
-        s.overlays.append(ov(szenen.outro_tafel(frage), outro_start, ende,
+        s.overlays.append(ov(szenen.outro_tafel(frage, linie=False),
+                             outro_start, ende,
                              fade=SCHLUSS_FADE, einflug="unten"))
+        # Die Amber-Linie zeichnet sich selbst (C1 Trim Paths): Stufen in
+        # harten Schnitten, sobald die Tafel eingefahren ist.
+        stufen = szenen.outro_linie_stufen()
+        linie_ab = outro_start + 0.55
+        for si, stufe in enumerate(stufen):
+            letzte = si + 1 == len(stufen)
+            s.overlays.append(ov(
+                stufe, linie_ab + si * 0.07,
+                ende if letzte else linie_ab + (si + 1) * 0.07, 0.0))
         ticker_overlays(s, outro_start + 0.3, ende - SCHLUSS_FADE)
         print(f"Schlussbild: {ende - outro_start:.1f}s "
               f"(davon {ende - gesprochen:.1f}s stummer Ausklang)"
@@ -3754,6 +3766,22 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     if zerschnitten:
         print(f"WARNUNG: {zerschnitten} Fluege ragen aus ihrer Szene")
     return folge, klang
+
+
+ZITAT_RAHMEN_NACH = 0.9   # so lange nach der Karte erscheint der Rahmen
+ZITAT_RAHMEN_DAUER = 2.2
+
+
+def _zitat_rahmen_auflegen(sz: Szene, text: str, von: float, bis: float,
+                           ov) -> None:
+    """Highlight-Rahmen um die Zitat-Karte (C2): blendet kurz nach der
+    Karte auf und wieder aus - der Blick geht zum Beleg. Entfaellt bei zu
+    kurzen Fenstern, ein Aufblitzen waere Laerm statt Fuehrung."""
+    von_r = von + ZITAT_RAHMEN_NACH
+    bis_r = min(von_r + ZITAT_RAHMEN_DAUER, bis - 0.3)
+    if bis_r - von_r > 0.8:
+        sz.overlays.append(ov(szenen.zitat_rahmen(text), von_r, bis_r,
+                              fade=0.25))
 
 
 # Sparkline aus dem Text (C2): "down 12% from 61k" traegt zwei belegte
