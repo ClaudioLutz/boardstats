@@ -110,6 +110,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from PIL import ImageFont
 
+import design_tokens
 import folien
 import klip_katalog
 import run_report as rr
@@ -2645,7 +2646,10 @@ ZWISCHEN_MAX = 6.0       # Hoechstdauer eines Zwischenthema-Openers
 KARTE_MAX = 9.0          # Hoechstdauer der Kennzahl-Szene im Kapitel
 EREIGNIS_ABSTAND = 4.0   # Ruhe zwischen zwei Sonderszenen
 SZENE_MIN_FRAMES = 8     # kuerzer darf keine Szene sein (0,32 s)
-COUNTUP_TAKT = 0.16      # Standzeit je Count-up-Stufe
+COUNTUP_TAKT = 0.09      # Zielabstand zweier Zaehlwerk-Staende (Intent A#82)
+COUNTUP_DAUER = 1.3      # Ziellaenge des Zaehlwerks; vorher 4 x 0.16 s
+COUNTUP_FLASH = 0.14     # der Endwert blitzt beim Einrasten kurz weiss
+                         # (C1 Flash-on-change)
 
 
 @dataclass
@@ -2731,6 +2735,45 @@ def _post_datum(datum: str) -> str:
     """2026-08-16 -> 08/16/26 (Datumsstil der 4chan-Post-Kopfzeile)."""
     j, m, t = datum.split("-")
     return f"{m}/{t}/{j[2:]}"
+
+
+# Akzentfarbe je Kapitelthema (Intent A#136): Stichwortlisten fuer die drei
+# Themenfamilien des Boards. Klassifiziert wird ueber Ueberschrift, Titel
+# und die Drehbuch-Stichworte des Kapitels; ohne klaren Treffer bleibt das
+# Serien-Amber. Bewusst simple Wortlisten statt eines Modellaufrufs: die
+# Farbe ist Orientierung, kein Urteil - ein Fehlgriff kostet nichts.
+_THEMA_WOERTER: dict[str, frozenset[str]] = {
+    "krypto": frozenset("""
+        crypto bitcoin btc eth ethereum sol solana xrp ripple doge shib
+        monero xmr ada cardano coin coins token tokens altcoin altcoins
+        shitcoin shitcoins defi chain onchain staking stablecoin wallet
+        exchange binance coinbase tether halving airdrop nft mining miner
+        miners satoshi hodl
+        """.split()),
+    "aktien": frozenset("""
+        stock stocks share shares equity equities earnings nasdaq dow spy
+        sp500 market markets fed rates rate bond bonds yield yields ipo etf
+        etfs options calls puts short squeeze dividend macro inflation cpi
+        gdp gold silver oil commodity commodities housing mortgage bank
+        banks treasury tariff tariffs recession buyback ceo sec
+        """.split()),
+    "meme": frozenset("""
+        meme memes board anon anons larp bait cope seethe wagie neet
+        gambler gambling casino lottery poverty life stories advice makeit
+        rope kek based schizo
+        """.split()),
+}
+
+
+def kapitel_akzent(*texte: str) -> tuple[int, int, int] | None:
+    """Akzentfarbe des Kapitels aus seinen Texten; None = Serien-Amber."""
+    woerter = set(_norm_text(" ".join(texte)).split())
+    bester, punkte = "", 0
+    for thema, schluessel in _THEMA_WOERTER.items():
+        n = len(woerter & schluessel)
+        if n > punkte:
+            bester, punkte = thema, n
+    return design_tokens.KAPITEL_AKZENT.get(bester) if bester else None
 
 
 def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
@@ -2967,6 +3010,15 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
         eintrag = zuordnung.get(nr, {})
         titel = _folien_titel(zuordnung, bloecke, nr) or bloecke[kopf].text
+        # Akzentfarbe des Kapitels (Intent A#136): gilt fuer alle Overlays,
+        # die in diesem Schleifendurchlauf gerendert werden (Opener, Rand-
+        # spalte, Fokus, Detail, Kennzahl); nach der Schleife wird auf das
+        # Serien-Amber zurueckgestellt.
+        szenen.akzent_setzen(kapitel_akzent(
+            bloecke[kopf].text, titel,
+            " ".join(str(p.get("text") or "")
+                     for p in eintrag.get("stichworte") or []
+                     if isinstance(p, dict))))
         eigene = kapitel_eigene[k]
         quelle = (titel_map.get(abschnitte[nr].threads[0])
                   or f"thread {abschnitte[nr].threads[0]}") \
@@ -3447,6 +3499,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 else:
                     _countup_overlays(sz, px, von + 0.2, bis, ov)
 
+    # Nach den Kapiteln gilt wieder das Serien-Amber (Intent A#136):
+    # Zahlenblock alter Ordnung, Schluss-Zitat und Outro sind Serienrahmen.
+    szenen.akzent_setzen()
+
     if not vorne:
         # Blockliste alter Ordnung: Zahlen wie frueher vor dem Outro.
         zahlen_szenen(start_von(outro_idx) if outro_idx is not None else ende,
@@ -3551,23 +3607,37 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
 def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
                       ov) -> None:
-    """Kennzahl als Gross-Zahl mit hart geschnittenen Count-up-Stufen."""
+    """Kennzahl als Gross-Zahl mit echtem Count-up-Zaehlwerk (Intent A#82).
+
+    Vorher vier Standbilder in 0,64 s - unter der Wahrnehmungsschwelle.
+    Jetzt laeuft das Zaehlwerk COUNTUP_DAUER lang (gedeckelt auf knapp die
+    Haelfte des Fensters, damit der Endwert seine Lesezeit behaelt), und
+    beim Einrasten blitzt der Endwert einen Moment weiss auf
+    (C1 Flash-on-change), bevor er in seiner Farbe stehen bleibt."""
     wert = str(karte["wert"])
     titel = str(karte.get("titel") or "")
     sub = str(karte.get("sub") or "")
-    stufen = szenen.countup_werte(wert)
+    dauer = max(0.3, min(COUNTUP_DAUER, (bis - ab) * 0.45))
+    stufen = szenen.countup_werte(wert, max(4, round(dauer / COUNTUP_TAKT)))
+    takt = dauer / max(1, len(stufen))
     for si, w in enumerate(stufen):
         sz.overlays.append(ov(szenen.zahl_tafel(w, titel, sub),
-                              ab + si * COUNTUP_TAKT,
-                              ab + (si + 1) * COUNTUP_TAKT, 0.0))
+                              ab + si * takt, ab + (si + 1) * takt, 0.0))
+    final_ab = ab + len(stufen) * takt
+    if stufen and bis - final_ab > COUNTUP_FLASH + 0.6:
+        sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, flash=True),
+                              final_ab, final_ab + COUNTUP_FLASH, 0.0))
+        final_ab += COUNTUP_FLASH
     sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub),
-                          ab + len(stufen) * COUNTUP_TAKT, bis, 0.0,
+                          final_ab, bis, 0.0,
                           lese_text=f"{wert} {titel}".strip(),
                           lese_boden=max(ZAHL_COUNTUP_MIN,
                                          lese_boden_allgemein(
                                              f"{wert} {titel}".strip()))))
 
 
+KAMERA_RAUSCHEN_PX = 1.0  # Amplitude des Kamera-Rauschens im supersampelten
+                          # Raster (Intent A#145); entspricht ~0.5 px im Bild
 UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
 EINFLUG_DAUER = 0.40     # so lange rueckt eine Karte in ihre Endlage
 EINFLUG_WEG = szenen._s(72)   # aus so vielen Pixeln Versatz kommt sie
@@ -4029,11 +4099,18 @@ def _szene_clip(s: Szene, f0: int, f1: int, idx: int, arbeit: Path,
     if s.motiv is not None:
         z = f"1+{ZOOM_HUB}*on/{n}" if s.zoom_rein \
             else f"1+{ZOOM_HUB}*({n}-on)/{n}"
+        # Sub-Pixel-Rauschen auf der Kameraposition (Intent A#145): ~0.5 px
+        # im Ausgabebild bei ~1 Hz, x und y mit inkommensurablen Frequenzen -
+        # lebendig, ohne bemerkt zu werden. Gerechnet im 2x-supersampelten
+        # Eingaberaster, deshalb Amplitude 1 px.
+        rx = f"+{KAMERA_RAUSCHEN_PX}*sin(2*PI*on/{FPS})"
+        ry = f"+{KAMERA_RAUSCHEN_PX}*cos(2*PI*on*0.73/{FPS})"
         # 2x-Supersampling vor zoompan gegen das bekannte Zittern des Filters
         teile = [f"[0:v]scale={2 * RENDER_W}:{2 * RENDER_H}"
                  f":force_original_aspect_ratio=increase,"
                  f"crop={2 * RENDER_W}:{2 * RENDER_H},"
-                 f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                 f"zoompan=z='{z}':x='iw/2-(iw/zoom/2){rx}'"
+                 f":y='ih/2-(ih/zoom/2){ry}'"
                  f":d={d}:s={RENDER_W}x{RENDER_H}:fps={FPS}[bg]"]
     else:
         cmd += ["-f", "lavfi", "-i",

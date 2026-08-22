@@ -45,11 +45,29 @@ def _s(v: float) -> int:
 
 B = _s(thumbnail.BREITE)
 H = _s(thumbnail.HOEHE)
-AKZENT = thumbnail.AKZENT
+AKZENT_STANDARD = thumbnail.AKZENT
+# Der laufende Akzent ist seit Intent A#136 (22.08.2026) je Kapitelthema
+# umschaltbar (akzent_setzen); Standard bleibt das Serien-Amber. Modul-
+# globaler Zustand ist hier vertretbar: gerendert wird streng seriell in
+# szenen_bauen, und jede Funktion liest AKZENT erst beim Aufruf.
+AKZENT = AKZENT_STANDARD
+GRUEN = design_tokens.GRUEN
+ROT = design_tokens.ROT
 HELL = thumbnail.TEXT_HELL
 GRAU = thumbnail.TEXT_GRAU
 GEDIMMT = design_tokens.NEUTRAL[4]
 MARGIN = _s(64)
+
+
+def akzent_setzen(farbe: tuple[int, int, int] | None = None) -> None:
+    """Akzentfarbe fuer die folgenden Renderaufrufe setzen (None = Amber).
+
+    video_report.szenen_bauen schaltet damit je Kapitelthema um
+    (design_tokens.KAPITEL_AKZENT) und stellt nach dem Kapitelblock auf
+    den Standard zurueck - Intro, Zahlen, Schluss und der Ecken-Bug
+    bleiben immer amber (Serienmarke)."""
+    global AKZENT
+    AKZENT = farbe if farbe is not None else AKZENT_STANDARD
 
 
 def _font(fett: bool, gr: int) -> ImageFont.FreeTypeFont:
@@ -636,12 +654,30 @@ def _zahl_richtung(wert: str) -> str | None:
     return None
 
 
-def zahl_tafel(wert: str, titel: str, sub: str) -> Image.Image:
+def zahl_farbe(wert: str) -> tuple[int, int, int]:
+    """Farbe eines Zahlenwerts: Gruen/Rot bei explizitem Vorzeichen
+    (Intent A#35), sonst der laufende Akzent. Die Herleitung bleibt
+    _zahl_richtung - erweitert wird nur die Darstellung."""
+    richtung = _zahl_richtung(wert)
+    if richtung == "trending-up":
+        return GRUEN
+    if richtung == "trending-down":
+        return ROT
+    return AKZENT
+
+
+def zahl_tafel(wert: str, titel: str, sub: str,
+               flash: bool = False) -> Image.Image:
     """Bildschirmfuellende Zahl: der grosse Moment fuer die eine Kennzahl.
 
     Designsystem 19.08.2026: die Zahl darf dramatisch sein - 200 px Mono
     statt 128, dafuer eine hoehere Bande (154-574), die dem Moment die
-    ganze Bildmitte gibt. Titel in VERSALIEN darunter, Quellenzeile zuletzt."""
+    ganze Bildmitte gibt. Titel in VERSALIEN darunter, Quellenzeile zuletzt.
+
+    Seit Intent A#35 (22.08.2026) traegt eine gerichtete Zahl Farbe UND
+    Pfeil (Gruen/Rot statt Amber/Gedimmt). flash=True rendert die Zahl
+    weiss - die Blitz-Variante fuer den Moment, in dem der Count-up den
+    Endwert erreicht (C1 Flash-on-change)."""
     bild = _leer()
     _bande(bild, _s(154), _s(574), alpha=166)
     d = ImageDraw.Draw(bild)
@@ -651,18 +687,18 @@ def zahl_tafel(wert: str, titel: str, sub: str) -> Image.Image:
             break
     breite_wert = d.textlength(wert, font=font)
     richtung = _zahl_richtung(wert)
+    wert_farbe = HELL if flash else zahl_farbe(wert)
     icon_groesse = _s(gr * 0.48)
     icon_luecke = _s(26) if richtung else 0
     x0 = (B - breite_wert - icon_groesse - icon_luecke) / 2 \
         if richtung else (B - breite_wert) / 2
     wert_oben = _s(296) - _s(gr) // 2
     if richtung:
-        farbe_icon = AKZENT if richtung == "trending-up" else GEDIMMT
-        ic = icons.icon(richtung, icon_groesse, farbe_icon)
+        ic = icons.icon(richtung, icon_groesse, wert_farbe)
         bild.alpha_composite(
             ic, (int(x0), int(wert_oben + (_s(gr) - icon_groesse) / 2)))
         x0 += icon_groesse + icon_luecke
-    d.text((x0, wert_oben), wert, font=font, fill=AKZENT, stroke_width=6,
+    d.text((x0, wert_oben), wert, font=font, fill=wert_farbe, stroke_width=6,
            stroke_fill=(0, 0, 0))
     tf = _font(True, 44)
     t = titel.upper()
@@ -690,13 +726,26 @@ def zahlen_uebersicht(karten: list[dict]) -> Image.Image:
     tf = _font(True, 26)
     sf = _font(False, 22)
     # Werte-Spalte an der breitesten Zahl ausrichten, damit die Titel eine
-    # gemeinsame Kante bekommen - sonst franst die Tafel rechts aus.
-    breite = max((d.textlength(str(k.get("wert") or ""), font=wf)
-                  for k in karten[:4]), default=0.0)
+    # gemeinsame Kante bekommen - sonst franst die Tafel rechts aus. Der
+    # Trend-Pfeil gerichteter Zahlen (Intent A#35) zaehlt zur Spaltenbreite.
+    def _wert_breite(k: dict) -> float:
+        w = str(k.get("wert") or "")
+        return d.textlength(w, font=wf) \
+            + (_s(44) if _zahl_richtung(w) else 0)
+
+    breite = max((_wert_breite(k) for k in karten[:4]), default=0.0)
     for i, k in enumerate(karten[:4]):
         y = _s(186) + i * _s(98)
-        d.text((MARGIN + _s(24), y), str(k.get("wert") or ""), font=wf,
-               fill=AKZENT, stroke_width=4, stroke_fill=(0, 0, 0))
+        wert = str(k.get("wert") or "")
+        farbe = zahl_farbe(wert)
+        d.text((MARGIN + _s(24), y), wert, font=wf,
+               fill=farbe, stroke_width=4, stroke_fill=(0, 0, 0))
+        richtung = _zahl_richtung(wert)
+        if richtung:
+            ic = icons.icon(richtung, _s(30), farbe)
+            bild.alpha_composite(
+                ic, (int(MARGIN + _s(24) + d.textlength(wert, font=wf)
+                         + _s(12)), y + _s(18)))
         x = MARGIN + _s(24) + breite + _s(40)
         d.text((x, y + _s(6)), str(k.get("titel") or "").upper(), font=tf,
                fill=HELL)
@@ -742,24 +791,34 @@ def outro_tafel(frage: str = "") -> Image.Image:
 
 _ZAHL = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 
-COUNTUP_STUFEN = (0.18, 0.42, 0.65, 0.85)
+# Zwischenstaende eines Count-ups (Intent A#82, 22.08.2026): vorher vier
+# Standbilder in 0,64 s - unter der Wahrnehmungsschwelle. Jetzt ein echtes
+# Zaehlwerk mit ease-out (das Zaehlen bremst in den Endwert - zugleich das
+# Time-Remapping aus C1: langsamer auf der Betonung).
+COUNTUP_STUFEN_N = 14
 
 
-def countup_werte(wert: str) -> list[str]:
+def countup_werte(wert: str, stufen: int = COUNTUP_STUFEN_N) -> list[str]:
     """Zwischenstaende fuer den Zahlen-Count-up: die erste Zahl im String
-    waechst in Stufen auf den Endwert, Praefix/Suffix bleiben stehen.
-    Leer, wenn der Wert keine Zahl enthaelt."""
+    waechst als Zaehlwerk auf den Endwert, Praefix/Suffix bleiben stehen.
+    Ease-out-cubic verteilt die Staende (schnell los, langsam ankommen);
+    aufeinanderfolgende identische Staende werden dedupliziert, damit kleine
+    Zahlen ('10x') keine stehenden Doppel-Frames erzeugen. Leer, wenn der
+    Wert keine Zahl enthaelt."""
     m = _ZAHL.search(wert)
     if not m:
         return []
     roh = m.group(0)
     zahl = float(roh.replace(",", ""))
     dezimal = len(roh.split(".")[1]) if "." in roh else 0
-    aus = []
-    for f in COUNTUP_STUFEN:
-        z = zahl * f
+    aus: list[str] = []
+    for i in range(1, max(2, stufen)):
+        p = i / max(2, stufen)
+        z = zahl * (1 - (1 - p) ** 3)
         s = f"{z:,.{dezimal}f}" if "," in roh else f"{z:.{dezimal}f}"
-        aus.append(wert[:m.start()] + s + wert[m.end():])
+        stand = wert[:m.start()] + s + wert[m.end():]
+        if stand != wert and (not aus or stand != aus[-1]):
+            aus.append(stand)
     return aus
 
 
