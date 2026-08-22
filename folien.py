@@ -56,11 +56,12 @@ MARGIN = 64
 KASTEN = (0, 0, 0, 228)
 ECKRADIUS = 16
 
-KOPF_TEXT = "4CHAN /biz/  ·  BOARD REPORT"
+# Serientitel "BIZ-NEWS" (C5, 22.08.2026) - Begruendung in szenen.BUG_TEXT.
+KOPF_TEXT = "BIZ-NEWS"
 INTRO_LABEL = "TODAY'S TOP STORY"
 AGENDA_TITEL = "IN TODAY'S REPORT"
 ZAHLEN_TITEL = "NUMBERS OF THE DAY"
-OUTRO_TITEL = "/biz/ BOARD REPORT"
+OUTRO_TITEL = "BIZ-NEWS"
 OUTRO_ZEILE1 = "New every day"
 OUTRO_ZEILE2 = "Source threads and chapters in the description"
 

@@ -224,7 +224,7 @@ def videohintergrund(quelle: Path | None, ziel: Path) -> Path:
     return ziel
 
 
-def bauen(text: str, motiv: Path | None, ziel: Path, kopf: str = "4CHAN /biz/",
+def bauen(text: str, motiv: Path | None, ziel: Path, kopf: str = "BIZ-NEWS",
           fuss: str = "") -> Path:
     """Vorschaubild zusammensetzen und als JPEG unter 2 MB ablegen."""
     bild = Image.new("RGB", (BREITE, HOEHE), GRUND)

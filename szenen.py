@@ -35,7 +35,14 @@ GRAU = thumbnail.TEXT_GRAU
 GEDIMMT = design_tokens.NEUTRAL[4]
 MARGIN = 64
 
-BUG_TEXT = "4CHAN /biz/  ·  BOARD REPORT"
+# Serientitel im Bild (C5, 22.08.2026): "BIZ-NEWS" statt "4CHAN /biz/ ·
+# BOARD REPORT". Die Slash-Schreibweise ist die 4chan-Board-Notation und
+# liest sich als Herkunftsstempel; "NEWS" traegt den Genre-Entscheid
+# (Datenjournalismus + Nachrichtenoptik) im Namen. Als 9 statt 30 Zeichen
+# wirkt der Bug wie ein Sendermarker statt wie eine Beschriftung. In der
+# Zitat-Post-Karte bleibt "/biz/" stehen - dort ist es die Herkunftsangabe
+# eines echten Board-Posts, kein Serientitel.
+BUG_TEXT = "BIZ-NEWS"
 
 # 4chan blue board (/biz/): Antwort-Karte, Rand, Name, Greentext
 _BOARD = design_tokens.KARTEN_THEME["board_post"]
@@ -671,7 +678,7 @@ def outro_tafel(frage: str = "") -> Image.Image:
     bild = _leer()
     _bande(bild, 0, H, alpha=219)
     d = ImageDraw.Draw(bild)
-    d.text((MARGIN, 252), "/biz/ BOARD REPORT", font=folien._font(True, 84),
+    d.text((MARGIN, 252), BUG_TEXT, font=folien._font(True, 84),
            fill=HELL)
     d.rectangle([MARGIN, 376, MARGIN + 548, 386], fill=AKZENT)
     if frage:
