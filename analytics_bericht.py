@@ -14,9 +14,19 @@ Bewusst ohne Marker-Dateien aus den Tageslaeufen: die Video-Liste kommt aus der
 Analytics-API selbst, Titel und Veroeffentlichungsdatum aus der Data API. So
 laeuft die Auswertung auf jedem Rechner, nicht nur auf dem Render-Rechner.
 
-Nicht per API verfuegbar: Thumbnail-Impressionen und die Klickrate (CTR). Die
-zeigt nur YouTube Studio in der Oberflaeche - fuer Thumbnail-Vergleiche bleibt
-ein gelegentlicher Blick dorthin noetig.
+Neben Aufrufen und Bindung wird erhoben, WOHER die Aufrufe kommen
+(Traffic-Quellen, Suchbegriffe, Eigensichtungs-Kontrollreihe je Land). Ohne
+diese Aufschluesselung liest man jeden Rueckgang als Strafe des Empfehlungs-
+Algorithmus, obwohl er ebenso gut das Ausbleiben eines Suchtreffers oder der
+Wegfall eigener Kontrollblicke sein kann.
+
+Nicht per API verfuegbar: Thumbnail-Impressionen und die Klickrate (CTR).
+Nachgeprueft am 22.08.2026 - "impressions" und "impressionClickThroughRate"
+kennt die Analytics-API nicht (HTTP 400 "Unknown identifier"), und
+"adImpressions" ist etwas anderes (Werbung, 401). Beide Zahlen zeigt nur
+YouTube Studio, Reiter Reichweite. Genau dort steht, ob ein Video zu wenig
+angeboten wird oder zu selten geklickt - diese Unterscheidung kann dieses
+Skript nicht treffen.
 
 Aufrufe:
     python3 analytics_bericht.py                  # Tageszahlen + Video-Rangliste
@@ -24,6 +34,7 @@ Aufrufe:
     python3 analytics_bericht.py --kurve VIDEO_ID # Abbruchkurve eines Videos
     python3 analytics_bericht.py --kurve neuestes
     python3 analytics_bericht.py --speichern      # zusaetzlich als JSON ablegen
+    python3 analytics_bericht.py --land DE        # andere Kontrollreihe
 """
 from __future__ import annotations
 
@@ -34,6 +45,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -109,6 +121,81 @@ def je_video(token: str, tage: int = 90, grenze: int = 50) -> list[dict]:
     for z, meta in zip(zeilen, _video_meta(token, [z["video"] for z in zeilen])):
         z.update(meta)
     return zeilen
+
+
+# Nicht jede Dimensionskombination ist zulaessig, und die API meldet das nur
+# als HTTP 400 "query is not supported". Empirisch geprueft am 22.08.2026:
+# "day,insightTrafficSourceType" geht, "video,insightTrafficSourceType" und
+# "day,country" nicht. Landes- und Video-Zahlen muessen deshalb ueber einen
+# filters=-Parameter laufen statt ueber eine zweite Dimension.
+SUCH_BEGRIFFE_MAX = 25          # zugleich das API-Maximum dieser Dimension
+
+
+def traffic_quellen(token: str, tage: int = 30) -> list[dict]:
+    """Aufrufe je Tag und Traffic-Quelle (YT_SEARCH, RELATED_VIDEO, ...).
+
+    Beantwortet die Frage, ob Reichweite ueberhaupt algorithmisch entsteht:
+    taucht YT_BROWSE (Startseite/Empfehlungs-Feed) nicht auf, dann spielt
+    YouTube den Kanal nicht aus - ein Rueckgang ist dann kein Entzug, sondern
+    das Ausbleiben einer Quelle, die es nie gab.
+    """
+    von, bis = zeitraum(tage)
+    return _zeilen(_abfrage(token, {
+        "ids": "channel==MINE", "startDate": von, "endDate": bis,
+        "metrics": "views,estimatedMinutesWatched",
+        "dimensions": "day,insightTrafficSourceType", "sort": "day",
+        "maxResults": "300",
+    }))
+
+
+def suchbegriffe(token: str, tage: int = 30,
+                 grenze: int = SUCH_BEGRIFFE_MAX) -> list[dict]:
+    """Die Suchbegriffe hinter YT_SEARCH, nach Aufrufen absteigend.
+
+    Trennt tagesaktuelle Themensuche ("monero", "klarna stock") von echter
+    Kanalsuche. Kommt der Markenname nicht vor, ist die Reichweite ein Los auf
+    das Thema des Tages und faellt mit ihm.
+    """
+    von, bis = zeitraum(tage)
+    return _zeilen(_abfrage(token, {
+        "ids": "channel==MINE", "startDate": von, "endDate": bis,
+        "metrics": "views", "dimensions": "insightTrafficSourceDetail",
+        "filters": "insightTrafficSourceType==YT_SEARCH",
+        "sort": "-views", "maxResults": str(grenze),
+    }))
+
+
+def landeszahlen(token: str, tage: int = 30, land: str = "CH") -> list[dict]:
+    """Aufrufe je Tag aus einem Land - Detektor fuer eigene Kontrollblicke.
+
+    Der Kanal sendet auf Englisch ueber ein US-Board; Aufrufe aus der Schweiz
+    sind daher fast immer selbst erzeugt. Ohne diese Reihe liest man den
+    Wegfall eigener Sichtungen als Reichweitenverlust (real passiert nach dem
+    16.08.2026, als die Qualitaetskontrolle auf die lokale MP4 umzog).
+    """
+    von, bis = zeitraum(tage)
+    return _zeilen(_abfrage(token, {
+        "ids": "channel==MINE", "startDate": von, "endDate": bis,
+        "metrics": "views", "dimensions": "day", "sort": "day",
+        "filters": f"country=={land}",
+    }))
+
+
+def traffic_pivot(zeilen: list[dict]) -> tuple[list[str], dict[str, dict[str, int]]]:
+    """Rohzeilen zu (Quellen, {Tag: {Quelle: Aufrufe}}) fuer die Anzeige.
+
+    Quellen nach Gesamtaufkommen sortiert, damit die staerkste links steht.
+    Die Rohform bleibt unangetastet in der Ablage - pivotiert wird nur fuer
+    die Ausgabe.
+    """
+    je_tag: dict[str, dict[str, int]] = {}
+    summe: dict[str, int] = {}
+    for z in zeilen:
+        quelle = str(z.get("insightTrafficSourceType", "?"))
+        views = int(z.get("views", 0) or 0)
+        je_tag.setdefault(str(z.get("day", "")), {})[quelle] = views
+        summe[quelle] = summe.get(quelle, 0) + views
+    return sorted(summe, key=lambda q: -summe[q]), je_tag
 
 
 def _video_meta(token: str, ids: list[str]) -> list[dict]:
@@ -267,6 +354,44 @@ def kurve_zeigen(kurve: list[dict], laufzeit_s: int = 0) -> None:
         print(f"{marke:>8}  {wert * 100:7.1f}%  {'#' * max(0, round(wert * 40))}")
 
 
+def _traffic_ausgeben(traffic: list[dict], begriffe: list[dict],
+                      land_reihe: list[dict], land: str = "CH") -> None:
+    """Traffic-Quellen, Suchbegriffe und Landesreihe als Tabellen."""
+    if traffic:
+        quellen, je_tag = traffic_pivot(traffic)
+        print()
+        print("=== Aufrufe nach Traffic-Quelle ===")
+        print(f"{'Tag':<12}" + "".join(f"{q[:13]:>14}" for q in quellen)
+              + f"{'SUM':>7}")
+        for tag in sorted(je_tag):
+            r = je_tag[tag]
+            print(f"{tag:<12}" + "".join(f"{r.get(q, 0):>14d}" for q in quellen)
+                  + f"{sum(r.values()):>7d}")
+        # YT_BROWSE ist die Startseite/der Empfehlungs-Feed. Fehlt die Quelle,
+        # verteilt YouTube den Kanal nicht - dann ist ein Rueckgang kein
+        # Entzug. Taucht sie erstmals auf, ist das der Tag, an dem der Feed
+        # anspringt; beides gehoert ausdruecklich in die Erfolgskontrolle.
+        if "YT_BROWSE" in quellen:
+            print("  YT_BROWSE vorhanden - der Empfehlungs-Feed spielt aus.")
+        else:
+            print("  kein YT_BROWSE - keine Verteilung ueber den "
+                  "Empfehlungs-Feed in diesem Zeitraum.")
+
+    if begriffe:
+        print()
+        print("=== Suchbegriffe (YT_SEARCH) ===")
+        for z in begriffe:
+            print(f"{z.get('views', 0):>7.0f}  "
+                  f"{z.get('insightTrafficSourceDetail', '')}")
+
+    if land_reihe:
+        gesamt = sum(int(z.get("views", 0) or 0) for z in land_reihe)
+        print()
+        print(f"=== Aufrufe aus {land} (Verdacht Eigensichtung) ===")
+        print("  " + ", ".join(f"{z.get('day', '')[5:]}: {z.get('views', 0):.0f}"
+                               for z in land_reihe) + f"  (Summe {gesamt})")
+
+
 def _ausgeben(tage: list[dict], videos: list[dict]) -> None:
     print("\n=== Tageszahlen ===")
     print(f"{'Tag':<12}{'Aufrufe':>9}{'Minuten':>9}{'Ø Dauer':>9}{'Ø Anteil':>10}{'Abos':>6}")
@@ -301,6 +426,8 @@ def main() -> None:
     p.add_argument("--video-tage", type=int, default=90, help="Zeitraum der Video-Rangliste")
     p.add_argument("--kurve", metavar="VIDEO_ID",
                    help="Abbruchkurve eines Videos ('neuestes' fuer das juengste)")
+    p.add_argument("--land", default="CH", metavar="ISO",
+                   help="Land der Eigensichtungs-Kontrollreihe (Vorgabe CH)")
     p.add_argument("--speichern", action="store_true",
                    help=f"Ergebnis zusaetzlich unter {ABLAGE} ablegen")
     args = p.parse_args()
@@ -310,6 +437,23 @@ def main() -> None:
     tage = tageszahlen(token, args.tage)
     videos = je_video(token, args.video_tage)
     _ausgeben(tage, videos)
+
+    # Jede Zusatzabfrage einzeln abgesichert: der 23:30-Cron liefert vor allem
+    # die Abbruchkurven an run_report.retention_befund, und der Ausfall einer
+    # Traffic-Abfrage darf diese Rueckkopplung nicht mitreissen.
+    def _weich(name: str, fn: Callable[[], list[dict]]) -> list[dict]:
+        try:
+            return fn()
+        except RuntimeError as e:
+            log.warning("%s nicht abrufbar: %s", name, e)
+            return []
+
+    traffic = _weich("Traffic-Quellen",
+                     lambda: traffic_quellen(token, args.tage))
+    begriffe = _weich("Suchbegriffe", lambda: suchbegriffe(token, args.tage))
+    land_reihe = _weich(f"Aufrufe aus {args.land}",
+                        lambda: landeszahlen(token, args.tage, args.land))
+    _traffic_ausgeben(traffic, begriffe, land_reihe, args.land)
 
     kurve: list[dict] = []
     if args.kurve:
@@ -341,8 +485,14 @@ def main() -> None:
         ABLAGE.mkdir(parents=True, exist_ok=True)
         ziel_datei = ABLAGE / f"{date.today().isoformat()}.json"
         ziel_datei.write_text(json.dumps(
+            # Rohzeilen ablegen, nicht die Anzeigeform: pivotiert wird
+            # erst beim Lesen. Zusaetzliche Schluessel sind fuer bestehende
+            # Leser unschaedlich - run_report.retention_befund() greift
+            # gezielt auf "kurven" und "erstellt" zu.
             {"erstellt": date.today().isoformat(), "tage": tage,
-             "videos": videos, "kurve": kurve, "kurven": kurven},
+             "videos": videos, "kurve": kurve, "kurven": kurven,
+             "traffic": traffic, "suchbegriffe": begriffe,
+             "land": args.land, "land_tage": land_reihe},
             indent=2), encoding="utf-8")
         print(f"\ngespeichert: {ziel_datei} ({len(kurven)} Abbruchkurven)")
 
