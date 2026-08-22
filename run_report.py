@@ -1248,15 +1248,130 @@ def _abdeckung_luecken(bericht_md: str, daten: dict) -> list[tuple[str, str]]:
     return luecken
 
 
+ANKER_NACHTRAG_PROMPT = """\
+You wrote the storyboard for today's /biz/ situation report. Some paragraphs
+came out without a single anchored bullet, so they would run with nothing on
+screen while they are read aloud.
+
+Write ONLY the missing bullets for those paragraphs. The rest of the
+storyboard stays exactly as it is - do not rewrite it, do not repeat it.
+
+Output ONLY one JSON object, no preamble, no code fence:
+{"nachtrag": [{"ueberschrift": "<section heading, copied verbatim>",
+               "stichworte": [{"text": "...", "detail": ["...", "..."],
+                               "anker": "..."}, ...]}, ...]}
+
+Per bullet, same rules as the storyboard itself:
+- "text": the running commentary line, max 38 characters.
+- "detail": 0 to 2 short keyword fragments (no sentences), optional.
+- "anker": 3 to 5 CONSECUTIVE words copied VERBATIM from THAT paragraph -
+  never from the heading, never containing a URL. The bullets of a
+  paragraph must be listed in the same order as their anchors appear in it.
+Roughly one bullet per sentence of the paragraph.
+
+The paragraphs that need bullets:
+"""
+
+
 def _abdeckung_nachtrag(luecken: list[tuple[str, str]]) -> str:
-    """Die Nachforderung an das Modell: welche Absaetze leer blieben."""
-    zeilen = [f'- section "{u}", paragraph starting "{a[:90]}..."'
-              for u, a in luecken[:ABSATZ_LUECKEN_MAX]]
-    return ("\nADDITION: your last storyboard left these paragraphs without a "
-            "single anchored bullet, so they would run with nothing on "
-            "screen:\n" + "\n".join(zeilen) + "\nWrite the whole storyboard "
-            "again, this time with bullets anchored INSIDE every one of "
-            "these paragraphs as well - keep the rest of the coverage.")
+    """Die Nachforderung an das Modell: welche Absaetze leer blieben.
+
+    Der Absatz geht im Volltext mit, nicht nur sein Anfang - das Modell soll
+    seine Anker daraus waehlen, und dafuer muss es ihn lesen koennen."""
+    return "\n".join(f'\n- section "{u}", this paragraph:\n  "{a[:600]}"'
+                     for u, a in luecken[:ABSATZ_LUECKEN_MAX])
+
+
+def _abschnitt_flachtext(bericht_md: str) -> dict[str, str]:
+    """Ueberschrift -> Flachtext des ganzen Abschnittsrumpfs.
+
+    Anders als _absaetze() ohne Laengenfilter: hier wird die Position eines
+    Ankers im Abschnitt gesucht, dafuer zaehlt jedes Zeichen mit."""
+    aus: dict[str, str] = {}
+    for teil in re.split(r"^## ", bericht_md, flags=re.M)[1:]:
+        kopf, _, rumpf = teil.partition("\n")
+        aus[kopf.strip()] = _flachtext(rumpf)
+    return aus
+
+
+def _nach_anker_ordnen(alt: list[dict], neu: list[dict],
+                       text: str) -> list[dict]:
+    """Nachgetragene Stichworte an ihrer Ankerstelle einsortieren.
+
+    Die Reihenfolge traegt die Zeit: der Renderer laesst ein Stichwort
+    aufleuchten, wenn sein Anker gesprochen wird, und erwartet sie in der
+    Reihenfolge des Textes. Angehaengt statt einsortiert wuerden die neuen
+    Punkte am Kapitelende aufpoppen, obwohl ihr Satz laengst vorbei ist.
+
+    Die bestehende Reihenfolge bleibt unangetastet: ein altes Stichwort,
+    dessen Anker sich nicht wiederfinden laesst, erbt die Stelle seines
+    Vorgaengers, statt ans Ende zu rutschen."""
+    def stelle(p: dict) -> int:
+        a = _flachtext(str(p.get("anker") or ""))
+        return text.find(a) if a else -1
+
+    marken: list[tuple[int, int, dict]] = []
+    letzte = 0
+    for i, p in enumerate(alt):
+        q = stelle(p)
+        letzte = q if q >= 0 else letzte
+        marken.append((letzte, i, p))
+    marken += [(stelle(p), len(alt) + j, p) for j, p in enumerate(neu)]
+    marken.sort(key=lambda t: (t[0], t[1]))
+    return [p for _, _, p in marken]
+
+
+def _nachtrag_mergen(daten: dict, nachtrag: list, bericht_md: str) -> int:
+    """Nachgetragene Stichworte ins bestehende Drehbuch einfuegen.
+
+    Rein additiv - deshalb kann dieser Weg die Abdeckung anderswo nicht mehr
+    kosten, anders als das frueher komplett neu angeforderte Drehbuch
+    (22.08.2026: 3 Luecken rein, 12 raus, Ergebnis verworfen).
+
+    Verworfen wird ein nachgetragenes Stichwort, dessen Anker nicht
+    woertlich im Abschnitt steht: ohne Fundstelle gibt es keinen Zeitpunkt,
+    an dem es aufleuchten koennte."""
+    texte = _abschnitt_flachtext(bericht_md)
+    ergaenzt = 0
+    for eintrag in nachtrag:
+        if not isinstance(eintrag, dict):
+            continue
+        ueber = str(eintrag.get("ueberschrift") or "").strip()
+        ziel = next((a for a in daten.get("abschnitte") or []
+                     if isinstance(a, dict)
+                     and str(a.get("ueberschrift") or "").strip() == ueber),
+                    None)
+        if ziel is None and len(ueber) >= 20:
+            ziel = next((a for a in daten.get("abschnitte") or []
+                         if isinstance(a, dict)
+                         and ueber[:20] in str(a.get("ueberschrift") or "")),
+                        None)
+        if ziel is None:
+            continue
+        text = texte.get(str(ziel.get("ueberschrift") or "").strip(), "")
+        frisch = [
+            s for s in (_stichwort(p)
+                        for p in (eintrag.get("stichworte") or [])
+                        if isinstance(p, dict)
+                        and str(p.get("text") or "").strip())
+            if s["anker"] and _flachtext(s["anker"]) in text]
+        if not frisch:
+            continue
+        ziel["stichworte"] = _nach_anker_ordnen(
+            list(ziel.get("stichworte") or []), frisch, text)[:28]
+        ergaenzt += len(frisch)
+    return ergaenzt
+
+
+def _nachtrag_holen(bericht_md: str, luecken: list[tuple[str, str]]) -> list:
+    """Den Nachtrag-Aufruf machen und seine Liste herausschaelen."""
+    out = claude_ruf(ANKER_NACHTRAG_PROMPT + _abdeckung_nachtrag(luecken),
+                     bericht_md, "sonnet", TIMEOUT_FOLIEN)
+    daten = json.loads(_json_schneiden(out.strip()))
+    liste = daten.get("nachtrag") if isinstance(daten, dict) else None
+    if not isinstance(liste, list):
+        raise RuntimeError(f"Nachtrag ohne Liste: {out[:200]!r}")
+    return liste
 
 
 def _folien_versuch(bericht_md: str, zusatz: str = "",
@@ -1339,28 +1454,32 @@ def folien_generieren(bericht_md: str, befund: str = "") -> dict:
     Bericht). Liefert das geprueft geparste JSON-Objekt mit version=2;
     video_report.py erkennt daran das v7-Szenen-Layout.
 
-    Bleiben ganze Absaetze ohne Anker, geht ein zweiter Aufruf mit der
-    Nachforderung raus, die die leeren Absaetze beim Namen nennt - dieselbe
-    Mechanik wie beim wiederholten Titel-Hook. Bleibt auch der zweite
-    Versuch darunter, gewinnt der bessere von beiden: ein Drehbuch mit
-    Luecken ist immer noch ein Video, ein Abbruch waere keines."""
+    Bleiben ganze Absaetze ohne Anker, holt ein zweiter, kleiner Aufruf
+    gezielt die fehlenden Stichworte nach und mergt sie an ihrer Ankerstelle
+    ein. Bis zum 22.08.2026 forderte dieser zweite Aufruf stattdessen das
+    GANZE Drehbuch neu an ("keep the rest of the coverage") - und lieferte
+    prompt das Gegenteil: 3 Luecken rein, 12 raus, Ergebnis verworfen, das
+    Drehbuch dauerte dadurch 11:20 statt gut 5 Minuten. Additiv nachtragen
+    kann die Abdeckung anderswo nicht mehr kosten."""
     daten = _folien_versuch(bericht_md, befund=befund)
     luecken = _abdeckung_luecken(bericht_md, daten)
     if not luecken:
         return daten
-    print(f"Drehbuch: {len(luecken)} Absaetze ohne Anker "
-          f"({', '.join(u for u, _ in luecken[:4])}) - fordere nach")
+    betroffen = list(dict.fromkeys(u for u, _ in luecken))
+    print(f"Drehbuch: {len(luecken)} Absaetze ohne Anker in "
+          f"{len(betroffen)} Abschnitten ({', '.join(betroffen[:3])}) - "
+          f"fordere nach")
     try:
-        zweit = _folien_versuch(bericht_md, _abdeckung_nachtrag(luecken),
-                                befund)
-    except (RuntimeError, OSError) as e:
-        print(f"Drehbuch-Nachforderung fehlgeschlagen ({e}) - "
-              f"bleibe beim ersten Versuch")
+        nachtrag = _nachtrag_holen(bericht_md, luecken)
+    except (RuntimeError, OSError, ValueError) as e:
+        print(f"Anker-Nachtrag fehlgeschlagen ({e}) - bleibe beim "
+              f"ersten Versuch")
         return daten
-    zweit_luecken = _abdeckung_luecken(bericht_md, zweit)
-    print(f"Drehbuch nach Nachforderung: {len(zweit_luecken)} Absaetze "
-          f"ohne Anker")
-    return zweit if len(zweit_luecken) <= len(luecken) else daten
+    ergaenzt = _nachtrag_mergen(daten, nachtrag, bericht_md)
+    rest = _abdeckung_luecken(bericht_md, daten)
+    print(f"Anker-Nachtrag: {ergaenzt} Stichworte ergaenzt, Luecken "
+          f"{len(luecken)} -> {len(rest)}")
+    return daten
 
 
 # ------------------------------------------------- Motiv fuers Vorschaubild

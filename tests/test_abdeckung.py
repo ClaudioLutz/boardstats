@@ -102,3 +102,75 @@ class FragmentFarbe(unittest.TestCase):
         """Nur das Fragment wurde aufgehellt: in der Themen-Karte steht der
         geparkte Punkt weiterhin im gedimmten Grau."""
         self.assertNotEqual(szenen.KARTE_ALT[:3], thumbnail.TEXT_HELL[:3])
+
+
+class AnkerNachtrag(unittest.TestCase):
+    """Der Nachtrag ergaenzt fehlende Stichworte, statt das Drehbuch neu
+    schreiben zu lassen. Der alte Weg forderte das GANZE Drehbuch erneut an
+    und verlor dabei die Abdeckung anderswo - am 22.08.2026 produktiv
+    gemessen: 3 Luecken rein, 12 raus, Ergebnis verworfen."""
+
+    def nachtrag(self, anker: list[str],
+                 ueber: str = "SELF-REPORTED TRACK RECORDS") -> list:
+        return [{"ueberschrift": ueber,
+                 "stichworte": [{"text": "neu", "anker": a} for a in anker]}]
+
+    def test_luecke_wird_geschlossen(self):
+        d = drehbuch(["fastest-moving thread on"])
+        self.assertEqual(len(run_report._abdeckung_luecken(BERICHT, d)), 1)
+        ergaenzt = run_report._nachtrag_mergen(
+            d, self.nachtrag(["$35k upfront, $700 maintenance"]), BERICHT)
+        self.assertEqual(ergaenzt, 1)
+        self.assertEqual(run_report._abdeckung_luecken(BERICHT, d), [])
+
+    def test_nachtrag_sitzt_an_der_ankerstelle(self):
+        """Die Reihenfolge traegt die Zeit - angehaengt statt einsortiert
+        wuerde der Punkt am Kapitelende aufpoppen, obwohl sein Satz laengst
+        gesprochen ist."""
+        d = drehbuch(["An 8-year day trader", "secondhand contracts go for"])
+        run_report._nachtrag_mergen(
+            d, self.nachtrag(["Fidelity banned him for"]), BERICHT)
+        anker = [p["anker"] for p in d["abschnitte"][0]["stichworte"]]
+        self.assertEqual(anker, ["An 8-year day trader",
+                                 "Fidelity banned him for",
+                                 "secondhand contracts go for"])
+
+    def test_erfundener_anker_wird_verworfen(self):
+        """Ohne Fundstelle im Abschnitt gibt es keinen Zeitpunkt, an dem das
+        Stichwort aufleuchten koennte."""
+        d = drehbuch(["An 8-year day trader"])
+        ergaenzt = run_report._nachtrag_mergen(
+            d, self.nachtrag(["this phrase does not exist"]), BERICHT)
+        self.assertEqual(ergaenzt, 0)
+        self.assertEqual(len(d["abschnitte"][0]["stichworte"]), 1)
+
+    def test_unbekannter_abschnitt_bleibt_folgenlos(self):
+        d = drehbuch(["An 8-year day trader"])
+        ergaenzt = run_report._nachtrag_mergen(
+            d, self.nachtrag(["$35k upfront, $700 maintenance"],
+                             ueber="EIN GANZ ANDERER ABSCHNITT"), BERICHT)
+        self.assertEqual(ergaenzt, 0)
+        self.assertEqual(len(d["abschnitte"][0]["stichworte"]), 1)
+
+    def test_alte_reihenfolge_bleibt_bei_unauffindbarem_anker(self):
+        """Ein bestehendes Stichwort, dessen Anker sich nicht wiederfinden
+        laesst, erbt die Stelle seines Vorgaengers - es darf durch den
+        Nachtrag nicht ans Kapitelende rutschen."""
+        d = drehbuch(["An 8-year day trader", "nicht im Bericht",
+                      "secondhand contracts go for"])
+        run_report._nachtrag_mergen(
+            d, self.nachtrag(["Fidelity banned him for"]), BERICHT)
+        anker = [p["anker"] for p in d["abschnitte"][0]["stichworte"]]
+        self.assertEqual(anker[:2], ["An 8-year day trader",
+                                     "nicht im Bericht"])
+        self.assertEqual(anker[-1], "secondhand contracts go for")
+
+    def test_merge_ist_rein_additiv(self):
+        """Der Kern des Umbaus: bestehende Stichworte koennen nicht
+        verlorengehen, weil nur ergaenzt wird."""
+        d = drehbuch(["An 8-year day trader", "secondhand contracts go for"])
+        vorher = [dict(p) for p in d["abschnitte"][0]["stichworte"]]
+        run_report._nachtrag_mergen(
+            d, self.nachtrag(["Fidelity banned him for"]), BERICHT)
+        for p in vorher:
+            self.assertIn(p, d["abschnitte"][0]["stichworte"])
