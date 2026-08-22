@@ -5175,41 +5175,72 @@ Das Bild ist das Motiv, die Schlagzeile steht spaeter in grosser weisser
 Schrift mit dicker schwarzer Kontur direkt darueber - es gibt KEINE dunkle
 Flaeche und keinen Kasten darunter.
 
-Sieh dir das Motiv mit dem Read-Werkzeug wirklich an. Dann entscheide, in
-welchem waagrechten Drittel (oben/mitte/unten) und mit welcher Ausrichtung
-(links/mitte/rechts) die Schlagzeile stehen soll.
+Sieh dir das Motiv mit dem Read-Werkzeug wirklich an. Dann entscheide vier
+Dinge:
+- zone: in welchem waagrechten Drittel die Schlagzeile steht
+  (oben/mitte/unten).
+- ausrichtung: an welcher Bildkante der Textblock sitzt
+  (links/mitte/rechts).
+- breite: wie breit der Textblock werden darf - "voll" (Zeile ueber das
+  ganze Bild, grosse Schrift), "halb" oder "drittel" (schmale Spalte, dann
+  bricht der Text auf mehrere Zeilen und passt in eine freie Flaeche NEBEN
+  dem Motiv).
+- umbruch: die Schlagzeile auf Zeilen verteilt, hoechstens 3. Dieselben
+  Woerter in derselben Reihenfolge, nichts umschreiben, nichts weglassen,
+  nichts dazu. Beispiel: Schlagzeile "50% TARIFFS" in einer schmalen
+  Spalte wird ["50%", "TARIFFS"].
 
 Kriterien, in dieser Reihenfolge:
 1. Nicht verdecken, was den Witz traegt: Gesichter, Augen, Mund, Bildtext
    des Memes, die Pointe.
 2. Ruhige, kontrastarme Flaeche bevorzugen - dort liest sich weisse Schrift
    mit Kontur am besten.
-3. Im Zweifel oben und mittig, das ist die Bildmakro-Konvention.
+3. Liegt eine solche Flaeche als Spalte neben dem Motiv (die Figur fuellt
+   eine Bildhaelfte, daneben dunkler Grund), dann gehoert der Text in diese
+   Spalte: "halb" oder "drittel", Ausrichtung zu dieser Seite, Umbruch auf
+   zwei bis drei Zeilen. Das ist besser als eine Zeile quer ueber das
+   Motiv - auch wenn die Schrift dadurch kleiner wird.
+4. "voll" ist fuer Motive, die keine solche Spalte haben (Charts, Menschen-
+   mengen, Screenshots) oder wo nur ein waagrechter Streifen frei ist.
+5. Im Zweifel oben, mittig, voll - das ist die Bildmakro-Konvention.
 Unten ist die schlechteste Wahl, wenn dort schon Bildtext oder das
 Serien-Label sitzt (unten links steht ein kleiner Chip).
 
 Antworte NUR mit JSON, ohne Vorrede:
 {"beschreibung": "was auf dem Motiv zu sehen ist, mindestens 20 Zeichen",
  "zone": "oben|mitte|unten", "ausrichtung": "links|mitte|rechts",
+ "breite": "voll|halb|drittel", "umbruch": ["ZEILE 1", "ZEILE 2"],
  "grund": "ein kurzer Satz"}
 """
 
 TIMEOUT_THUMB_PLATZ = 120
 
 
-def _thumb_platzierung(motiv: Path | None, text: str) -> tuple[str, str]:
-    """Wo die Schlagzeile ueber dem Meme stehen soll - ein Sonnet-Aufruf mit
-    Blick auf das Motiv, analog den Sichtpruefungen im Report-Lauf.
+def _thumb_platzierung(motiv: Path | None, text: str) -> dict[str, object]:
+    """Wie die Schlagzeile ueber dem Meme sitzt - ein Sonnet-Aufruf mit Blick
+    auf das Motiv, analog den Sichtpruefungen im Report-Lauf. Geliefert wird
+    Zone, Ausrichtung, Blockbreite und Zeilenumbruch; die Blockbreite ist der
+    Hebel, mit dem der Text NEBEN das Motiv in eine freie Spalte rutscht
+    statt darueber (Nutzerbefund 22.08.2026).
 
     Wie dort (run_report._sicht_antwort) gilt eine eigene, nicht leere
     Beschreibung als Beleg, dass wirklich hingesehen wurde: ein headless
     Aufruf kann sonst ein wohlgeformtes Urteil liefern, ohne die Datei je
     geoeffnet zu haben. Ohne Beleg oder bei jedem anderen Problem greift die
     deterministische Messung in thumbnail.platzierung_messen() - die
-    Platzierung darf ein Vorschaubild nie verhindern."""
+    Platzierung darf ein Vorschaubild nie verhindern.
+
+    Der Umbruch wird nicht uebernommen, sondern von
+    thumbnail.umbruch_pruefen() gegen den Originaltext geprueft: das Modell
+    darf die Zeilen aufteilen, nicht die Schlagzeile umschreiben."""
+    zone, ausrichtung = thumbnail.platzierung_messen(motiv)
+    ersatz: dict[str, object] = {
+        "zone": zone, "ausrichtung": ausrichtung,
+        "block_breite": thumbnail.BREITE_STANDARD, "umbruch": None}
     if motiv is None:
-        return thumbnail.ZONE_STANDARD, thumbnail.AUSRICHTUNG_STANDARD
-    ersatz = thumbnail.platzierung_messen(motiv)
+        ersatz["zone"] = thumbnail.ZONE_STANDARD
+        ersatz["ausrichtung"] = thumbnail.AUSRICHTUNG_STANDARD
+        return ersatz
     try:
         eingabe = f"Schlagzeile: {text}\n\nMotiv: {motiv}"
         out = rr.claude_ruf(THUMB_PROMPT_PLATZIERUNG, eingabe, "sonnet",
@@ -5220,20 +5251,27 @@ def _thumb_platzierung(motiv: Path | None, text: str) -> tuple[str, str]:
                               str(daten.get("beschreibung") or "")).strip()
         if len(beschreibung) < 20:
             print("Textplatzierung ohne eigene Beschreibung - vermutlich "
-                  f"ungesehen, nehme die Messung {ersatz}")
+                  f"ungesehen, nehme die Messung {zone}/{ausrichtung}")
             return ersatz
-        zone = str(daten.get("zone") or "")
-        ausrichtung = str(daten.get("ausrichtung") or "")
-        if zone not in thumbnail.ZONEN:
-            zone = ersatz[0]
-        if ausrichtung not in thumbnail.AUSRICHTUNGEN:
-            ausrichtung = ersatz[1]
-        print(f"Textplatzierung (Sonnet): {zone}/{ausrichtung} - "
-              f"{daten.get('grund')}")
-        return zone, ausrichtung
+        urteil = dict(ersatz)
+        if str(daten.get("zone")) in thumbnail.ZONEN:
+            urteil["zone"] = str(daten["zone"])
+        if str(daten.get("ausrichtung")) in thumbnail.AUSRICHTUNGEN:
+            urteil["ausrichtung"] = str(daten["ausrichtung"])
+        if str(daten.get("breite")) in thumbnail.BLOCK_BREITEN:
+            urteil["block_breite"] = str(daten["breite"])
+        umbruch = thumbnail.umbruch_pruefen(text, daten.get("umbruch"))
+        if daten.get("umbruch") and not umbruch:
+            print(f"Umbruch-Vorschlag verworfen (nicht derselbe Text): "
+                  f"{daten.get('umbruch')!r}")
+        urteil["umbruch"] = umbruch
+        print(f"Textplatzierung (Sonnet): {urteil['zone']}/"
+              f"{urteil['ausrichtung']}, Breite {urteil['block_breite']}, "
+              f"Zeilen {umbruch or 'automatisch'} - {daten.get('grund')}")
+        return urteil
     except Exception as e:
         print(f"Textplatzierung nicht beurteilt ({e}) - nehme die Messung "
-              f"{ersatz}")
+              f"{zone}/{ausrichtung}")
         return ersatz
 
 
@@ -5252,11 +5290,14 @@ def vorschaubild(arbeit: Path, tag_dir: Path, cfg: dict[str, str], sprache: str,
                                     else datum)
     print(f"Vorschaubild: Schlagwort {text!r}, Motiv "
           f"{motiv.name if motiv else 'keins'}")
-    zone, ausrichtung = _thumb_platzierung(motiv, text)
+    urteil = _thumb_platzierung(motiv, text)
     try:
         return thumbnail.bauen(text, motiv,
                                arbeit / f"thumbnail{cfg['suffix']}.jpg",
-                               fuss=fuss, zone=zone, ausrichtung=ausrichtung)
+                               fuss=fuss, zone=str(urteil["zone"]),
+                               ausrichtung=str(urteil["ausrichtung"]),
+                               block_breite=str(urteil["block_breite"]),
+                               umbruch=urteil["umbruch"])  # type: ignore[arg-type]
     except Exception as e:
         print(f"Vorschaubild nicht gebaut ({e}) - nehme das Serienbild")
         return THUMBNAIL if THUMBNAIL.exists() else None

@@ -60,6 +60,13 @@ ZONEN = ("oben", "mitte", "unten")
 AUSRICHTUNGEN = ("links", "mitte", "rechts")
 ZONE_STANDARD = "oben"
 AUSRICHTUNG_STANDARD = "mitte"
+# Wie breit der Textblock werden darf, als Anteil der Satzbreite. "voll" ist
+# die Bildmakro-Zeile ueber das ganze Bild; die engeren Stufen sind der
+# Grund, warum das Modell den Umbruch mitentscheiden koennen muss - erst
+# eine schmale Spalte laesst den Text NEBEN dem Motiv stehen statt darauf
+# (Nutzerbefund 22.08.2026: "rechts 50% / TARIFFS im dunklen Bereich").
+BLOCK_BREITEN = {"voll": 1.0, "halb": 0.52, "drittel": 0.38}
+BREITE_STANDARD = "voll"
 # Unterkante des Textblocks bei Zone "unten": ueber Chip und Fusstext.
 TEXT_UNTEN_GRENZE = CHIP_Y - 24
 # Messraster fuer platzierung_messen(): so klein, dass die Messung nichts
@@ -247,9 +254,24 @@ def _umbrechen(text: str, font: ImageFont.FreeTypeFont, breite: int,
 
 
 def _passende_schrift(text: str, breite: int, hoehe: int,
-                      zeichnen: ImageDraw.ImageDraw
+                      zeichnen: ImageDraw.ImageDraw,
+                      umbruch: list[str] | None = None
                       ) -> tuple[ImageFont.FreeTypeFont, list[str]]:
-    """Groesste Schrift, in der der Aufhaenger in den Textblock passt."""
+    """Groesste Schrift, in der der Aufhaenger in den Textblock passt.
+
+    Mit `umbruch` steht die Zeilenteilung schon fest (vom Modell gewaehlt,
+    siehe umbruch_pruefen) - dann wird nur noch die Schriftgroesse gesucht,
+    bei der die laengste dieser Zeilen in die Blockbreite passt."""
+    if umbruch:
+        for groesse in GROESSEN:
+            font = schrift(True, groesse)
+            zu_breit = any(zeichnen.textlength(z, font=font) > breite
+                           for z in umbruch)
+            if not zu_breit and len(umbruch) * groesse * ZEILEN_FAKTOR <= hoehe:
+                return font, umbruch
+        # Passt die Vorgabe selbst in der kleinsten Schrift nicht in die
+        # Spalte, ist sie unbrauchbar - dann bricht wieder der Code um.
+        return _passende_schrift(text, breite, hoehe, zeichnen)
     for groesse in GROESSEN:
         font = schrift(True, groesse)
         zeilen = _umbrechen(text, font, breite, zeichnen)
@@ -259,6 +281,24 @@ def _passende_schrift(text: str, breite: int, hoehe: int,
     font = schrift(True, GROESSEN[-1])
     zeilen = _umbrechen(text, font, breite, zeichnen) or [text[:18]]
     return font, zeilen[:ZEILEN_MAX]
+
+
+def umbruch_pruefen(text: str, umbruch: object) -> list[str] | None:
+    """Nimmt die Zeilenteilung des Modells nur an, wenn sie denselben Text
+    traegt: gleiche Woerter in gleicher Reihenfolge, hoechstens ZEILEN_MAX
+    Zeilen, keine leere Zeile. Sonst None - der Code bricht dann selbst um.
+
+    Der Riegel ist der Punkt: ein Modell, das den Umbruch waehlen darf,
+    koennte sonst die Schlagzeile umschreiben, kuerzen oder etwas
+    dazuerfinden, und das stuende dann als Kanalanstrich im Netz."""
+    if not isinstance(umbruch, list) or not 0 < len(umbruch) <= ZEILEN_MAX:
+        return None
+    zeilen = [str(z).strip().upper() for z in umbruch]
+    if not all(zeilen):
+        return None
+    if " ".join(zeilen).split() != text.strip().upper().split():
+        return None
+    return zeilen
 
 
 def _bodenverlauf() -> Image.Image:
@@ -306,18 +346,25 @@ def videohintergrund(quelle: Path | None, ziel: Path) -> Path:
 
 
 def bauen(text: str, motiv: Path | None, ziel: Path, kopf: str = "BIZ-NEWS",
-          fuss: str = "", zone: str = "", ausrichtung: str = "") -> Path:
+          fuss: str = "", zone: str = "", ausrichtung: str = "",
+          block_breite: str = "", umbruch: list[str] | None = None) -> Path:
     """Vorschaubild zusammensetzen und als JPEG unter 2 MB ablegen.
 
     zone/ausrichtung sagen, wo der Meme-Text steht (siehe ZONEN und
-    AUSRICHTUNGEN). Leer oder unbekannt heisst: selbst messen
-    (platzierung_messen) - so bleibt das Modul auch ohne den Modellaufruf
-    des Video-Laufs brauchbar."""
+    AUSRICHTUNGEN), block_breite wie breit er dabei werden darf (siehe
+    BLOCK_BREITEN) und umbruch, an welchen Stellen die Zeilen brechen. Leer
+    oder unbekannt heisst: selbst entscheiden - Zone und Ausrichtung ueber
+    platzierung_messen(), Breite ueber BREITE_STANDARD, Umbruch im Code. So
+    bleibt das Modul auch ohne den Modellaufruf des Video-Laufs brauchbar."""
     if zone not in ZONEN or ausrichtung not in AUSRICHTUNGEN:
         gemessen_zone, gemessen_aus = platzierung_messen(motiv)
         zone = zone if zone in ZONEN else gemessen_zone
         ausrichtung = (ausrichtung if ausrichtung in AUSRICHTUNGEN
                        else gemessen_aus)
+    if block_breite not in BLOCK_BREITEN:
+        block_breite = BREITE_STANDARD
+    satzbreite = int(TEXT_BREITE * BLOCK_BREITEN[block_breite])
+    umbruch = umbruch_pruefen(text, umbruch)
     bild = Image.new("RGB", (BREITE, HOEHE), GRUND)
     if motiv is not None:
         try:
@@ -326,8 +373,8 @@ def bauen(text: str, motiv: Path | None, ziel: Path, kopf: str = "BIZ-NEWS",
             pass  # kaputtes Bild: Farbflaeche statt Abbruch
 
     zeichnen = ImageDraw.Draw(bild)
-    font, zeilen = _passende_schrift(text.upper(), TEXT_BREITE, TEXT_HOEHE,
-                                     zeichnen)
+    font, zeilen = _passende_schrift(text.upper(), satzbreite, TEXT_HOEHE,
+                                     zeichnen, umbruch)
     schritt = int(font.size * ZEILEN_FAKTOR)
     kontur = max(3, int(font.size * KONTUR_FAKTOR))
     y = _block_oben(zone, schritt * len(zeilen))
