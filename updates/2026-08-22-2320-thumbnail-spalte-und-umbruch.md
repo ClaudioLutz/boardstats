@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: claude/video-thumbnail-meme-60c124
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 505565c
 ---
 
 # Sonnet bestimmt auch Blockbreite und Zeilenumbruch der Meme-Schlagzeile
