@@ -93,12 +93,27 @@ zuzuordnen, nicht nur der Sichtpruefung:
 
 
 def klip_kandidaten(manifest: dict) -> list[dict]:
-    """WebM/MP4-Anhaenge der ausgewerteten Threads, je Thread bis zu
+    """WebM/MP4-Anhaenge des GANZEN Snapshots, je Thread bis zu
     KLIP_JE_THREAD Stueck (OP-Anhaenge zuerst). Dieselben mechanischen
     Filter wie bei Hintergrundbildern (siehe hintergrund_kandidaten), nur
-    mit eigenen Format-/Groessen-Grenzen."""
-    threads = [str(b["thread"]) for b in manifest.get("buendel", [])]
-    posts = rr._snapshot_posts(set(threads))
+    mit eigenen Format-/Groessen-Grenzen.
+
+    Bis zum 22.08.2026 wurden nur die ausgewerteten Threads geerntet - und
+    daran verhungerte der Katalog. Messung an jenem Tag: 18 Clip-Anhaenge im
+    Snapshot, davon lagen **5** in den 16 ausgewerteten Threads, und alle
+    fuenf standen schon im Katalog; neue Kandidaten also null. Der Verbrauch
+    liegt bei bis zu 9 Clips taeglich (Kapitel plus Intro), die Sperre
+    (rr.VERWENDET_TAGE) haelt sie 5 Tage fest - noetig waere ein Pool von
+    rund 45, vorhanden waren 29 freie, davon 11 nicht gesperrt.
+
+    Die Kopplung an die ausgewerteten Threads war ohnehin ohne Wirkung: ein
+    Clip wird nicht ueber seine Herkunft eingesetzt, sondern spaeter per
+    LLM ueber seine Beschreibung einem Abschnitt zugeordnet
+    (video_report._klip_zuordnung). Die ausgewerteten Threads kommen
+    trotzdem zuerst, damit sie unter KLIP_MAX nicht verdraengt werden."""
+    bevorzugt = [str(b["thread"]) for b in manifest.get("buendel", [])]
+    posts = rr._snapshot_posts(None)
+    threads = bevorzugt + [no for no in posts if no not in set(bevorzugt)]
     gesehen: set[str] = set()
     aus: list[dict] = []
     for no in threads:
