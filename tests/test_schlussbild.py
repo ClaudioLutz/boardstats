@@ -77,7 +77,9 @@ class TestZitatDauer(unittest.TestCase):
     def bis(sp: tuple[float, float], w: list[vr.Wort],
             naechster: float) -> float:
         natur = (vr._satz_ende(w, sp[1]) or sp[1]) + vr.ZITAT_NACHLAUF
-        natur = max(natur, sp[0] + vr.ZITAT_MIN)
+        # Seit Leitplanke 3 (22.08.2026) gilt der Boden gegen die effektive
+        # Lesezeit: Einblendverlust kommt obendrauf.
+        natur = max(natur, sp[0] + vr.ZITAT_MIN + vr.EINBLEND_VERLUST)
         return min(sp[0] + vr.ZITAT_MAX, naechster - 0.5, natur)
 
     def test_karte_geht_mit_ihrem_satz(self) -> None:
@@ -89,7 +91,8 @@ class TestZitatDauer(unittest.TestCase):
 
     def test_kurzes_zitat_behaelt_lesezeit(self) -> None:
         w = worte([("Kek.", 0.0, 0.8), ("Next", 5.0, 5.4)])
-        self.assertAlmostEqual(self.bis((0.0, 0.8), w, 60.0), vr.ZITAT_MIN)
+        self.assertAlmostEqual(self.bis((0.0, 0.8), w, 60.0),
+                               vr.ZITAT_MIN + vr.EINBLEND_VERLUST)
 
     def test_hoechstdauer_bleibt_die_obergrenze(self) -> None:
         # Ein Satz, der ewig laeuft: ZITAT_MAX deckelt weiterhin.

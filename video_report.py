@@ -2666,6 +2666,12 @@ class Overlay:
     flug_ab: float | None = None   # ab dieser Zeit fliegt das Overlay nach
     flug_x: int = 0                # (flug_x, flug_y) und verblasst dabei -
     flug_y: int = 0                # so parkt ein Fokus-Punkt in der Karte
+    lese_text: str = ""            # der Text, der gelesen werden soll -
+    lese_boden: float = 0.0        # zusammen mit seinem Lesezeit-Boden die
+                                   # Grundlage der Lauf-Verifikation
+                                   # (lesezeit_verifizieren); 0.0 = dieses
+                                   # Overlay traegt keinen pruefbaren Text
+                                   # (Vignette, Count-up-Stufe, Kastengrund)
 
 
 @dataclass
@@ -2698,6 +2704,8 @@ class KartenStand:
     blende: float = 0.3       # Aufblendzeit; 0.0 = harter Schnitt
     haelt: bool = False       # am Ende nicht ausblenden, weil eine
                               # Folgestufe desselben Kastens uebernimmt
+    lese_text: str = ""       # Text + Boden fuer die Lesezeit-Verifikation
+    lese_boden: float = 0.0   # (siehe Overlay)
 
 
 @dataclass
@@ -2713,6 +2721,7 @@ class FokusKarte:
     flug_ab: float | None     # None: der Punkt parkt ohne Flug (harter Schnitt)
     ziel_x: int
     ziel_y: int
+    text: str = ""            # der Stichpunkt-Text (Lesezeit-Verifikation)
 
 
 def _post_datum(datum: str) -> str:
@@ -2758,9 +2767,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         return lage
 
     def ov(bild, start: float, bis: float, fade: float = 0.35,
-           einflug: str = "") -> Overlay:
+           einflug: str = "", lese_text: str = "",
+           lese_boden: float = 0.0) -> Overlay:
         pfad, x, y = png(bild)
-        return Overlay(pfad, start, bis, fade, x, y, einflug)
+        return Overlay(pfad, start, bis, fade, x, y, einflug,
+                       lese_text=lese_text, lese_boden=lese_boden)
 
     folge: list[Szene] = []
 
@@ -2844,10 +2855,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                       max(KALTSTART_MIN,
                           intro_bis - (HOOK_VORLAUF + len(hook) / HOOK_CPS)))
         s.overlays.append(ov(szenen.zahl_tafel(thumb, "", ""), 0.0,
-                             hook_ab, fade=0.0))
+                             hook_ab, fade=0.0,
+                             lese_text=thumb,
+                             lese_boden=min(KALTSTART_MIN,
+                                            lese_boden_allgemein(thumb))))
     s.overlays.append(ov(szenen.titel_karte(hook, label="TODAY'S TOP STORY"),
                          hook_ab, max(intro_bis, hook_ab + 0.6),
-                         einflug="unten"))
+                         einflug="unten", lese_text=hook,
+                         lese_boden=HOOK_VORLAUF + len(hook) / HOOK_CPS))
 
     # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
     # Motiv seines Kapitels als Vorschau.
@@ -2857,7 +2872,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         s.overlays.append(ov(szenen.titel_karte("Coming up today",
                                                 label="AGENDA"),
                              t0 + 0.2, start_von(agenda_idx[0]),
-                             einflug="unten"))
+                             einflug="unten", lese_text="Coming up today",
+                             lese_boden=lese_boden_allgemein(
+                                 "Coming up today")))
         for k, i in enumerate(agenda_idx):
             t = start_von(i)
             bis = start_von(agenda_idx[k + 1]) if k + 1 < len(agenda_idx) \
@@ -2868,7 +2885,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 szenen.titel_karte(eintraege[k],
                                    label=f"COMING UP · {k + 1:02d}",
                                    gross=False),
-                t + 0.15, bis, einflug="unten"))
+                t + 0.15, bis, einflug="unten", lese_text=eintraege[k],
+                lese_boden=lese_boden_allgemein(eintraege[k])))
 
     # Zahlen des Tages: je Kennzahl eine eigene Gross-Zahl-Szene mit
     # Count-up. Als TL;DR direkt nach dem Cold Open (vorne) oder - bei einer
@@ -2887,7 +2905,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         z.overlays.append(ov(szenen.titel_karte(kopf_titel, label=kopf_label),
                              t0 + 0.2,
                              start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
-                             einflug="unten"))
+                             einflug="unten", lese_text=kopf_titel,
+                             lese_boden=lese_boden_allgemein(kopf_titel)))
         genutzt = zahl_idx[:len(karten)]
         for j, i in enumerate(genutzt):
             t = start_von(i)
@@ -2905,8 +2924,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     and bis - t >= ZAHL_COUNTUP_MIN + ZAHL_UEBERSICHT_MIN:
                 schnitt = bis - ZAHL_UEBERSICHT_MIN
                 _countup_overlays(z, karten[j], t + 0.2, schnitt, ov)
-                z.overlays.append(ov(szenen.zahlen_uebersicht(karten),
-                                     schnitt, bis, einflug="unten"))
+                z.overlays.append(ov(
+                    szenen.zahlen_uebersicht(karten), schnitt, bis,
+                    einflug="unten",
+                    lese_text=" · ".join(str(k.get("wert") or "")
+                                         for k in karten),
+                    lese_boden=ZAHL_UEBERSICHT_MIN))
                 print(f"TL;DR: {len(genutzt)} von {len(karten)} Zahlen "
                       f"gesprochen, alle vier im Bild "
                       f"({ZAHL_UEBERSICHT_MIN:.1f}s Uebersicht)")
@@ -2986,9 +3009,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Bild-Kulisse - Clips sind eine Ergaenzung, kein Ersatz.
         akt = klip_zuordnung.get(nr, kapitel_motive[k])
         kapitel_szene = neu(akt, kopf_start)
+        # Der Boden gilt gegen die effektive Lesezeit: Einflug/Aufblende
+        # kommen als EINBLEND_VERLUST obendrauf (Leitplanke 3, 22.08.2026).
         opener_bis = min(
             max(rumpf_start,
-                kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)),
+                kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)
+                + EINBLEND_VERLUST),
             naechster - 0.5)
         # Tempo-Badge am Kapitelzaehler: seit 21.08.2026 ersetzt er den
         # frueheren eigenen Abschnitt "FILLING FAST". Dass ein Thread
@@ -3001,7 +3027,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             szenen.titel_karte(titel,
                                label=f"{label}  ·  {tempo}" if tempo else label,
                                quelle=f"Source: {quelle}" if quelle else ""),
-            kopf_start + 0.2, opener_bis, einflug="unten"))
+            kopf_start + 0.2, opener_bis, einflug="unten", lese_text=titel,
+            lese_boden=OPENER_QUELLE_MIN if quelle else OPENER_MIN))
 
         # Sonderereignisse des Drehbuchs im Kapitelrumpf verorten
         # Der vierte Eintrag ist das natuerliche Ende: die Zeit, zu der der
@@ -3025,8 +3052,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # 19.08.2026: XOM-Zitat bei 10:31, gesprochen rund 4s).
                 natur = (_satz_ende(rumpf_worte, sp[1]) or sp[1]) \
                     + ZITAT_NACHLAUF
+                # ZITAT_MIN gilt gegen die effektive Lesezeit, also plus
+                # Einblendverlust (Leitplanke 3, 22.08.2026).
                 ereignisse.append((max(sp[0], rumpf_start + 1.0), "zitat",
-                                   zit, max(natur, sp[0] + ZITAT_MIN)))
+                                   zit, max(natur, sp[0] + ZITAT_MIN
+                                            + EINBLEND_VERLUST)))
         kar = eintrag.get("karte")
         if isinstance(kar, dict) and str(kar.get("wert") or "").strip():
             tz = _anker_zeit(str(kar.get("anker") or ""), rumpf_worte)
@@ -3175,7 +3205,10 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Lesezeit-Boden nach Textlaenge statt Konstante: 1.1s
                 # reichten fuer 29 Zeichen nicht (bis 30 cps gemessen,
                 # 19.08.2026), waehrend parallel ein anderer Satz laeuft.
-                boden = fokus_boden(texte[n])
+                # Der Boden gilt gegen die effektive Lesezeit: Einflug und
+                # Aufblende (EINBLEND_VERLUST) fressen vom Fenster, bevor
+                # der Text voll lesbar steht (Leitplanke 3, 22.08.2026).
+                boden = fokus_boden(texte[n]) + EINBLEND_VERLUST
                 f = (sicht_bis(zeit[n], ab) - zeit[n] >= boden
                      and naht_nach(ab) >= ab + FLUG_DAUER)
                 z = ab + FLUG_DAUER if f else halt
@@ -3263,7 +3296,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # aufspringen - die Staffelung ist sonst genau dort dahin,
                 # wo es am engsten ist.
                 frag = list(details[n])
-                fenster_frei = sicht_bis(det_von, det_bis) - det_von
+                # Auch hier effektive Lesezeit: die erste Kastenstufe blendet
+                # 0.3s auf, bevor die Zeile voll steht (Leitplanke 3).
+                fenster_frei = sicht_bis(det_von, det_bis) - det_von - 0.3
                 while frag and detail_boden(frag) > fenster_frei:
                     frag = frag[:-1]
                 frag_stat[0] += len(details[n])
@@ -3309,16 +3344,19 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                                 det_bis if letzte else dz[k + 1],
                                 blende=0.3 if k == 0 else 0.0,
                                 haelt=not letzte))
-                        for zbild, zvon in zip(zeilen_bilder, dz):
+                        for zbild, zvon, ztext in zip(zeilen_bilder, dz, frag):
                             zpfad, zx, zy = png(zbild)
                             detail_plan.append(KartenStand(
-                                zpfad, zx, zy, zvon, det_bis))
+                                zpfad, zx, zy, zvon, det_bis,
+                                lese_text=ztext,
+                                lese_boden=detail_frag_boden(ztext)))
                 # Bewegt wird das zugeschnittene Overlay: sein Ziel ist die
                 # Kartenposition minus dem Textversatz innerhalb des Bildes.
                 fokus_plan.append(FokusKarte(
                     pfad, fx, fy, t_n, land[n],
                     land[n] - FLUG_DAUER if fliegt[n] else None,
-                    ziel[0] - (tx - fx), ziel[1] - (ty - fy)))
+                    ziel[0] - (tx - fx), ziel[1] - (ty - fy),
+                    text=punkt_text))
 
         def karte_auflegen(sz: Szene, a: float, b: float) -> None:
             for st in titel_plan + karten_plan:
@@ -3342,7 +3380,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     sz.overlays.append(Overlay(
                         st.png, a0, b0, st.blende if a0 == st.von else 0.0,
                         st.x, st.y,
-                        weiter=st.haelt or b0 < st.bis - 0.02))
+                        weiter=st.haelt or b0 < st.bis - 0.02,
+                        lese_text=st.lese_text, lese_boden=st.lese_boden))
             for fk in fokus_plan:
                 a0, b0 = max(a, fk.von), min(b, fk.bis)
                 if b0 - a0 <= 0.02:
@@ -3362,7 +3401,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                              and a0 <= fk.flug_ab + 0.001
                              and b0 >= fk.bis - 0.001 else None),
                     flug_x=fk.ziel_x, flug_y=fk.ziel_y,
-                    weiter=b0 < fk.bis - 0.02))
+                    weiter=b0 < fk.bis - 0.02,
+                    lese_text=fk.text,
+                    lese_boden=fokus_boden(fk.text) if fk.text else 0.0))
 
         erste_story = True
         sz: Szene | None = None
@@ -3392,11 +3433,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     sz.overlays.append(ov(
                         szenen.titel_karte(str(px["titel"]), label="NEXT UP",
                                            gross=False),
-                        von + 0.1, bis, einflug="unten"))
+                        von + 0.1, bis, einflug="unten",
+                        lese_text=str(px["titel"]),
+                        lese_boden=lese_boden_allgemein(str(px["titel"]))))
                 elif art == "zitat":
                     sz.overlays.append(ov(
                         szenen.zitat_post(str(px["text"]), _post_datum(datum)),
-                        von + 0.1, bis, einflug="unten"))
+                        von + 0.1, bis, einflug="unten",
+                        lese_text=str(px["text"]), lese_boden=ZITAT_MIN))
                 else:
                     _countup_overlays(sz, px, von + 0.2, bis, ov)
 
@@ -3421,7 +3465,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         s.overlays.append(ov(
             szenen.zitat_post(bloecke[zit_idx].text.split(": ", 1)[-1]
                               .strip('"'), _post_datum(datum)),
-            t + 0.2, bis, einflug="unten"))
+            t + 0.2, bis, einflug="unten",
+            lese_text=bloecke[zit_idx].text, lese_boden=ZITAT_MIN))
         print(f"Schluss-Zitat: {bis - t:.1f}s")
 
     if outro_idx is not None:
@@ -3512,7 +3557,11 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
                               ab + si * COUNTUP_TAKT,
                               ab + (si + 1) * COUNTUP_TAKT, 0.0))
     sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub),
-                          ab + len(stufen) * COUNTUP_TAKT, bis, 0.0))
+                          ab + len(stufen) * COUNTUP_TAKT, bis, 0.0,
+                          lese_text=f"{wert} {titel}".strip(),
+                          lese_boden=max(ZAHL_COUNTUP_MIN,
+                                         lese_boden_allgemein(
+                                             f"{wert} {titel}".strip()))))
 
 
 UEBERGANG = 0.48         # Kreuzblende auf das Motiv der naechsten Szene
@@ -3575,9 +3624,25 @@ DETAIL_FRAG_MIN = 2.0    # Boden je einzelnem Fragment (der Kasten als
                          # 1.4 war ein Aufblitzen, siehe DETAIL_CPS
 
 
+# Effektive Lesezeit statt Standzeit (Leitplanke 3, 22.08.2026): Einflug
+# (EINFLUG_DAUER) und Aufblende (fade 0.35) laufen parallel und nehmen dem
+# Text zusammen rund 0.4s, in denen er nicht voll lesbar steht. Die
+# Lesezeit-Boeden gelten gegen die EFFEKTIVE Lesezeit - die Planung rechnet
+# diesen Verlust deshalb auf ihre Fenster-Pruefungen drauf, und
+# lesezeit_verifizieren() rechnet ihn am fertigen Plan nach.
+EINBLEND_VERLUST = 0.40
+
+
 def fokus_boden(text: str) -> float:
     """Mindest-Standzeit eines Fokus-Punkts nach seiner Zeichenzahl."""
     return max(FOKUS_MIN, FOKUS_VORLAUF + len(text) / FOKUS_CPS)
+
+
+def lese_boden_allgemein(text: str, cps: float = FOKUS_CPS) -> float:
+    """Lesezeit-Boden fuer Karten ohne eigene Spezialregel (Agenda-Eintraege,
+    Zwischenthemen, Ansage-Karten): Blickwechsel plus Zeichenzahl im
+    konservativen Nebenher-Lesetempo."""
+    return FOKUS_VORLAUF + len(text) / cps
 
 
 def detail_frag_boden(fragment: str) -> float:
@@ -3596,6 +3661,68 @@ def detail_boden(fragmente: list[str]) -> float:
 LETZT_HALT = 2.5         # so lange steht die vollstaendige Liste am Themenende;
                          # gedeckt durch GOOGLE_KAPITEL_PAUSE, sonst muesste
                          # der letzte Punkt im laufenden Satz wegfliegen
+
+
+@dataclass
+class LeseVerstoss:
+    """Ein Textelement, dessen effektive Lesezeit unter seinem Boden liegt."""
+    text: str
+    boden: float
+    effektiv: float
+
+
+def lesezeit_verifizieren(folge: list[Szene], ende: float
+                          ) -> list[LeseVerstoss]:
+    """Lauf-Verifikation der Lesbarkeit (Leitplanke 3, 22.08.2026).
+
+    Rechnet fuer jedes Textelement des FERTIGEN Szenenplans die effektive
+    Lesezeit nach: Standzeit minus Einblendphase (Einflug und Aufblende
+    laufen parallel, es zaehlt die laengere), minus Ausblende, minus der
+    Zeit ab Flugbeginn (ein fliegender Text ist nicht lesbar). Ein Element
+    kann ueber Szenengrenzen in mehrere Overlay-Stuecke geteilt sein
+    (gleicher PNG-Pfad) - gezaehlt wird das Gesamtfenster ueber alle
+    Stuecke. Elemente ohne lese_boden (Vignette, Count-up-Stufen,
+    Kastengruende, geparkte Listen) sind bewusst aussen vor.
+
+    Entscheid warnen vs. korrigieren: dieser Schritt WARNT nur. Die
+    Korrekturen sitzen in der Planung selbst (zu kurze Fenster bekommen
+    keine Fokus-Karte, Fragmente fallen von hinten weg, Bullets werden
+    gekappt) - dort existiert der Kontext fuer eine sinnvolle Korrektur.
+    Eine nachtraegliche pauschale Verlaengerung wuerde gegen die
+    TTS-verankerten Zeitpunkte arbeiten. Diese Pruefung ist das
+    Sicherheitsnetz, das anschlagen muss, sobald ein kuenftiger Beat die
+    Planungs-Boeden umgeht - ohne sie zerstoert jeder zusaetzliche
+    Animations-Beat schleichend die Lesbarkeit."""
+    stuecke: dict[Path, list[Overlay]] = {}
+    for s in folge:
+        for o in s.overlays:
+            if o.lese_boden > 0:
+                stuecke.setdefault(o.png, []).append(o)
+    verstoesse: list[LeseVerstoss] = []
+    for teile in stuecke.values():
+        start = min(o.start for o in teile)
+        bis = min((o.flug_ab for o in teile if o.flug_ab is not None),
+                  default=max(o.ende for o in teile))
+        bis = min(bis, ende)
+        erst = min(teile, key=lambda o: o.start)
+        letzt = max(teile, key=lambda o: o.ende)
+        einblend = max(erst.fade, EINFLUG_DAUER if erst.einflug else 0.0)
+        fliegt = any(o.flug_ab is not None for o in teile)
+        ausblend = 0.0 if fliegt else letzt.fade
+        effektiv = (bis - start) - einblend - ausblend
+        if effektiv + 1e-6 < erst.lese_boden:
+            verstoesse.append(LeseVerstoss(erst.lese_text, erst.lese_boden,
+                                           effektiv))
+    if verstoesse:
+        for v in sorted(verstoesse, key=lambda v: v.effektiv - v.boden):
+            print(f"LESEZEIT-VERSTOSS: {v.text[:60]!r} effektiv "
+                  f"{v.effektiv:.2f}s, Boden {v.boden:.2f}s")
+        print(f"Lesezeit-Verifikation: {len(stuecke)} Textelemente, "
+              f"{len(verstoesse)} unter dem Boden - Planung pruefen")
+    else:
+        print(f"Lesezeit-Verifikation: {len(stuecke)} Textelemente, "
+              f"alle ueber ihrem Boden")
+    return verstoesse
 
 
 def _lage(o: Overlay) -> tuple[str, str]:
@@ -4842,6 +4969,9 @@ def main() -> None:
                                                   titel),
                                  sprech_ende=sprech_ende,
                                  nur_video=args.nur_video)
+            # Sicherheitsnetz Leitplanke 3: effektive Lesezeit jedes
+            # Textelements gegen seinen Boden nachrechnen (warnt nur).
+            lesezeit_verifizieren(folge, ende)
             ende_bauen = ende
             if args.vorschau is not None:
                 voll = len(folge)
