@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: claude/video-thumbnail-meme-60c124
 typ: feature
-commit: <Hash, sobald bekannt>
+commit: 5f4dc4d
 ---
 
 # Sonnet entscheidet, wo die Schlagzeile im Meme-Vorschaubild steht
