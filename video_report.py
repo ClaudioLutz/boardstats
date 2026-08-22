@@ -2784,6 +2784,31 @@ def kapitel_akzent(*texte: str) -> tuple[int, int, int] | None:
     return design_tokens.KAPITEL_AKZENT.get(bester) if bester else None
 
 
+def _breaking_kapitel(karten: list[dict], bloecke: list[Block],
+                      block_worte: list[list[Wort]],
+                      koepfe: list[tuple[int, int]]) -> int | None:
+    """Abschnitts-Nummer des Kapitels, in dem die erste TL;DR-Zahl des
+    Tages gesprochen wird - Kriterium fuer den einen BREAKING-Kicker
+    (C-News). None, wenn keine Zahl da ist oder keiner ihrer Ziffernblocks
+    in einem Kapitelrumpf faellt."""
+    if not karten or not koepfe:
+        return None
+    ziffern = {tok for tok in
+               _norm_text(str(karten[0].get("wert") or "")).split()
+               if any(z.isdigit() for z in tok)}
+    if not ziffern:
+        return None
+    for _, nr in koepfe:
+        toks = {tok for i, b in enumerate(bloecke)
+                if b.abschnitt == nr and not b.rolle
+                and b.art != "ueberschrift"
+                for w in block_worte[i]
+                for tok in _norm_text(w.text).split()}
+        if ziffern & toks:
+            return nr
+    return None
+
+
 def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  abschnitte: list[Abschnitt], zuordnung: dict[int, dict],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
@@ -2834,6 +2859,21 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         pfad, x, y = png(bild)
         return Overlay(pfad, start, bis, fade, x, y, einflug,
                        lese_text=lese_text, lese_boden=lese_boden)
+
+    def lower_third(sz_: Szene, text: str, von: float, bis: float,
+                    label: str = "", quelle: str = "", gross: bool = True,
+                    kicker: str = "", boden: float = 0.0) -> None:
+        """Zweistufiges Lower Third (C1/C-News): erst faehrt der Grund mit
+        dem Farbbalken ein, LT_VERSATZ spaeter erscheint der Text darin.
+        Beide Stufen enden gemeinsam."""
+        grund, textbild = szenen.titel_karte_teile(text, label, quelle,
+                                                   gross, kicker)
+        sz_.overlays.append(ov(grund, von, bis, fade=0.2, einflug="links"))
+        o = ov(textbild, von + LT_VERSATZ, bis, fade=0.25, einflug="unten",
+               lese_text=text,
+               lese_boden=boden or lese_boden_allgemein(text))
+        o.einflug_weg = szenen._s(20)
+        sz_.overlays.append(o)
 
     folge: list[Szene] = []
 
@@ -2921,10 +2961,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                              lese_text=thumb,
                              lese_boden=min(KALTSTART_MIN,
                                             lese_boden_allgemein(thumb))))
-    s.overlays.append(ov(szenen.titel_karte(hook, label="TODAY'S TOP STORY"),
-                         hook_ab, max(intro_bis, hook_ab + 0.6),
-                         einflug="unten", lese_text=hook,
-                         lese_boden=HOOK_VORLAUF + len(hook) / HOOK_CPS))
+    lower_third(s, hook, hook_ab, max(intro_bis, hook_ab + 0.6),
+                label="TODAY'S TOP STORY",
+                boden=HOOK_VORLAUF + len(hook) / HOOK_CPS)
 
     # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
     # Motiv seines Kapitels als Vorschau.
@@ -2964,11 +3003,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             return
         t0 = start_von(zk_idx)
         z = neu(pool_bild(), t0)
-        z.overlays.append(ov(szenen.titel_karte(kopf_titel, label=kopf_label),
-                             t0 + 0.2,
-                             start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
-                             einflug="unten", lese_text=kopf_titel,
-                             lese_boden=lese_boden_allgemein(kopf_titel)))
+        lower_third(z, kopf_titel, t0 + 0.2,
+                    start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
+                    label=kopf_label)
         genutzt = zahl_idx[:len(karten)]
         for j, i in enumerate(genutzt):
             t = start_von(i)
@@ -3006,6 +3043,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Karte und Ansage sagen dasselbe: der gesprochene Kopf ist
         # PRAES_ZAHLEN.
         zahlen_szenen(erster_kopf, ZAHLEN_LABEL, "TL;DR")
+
+    # Roter BREAKING-Kicker (C-News): genau EINE Story pro Video - die,
+    # in deren Kapiteltext die erste TL;DR-Zahl des Tages faellt. Ohne
+    # Treffer gibt es an diesem Tag keinen Kicker (ein BREAKING an jedem
+    # Kapitel entwertet sich selbst).
+    breaking_nr = _breaking_kapitel(karten, bloecke, block_worte, koepfe)
+    if breaking_nr is not None:
+        print(f"BREAKING-Kicker: Abschnitt {breaking_nr}")
 
     # Kapitel. Das Ende des letzten Kapitels ist der erste Rahmen-Block NACH
     # den Kapiteln (Outro; bei alter Ordnung der Zahlen-Kopf) - der
@@ -3092,7 +3137,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         opener_bis = min(
             max(rumpf_start,
                 kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)
-                + EINBLEND_VERLUST),
+                + EINBLEND_VERLUST + LT_VERSATZ),
             naechster - 0.5)
         # Tempo-Badge am Kapitelzaehler: seit 21.08.2026 ersetzt er den
         # frueheren eigenen Abschnitt "FILLING FAST". Dass ein Thread
@@ -3101,12 +3146,12 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Strecke am Videoende.
         tempo = str(eintrag.get("tempo") or "").strip()
         label = f"CHAPTER {k + 1:02d} / {len(koepfe)}"
-        kapitel_szene.overlays.append(ov(
-            szenen.titel_karte(titel,
-                               label=f"{label}  ·  {tempo}" if tempo else label,
-                               quelle=f"Source: {quelle}" if quelle else ""),
-            kopf_start + 0.2, opener_bis, einflug="unten", lese_text=titel,
-            lese_boden=OPENER_QUELLE_MIN if quelle else OPENER_MIN))
+        lower_third(kapitel_szene, titel,
+                    kopf_start + 0.2, opener_bis,
+                    label=f"{label}  ·  {tempo}" if tempo else label,
+                    quelle=f"Source: {quelle}" if quelle else "",
+                    kicker="BREAKING" if nr == breaking_nr else "",
+                    boden=OPENER_QUELLE_MIN if quelle else OPENER_MIN)
 
         # Sonderereignisse des Drehbuchs im Kapitelrumpf verorten
         # Der vierte Eintrag ist das natuerliche Ende: die Zeit, zu der der
@@ -3758,6 +3803,8 @@ SCHLUSS_FADE = 1.5    # Ausblende des Schlussbilds (Tafel-Alpha und Bild nach
                       # Schwarz); muss kleiner als AUSKLANG bleiben.
 OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
                            # die Aktivitaets-Grafik bekommt nur den Rest
+LT_VERSATZ = 0.25        # zweistufiges Lower Third (C1/C-News): erst der
+                         # Grund mit Balken, so viel spaeter der Text darin
 ZAHL_PULS_DAUER = 1.1    # so lange steht die farbige Zahl im Fokus-Punkt,
                          # wenn sie gesprochen wird (Intent B3 / Idee 28/32)
 FOKUS_MIN = 1.1          # absoluter Boden; die Lesezeit rechnet fokus_boden()
@@ -4618,13 +4665,13 @@ def ton_argumente(audio_mp3: Path, ende: float, kapitel1: float = 0.0,
 def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
                  arbeit: Path, suffix: str, datum: str, ende: float,
                  kapitel1: float = 0.0, zahl_moment: float = 0.0,
-                 effekte: Path | None = None) -> None:
+                 effekte: Path | None = None, datenstand: str = "") -> None:
     """Alle Szenen rendern, auf dem 25-fps-Frame-Raster nahtlos aneinander
     schneiden (kein Drift zur Tonspur) und mit dem Audio muxen."""
     if not folge:
         raise RuntimeError("keine Szenen")
     bug_pfad, bx, by = szenen.speichern(
-        szenen.bug(datum), arbeit / f"overlay{suffix}_bug.png")
+        szenen.bug(datum, datenstand), arbeit / f"overlay{suffix}_bug.png")
     bug = Overlay(bug_pfad, 0.0, 0.0, 0.0, bx, by)
     vig_pfad, vx, vy = szenen.speichern(
         szenen.vignette(), arbeit / f"overlay{suffix}_vignette.png")
@@ -5257,8 +5304,14 @@ def main() -> None:
             except Exception as e:  # noqa: BLE001 - Effekte sind Beigabe
                 print(f"Effektspur nicht gebaut ({e}) - Ton ohne Effekte")
             print("baue Szenen-Video ...")
+            # Zeitstempel (C-News): der Datenstand aus der Kopfzeile des
+            # Berichts als Bildschirm-Metadatum im Ecken-Bug.
+            m_stand = DATENSTAND_RE.search(markdown)
+            datenstand = (f"{int(m_stand.group(4)):02d}:{m_stand.group(5)}"
+                          if m_stand else "")
             szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
-                         datum, ende_bauen, kapitel1, zahl_moment, effekte)
+                         datum, ende_bauen, kapitel1, zahl_moment, effekte,
+                         datenstand)
             fertig = True
         except Exception as e:
             # Kein Layout-Problem darf den Upload verhindern.

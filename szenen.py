@@ -113,19 +113,25 @@ def _bande(bild: Image.Image, oben: int, unten: int, alpha: int = 150) -> None:
 UHR_GROESSE = _s(22)
 
 
-def bug(datum: str) -> Image.Image:
+def bug(datum: str, datenstand: str = "") -> Image.Image:
     """Ecken-Marke oben: Serienname links, Uhr-Icon + Datum rechts. Liegt
     als eigenes statisches Overlay auf jeder Szene (im Hintergrund wuerde
-    sie mitzoomen)."""
+    sie mitzoomen).
+
+    datenstand ("HH:MM") ergaenzt den Zeitstempel des C-News-Pakets: die
+    echte Aktualitaet des Materials als Bildschirm-Metadatum (Retention-
+    Entscheid 21.08.2026: nie gesprochen) - ein ehrlicher Datenstand statt
+    einer "Live"-Behauptung, die ein Aufzeichnungsformat nicht einloest."""
     bild = _leer()
     d = ImageDraw.Draw(bild)
-    d.text((_s(40), _s(30)), BUG_TEXT, font=_font(True, 24), fill=AKZENT,
-           stroke_width=3, stroke_fill=(0, 0, 0))
-    breite = d.textlength(datum, font=_font(False, 24))
+    d.text((_s(40), _s(30)), BUG_TEXT, font=_font(True, 24),
+           fill=AKZENT_STANDARD, stroke_width=3, stroke_fill=(0, 0, 0))
+    text = f"{datum}  ·  DATA {datenstand}" if datenstand else datum
+    breite = d.textlength(text, font=_font(False, 24))
     uhr = icons.icon("clock", UHR_GROESSE, GRAU)
     x_uhr = int(B - _s(40) - breite - UHR_GROESSE - _s(10))
     bild.alpha_composite(uhr, (x_uhr, _s(28)))
-    d.text((B - _s(40) - breite, _s(30)), datum, font=_font(False, 24),
+    d.text((B - _s(40) - breite, _s(30)), text, font=_font(False, 24),
            fill=GRAU, stroke_width=3, stroke_fill=(0, 0, 0))
     return bild
 
@@ -143,13 +149,21 @@ def vignette() -> Image.Image:
     return bild
 
 
-def titel_karte(text: str, label: str = "", quelle: str = "",
-                gross: bool = True) -> Image.Image:
-    """Lower Third: optionales Amber-Label, grosser Titel mit Amber-Balken,
-    optionale Quellenzeile. Fuer Intro-Hook, Kapitel-Opener, Agenda-Eintraege
-    und Zwischenthemen (gross=False rendert eine kleinere Stufe)."""
-    bild = _leer()
-    d = ImageDraw.Draw(bild)
+def titel_karte_teile(text: str, label: str = "", quelle: str = "",
+                      gross: bool = True, kicker: str = ""
+                      ) -> tuple[Image.Image, Image.Image]:
+    """Lower Third in zwei Stufen (C1/C-News, 22.08.2026): zuerst faehrt
+    der Grund ein (Bande, Amber-Balken, optionaler roter Kicker-Chip),
+    dann erscheint der Text darin (Label, Titelzeilen, Quellenzeile).
+    video_report blendet die beiden mit Versatz ein - das ist der
+    Masken-Reveal-Ersatz des PNG-Wegs.
+
+    kicker ist der rote BREAKING-Chip des Nachrichten-Zweigs: EINER pro
+    Video (die Story mit der TL;DR-Zahl des Tages), sonst entwertet er
+    sich selbst."""
+    grund = _leer()
+    textbild = _leer()
+    d = ImageDraw.Draw(textbild)
     groessen = (56, 48, 40) if gross else (44, 38, 32)
     breite = B - 2 * MARGIN - _s(120)
     for gr in groessen:
@@ -161,20 +175,39 @@ def titel_karte(text: str, label: str = "", quelle: str = "",
     unterkante = H - (_s(128) if quelle else _s(96))
     text_oben = unterkante - schritt * len(zeilen)
     label_oben = text_oben - (_s(44) if label else 0)
-    _bande(bild, label_oben - _s(26), H - _s(56), alpha=150)
-    d = ImageDraw.Draw(bild)
+    kicker_oben = label_oben - (_s(50) if kicker else 0)
+    _bande(grund, kicker_oben - _s(26), H - _s(56), alpha=150)
+    dg = ImageDraw.Draw(grund)
+    dg.rectangle([MARGIN, text_oben + _s(8), MARGIN + _s(14),
+                  text_oben + schritt * len(zeilen) - _s(6)], fill=AKZENT)
+    if kicker:
+        kf = _font(True, 24)
+        kb = dg.textlength(kicker.upper(), font=kf)
+        dg.rectangle([MARGIN + _s(40), kicker_oben,
+                      MARGIN + _s(40) + _s(24) + kb, kicker_oben + _s(38)],
+                     fill=ROT)
+        dg.text((MARGIN + _s(40) + _s(12), kicker_oben + _s(5)),
+                kicker.upper(), font=kf, fill=design_tokens.NEUTRAL[9])
     if label:
         d.text((MARGIN + _s(40), label_oben), label.upper(),
                font=_font(True, 26), fill=AKZENT)
-    d.rectangle([MARGIN, text_oben + _s(8), MARGIN + _s(14),
-                 text_oben + schritt * len(zeilen) - _s(6)], fill=AKZENT)
     for i, z in enumerate(zeilen):
         d.text((MARGIN + _s(40), text_oben + i * schritt), z, font=font,
                fill=HELL, stroke_width=4, stroke_fill=(0, 0, 0))
     if quelle:
         d.text((MARGIN + _s(40), unterkante + _s(10)), quelle,
                font=_font(False, 22), fill=GEDIMMT)
-    return bild
+    return grund, textbild
+
+
+def titel_karte(text: str, label: str = "", quelle: str = "",
+                gross: bool = True, kicker: str = "") -> Image.Image:
+    """Lower Third als EIN Bild: optionales Amber-Label, grosser Titel mit
+    Amber-Balken, optionale Quellenzeile. Fuer Stellen ohne zweistufigen
+    Aufbau (Zwischenthemen, Agenda) und als Vorlage der Teile."""
+    grund, textbild = titel_karte_teile(text, label, quelle, gross, kicker)
+    grund.alpha_composite(textbild)
+    return grund
 
 
 # Randspalte (Designsystem 19.08.2026): Themen-Titel und geparkte Punkte
