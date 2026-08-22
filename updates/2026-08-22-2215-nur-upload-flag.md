@@ -2,7 +2,7 @@
 datum: 2026-08-22
 agent: worktree-nur-upload-flag
 typ: feature
-commit: <wird beim Commit ergaenzt>
+commit: 124b032
 ---
 
 # `--nur-upload`: ein fertig gebautes Video hochladen, ohne es neu zu rendern
