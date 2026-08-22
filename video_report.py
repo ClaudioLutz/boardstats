@@ -2674,6 +2674,9 @@ class Overlay:
     flug_ab: float | None = None   # ab dieser Zeit fliegt das Overlay nach
     flug_x: int = 0                # (flug_x, flug_y) und verblasst dabei -
     flug_y: int = 0                # so parkt ein Fokus-Punkt in der Karte
+    lauf_px: float = 0.0           # Lauftext (Tickerband): so viele Pixel
+    lauf_breite: int = 0           # pro Sekunde nach links; lauf_breite ist
+                                   # die Streifenbreite fuer den Umlauf
     einflug_weg: int = 0           # eigener Einflug-Weg in Pixeln;
                                    # 0 = Standard EINFLUG_WEG. Kleine
                                    # Elemente (Detail-Zeilen) fahren kurz.
@@ -2814,7 +2817,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                  fdaten: dict, hook: str, datum: str, arbeit: Path,
                  ende: float, thumb: str = "",
                  sprech_ende: float = 0.0,
-                 nur_video: bool = False
+                 nur_video: bool = False, ticker: list[str] | None = None
                  ) -> tuple[list[Szene], list[tuple[float, str]]]:
     """Drehbuch (folien.json v2) + Wort-Zeitstempel -> Szenenfolge.
     Jede Szene traegt ein vollflaechiges Motiv; Kapitel-Opener, der Themen-Titel oben, die persistente
@@ -2859,6 +2862,30 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         pfad, x, y = png(bild)
         return Overlay(pfad, start, bis, fade, x, y, einflug,
                        lese_text=lese_text, lese_boden=lese_boden)
+
+    # Tickerband (C-News): segmentweise statt permanent - ein durchgehend
+    # laufendes Band verbraucht das Aufmerksamkeits-Budget (Leitplanke 1/2)
+    # durchgehend. Es laeuft im Vorspann, in den ersten Sekunden jedes
+    # Kapitel-Openers und im Abspann.
+    ticker_liste = [t_ for t_ in (ticker or []) if t_][:14]
+    streifen_cache: list[tuple[Path, int, int, int]] = []
+
+    def ticker_overlays(sz_: Szene, von: float, bis: float) -> None:
+        if not ticker_liste or bis - von < TICKER_MIN:
+            return
+        if not streifen_cache:
+            band_pfad, bx_, by_ = png(szenen.ticker_band())
+            streifen = szenen.ticker_streifen(ticker_liste)
+            s_pfad, _, _ = png(streifen)
+            streifen_cache.append((band_pfad, bx_, by_, streifen.width))
+            streifen_cache.append((s_pfad, 0, 0, streifen.width))
+        band_pfad, bx_, by_, breite = streifen_cache[0]
+        s_pfad = streifen_cache[1][0]
+        sz_.overlays.append(Overlay(band_pfad, von, bis, 0.25, bx_, by_))
+        sz_.overlays.append(Overlay(
+            s_pfad, von, bis, 0.25, RENDER_W,
+            RENDER_H - szenen._s(szenen.TICKER_HOEHE),
+            lauf_px=szenen._s(TICKER_TEMPO), lauf_breite=breite))
 
     def lower_third(sz_: Szene, text: str, von: float, bis: float,
                     label: str = "", quelle: str = "", gross: bool = True,
@@ -2964,6 +2991,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
     lower_third(s, hook, hook_ab, max(intro_bis, hook_ab + 0.6),
                 label="TODAY'S TOP STORY",
                 boden=HOOK_VORLAUF + len(hook) / HOOK_CPS)
+    ticker_overlays(s, 0.4, intro_bis - 0.2)
 
     # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
     # Motiv seines Kapitels als Vorschau.
@@ -3146,6 +3174,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # Strecke am Videoende.
         tempo = str(eintrag.get("tempo") or "").strip()
         label = f"CHAPTER {k + 1:02d} / {len(koepfe)}"
+        ticker_overlays(kapitel_szene, kopf_start + 0.3,
+                        min(opener_bis, kopf_start + TICKER_OPENER_DAUER))
         lower_third(kapitel_szene, titel,
                     kopf_start + 0.2, opener_bis,
                     label=f"{label}  ·  {tempo}" if tempo else label,
@@ -3686,6 +3716,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         # gleichzeitig nach Schwarz (siehe _szene_clip).
         s.overlays.append(ov(szenen.outro_tafel(frage), outro_start, ende,
                              fade=SCHLUSS_FADE, einflug="unten"))
+        ticker_overlays(s, outro_start + 0.3, ende - SCHLUSS_FADE)
         print(f"Schlussbild: {ende - outro_start:.1f}s "
               f"(davon {ende - gesprochen:.1f}s stummer Ausklang)"
               + (f", Cliffhanger {frage!r}" if frage else ""))
@@ -3803,6 +3834,9 @@ SCHLUSS_FADE = 1.5    # Ausblende des Schlussbilds (Tafel-Alpha und Bild nach
                       # Schwarz); muss kleiner als AUSKLANG bleiben.
 OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
                            # die Aktivitaets-Grafik bekommt nur den Rest
+TICKER_MIN = 3.0         # kuerzer lohnt kein Tickerband-Segment
+TICKER_TEMPO = 90        # Laufgeschwindigkeit in 720p-Pixeln pro Sekunde
+TICKER_OPENER_DAUER = 6.0  # so lange laeuft das Band am Kapitelanfang
 LT_VERSATZ = 0.25        # zweistufiges Lower Third (C1/C-News): erst der
                          # Grund mit Balken, so viel spaeter der Text darin
 ZAHL_PULS_DAUER = 1.1    # so lange steht die farbige Zahl im Fokus-Punkt,
@@ -3960,6 +3994,11 @@ def _lage(o: Overlay) -> tuple[str, str]:
     Standzeiten unter der doppelten Einflugdauer bleiben statisch: was kaum
     steht, soll nicht auch noch fahren. Bei Enge weicht der Einflug, nicht
     der Flug - das Parken ist die eigentliche Aussage."""
+    if o.lauf_px:
+        # Tickerband (C-News): der Streifen faehrt von der rechten Kante
+        # nach links und laeuft um, sobald er durch ist.
+        return (f"'{RENDER_W}-mod((t-{o.start:.3f})*{o.lauf_px:.1f},"
+                f"{o.lauf_breite + RENDER_W})'", str(o.y))
     dx: list[str] = []
     dy: list[str] = []
     steht = o.ende - o.start - (FLUG_DAUER if o.flug_ab is not None else 0.0)
@@ -5272,12 +5311,17 @@ def main() -> None:
         # Szenen-Layout (v7): Drehbuch-folien.json mit Stichworten,
         # Zwischenthemen, Zitaten und Kennzahlen.
         try:
+            # Ticker des Tages fuer das C-News-Band: stehen im Bericht
+            # in Klammern hinter den Firmennamen (wie in shorts._TICKER).
+            ticker = [t_ for t_ in dict.fromkeys(
+                          re.findall(r"\(([A-Z]{2,5})\)", markdown))
+                      if t_.lower() not in STOPP_TAGS]
             folge, klang = szenen_bauen(bloecke_ton, block_worte, abschnitte,
                                  zuordnung, fdaten, hook, datum, arbeit, ende,
                                  thumb_text_laden(tag_dir, args.sprache,
                                                   titel),
                                  sprech_ende=sprech_ende,
-                                 nur_video=args.nur_video)
+                                 nur_video=args.nur_video, ticker=ticker)
             # Sicherheitsnetz Leitplanke 3: effektive Lesezeit jedes
             # Textelements gegen seinen Boden nachrechnen (warnt nur).
             lesezeit_verifizieren(folge, ende)

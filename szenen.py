@@ -136,6 +136,34 @@ def bug(datum: str, datenstand: str = "") -> Image.Image:
     return bild
 
 
+TICKER_HOEHE = 40       # Bandhoehe im 720p-Layoutmass (C-News-Tickerband)
+TICKER_FONT = 22
+
+
+def ticker_band() -> Image.Image:
+    """Der stehende Grund des Tickerbands: dunkle Bande am unteren Rand.
+    Eigenes Overlay, damit nicht die Bande selbst mitlaeuft - nur der
+    Textstreifen (ticker_streifen) scrollt darueber."""
+    bild = _leer()
+    _bande(bild, H - _s(TICKER_HOEHE), H, alpha=200)
+    return bild
+
+
+def ticker_streifen(ticker: list[str]) -> Image.Image:
+    """Der laufende Textstreifen des Tickerbands: die Ticker des Tages,
+    dreifach wiederholt, als EIGENSTAENDIGES Bild in Streifengroesse (kein
+    Canvas) - video_report bewegt es per Overlay-x-Ausdruck von rechts
+    nach links ueber die Bande."""
+    f = _font_mono(TICKER_FONT)
+    text = ("   ·   ".join(t.upper() for t in ticker) + "   ·   ") * 3
+    mess = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    breite = int(mess.textlength(text, font=f)) + _s(20)
+    bild = Image.new("RGBA", (breite, _s(TICKER_HOEHE)), (0, 0, 0, 0))
+    ImageDraw.Draw(bild).text((_s(10), _s(8)), text, font=f,
+                              fill=AKZENT_STANDARD)
+    return bild
+
+
 def vignette() -> Image.Image:
     """Ein Hauch Abdunkelung oben (Bug-Zone). Der fruehere 320-px-Verlauf
     unten ist mit dem Designsystem vom 19.08.2026 gefallen: jeder Text steht
