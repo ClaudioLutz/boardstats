@@ -1072,9 +1072,16 @@ Rules per "## " section (one entry each, same order; skip the GLOSSARY):
   every single name or claim mentioned, not just the first couple.
   "detail": 2 or 3 keyword fragments that stand UNDER the bullet while its
   sentence is spoken, then disappear - only the bullet stays on screen.
-  Write them for the eye, not for the ear: telegram style, max 38
-  characters each, NO full sentences, no final period, sentence case (not
-  ALL CAPS). Every fragment must ADD something the bullet cannot carry -
+  Write them for the eye, not for the ear: telegram style, NO full
+  sentences, no final period, sentence case (not ALL CAPS).
+  KEEP THEM SHORT: aim for 22 characters or less each, 26 is the hard
+  limit. Every fragment needs its own reading time on screen, and two
+  fragments only both fit while their sentence is spoken if each is short -
+  at 26 characters the second one is dropped in half the cases (measured
+  22.08.2026: median fragment 26 characters, 13 of 24 bullets lost their
+  second line). "Rented, not owned" survives, "The Bugattis are rented
+  per month" does not. Every fragment must ADD something the bullet
+  cannot carry -
   the figure behind it, the name, the mechanism, the counter-argument, or
   who says it ("one poster claims", "unsourced", "no source given").
   Never restate or rephrase the bullet, and never repeat one fragment in
@@ -1136,7 +1143,21 @@ TIMEOUT_FOLIEN = 700
 # geworden waere.
 
 DETAIL_MAX_FRAGMENTE = 3
-DETAIL_MAX_ZEICHEN = 40
+# 40 war so weit ueber dem, was die Zeit im Bild hergibt, dass die Grenze nie
+# griff: Messung 22.08.2026 am echten Tag 21.08. - Median 26 Zeichen, und bei
+# 13 von 24 Punkten mit Fragmenten fiel die zweite Zeile weg, weil die
+# Lesezeit-Boeden (DETAIL_FRAG_MIN 2.0s je Fragment, DETAIL_CPS 10) knapp
+# ueber dem freien Fenster lagen (Median 4.93s gegen 5.1s Bedarf). Der Weg
+# ueber kuerzere Fragmente statt niedrigerer Boeden ist bewusst gewaehlt: die
+# Boeden wurden am 19.08. auf Nutzerbefund hin ANGEHOBEN (12 -> 10 cps), weil
+# die Fragmente zu kurz standen. Simuliert am selben Tag: diese Kappung
+# allein bringt 13 -> 10 gekuerzte Punkte, das Prompt-Ziel von 22 Zeichen
+# bringt 13 -> 7. Mehr ist nicht zu holen, weil 7 Fenster unter 4.0s liegen
+# und damit unter dem Boden zweier Fragmente (2x DETAIL_FRAG_MIN) - die
+# tragen strukturell nie zwei Zeilen, egal wie kurz der Text ist. Der
+# Prompt fordert deshalb 22; dies hier ist nur das Sicherheitsnetz gegen
+# ein Modell, das sich nicht daran haelt.
+DETAIL_MAX_ZEICHEN = 26
 
 
 def _wortgrenze(text: str, grenze: int) -> str:
