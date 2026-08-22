@@ -5169,12 +5169,81 @@ def thumb_text_laden(tag_dir: Path, sprache: str, titel: str) -> str:
     return _thumb_aus_titel(titel)
 
 
+THUMB_PROMPT_PLATZIERUNG = """\
+Du platzierst die Schlagzeile eines YouTube-Vorschaubilds in Meme-Optik.
+Das Bild ist das Motiv, die Schlagzeile steht spaeter in grosser weisser
+Schrift mit dicker schwarzer Kontur direkt darueber - es gibt KEINE dunkle
+Flaeche und keinen Kasten darunter.
+
+Sieh dir das Motiv mit dem Read-Werkzeug wirklich an. Dann entscheide, in
+welchem waagrechten Drittel (oben/mitte/unten) und mit welcher Ausrichtung
+(links/mitte/rechts) die Schlagzeile stehen soll.
+
+Kriterien, in dieser Reihenfolge:
+1. Nicht verdecken, was den Witz traegt: Gesichter, Augen, Mund, Bildtext
+   des Memes, die Pointe.
+2. Ruhige, kontrastarme Flaeche bevorzugen - dort liest sich weisse Schrift
+   mit Kontur am besten.
+3. Im Zweifel oben und mittig, das ist die Bildmakro-Konvention.
+Unten ist die schlechteste Wahl, wenn dort schon Bildtext oder das
+Serien-Label sitzt (unten links steht ein kleiner Chip).
+
+Antworte NUR mit JSON, ohne Vorrede:
+{"beschreibung": "was auf dem Motiv zu sehen ist, mindestens 20 Zeichen",
+ "zone": "oben|mitte|unten", "ausrichtung": "links|mitte|rechts",
+ "grund": "ein kurzer Satz"}
+"""
+
+TIMEOUT_THUMB_PLATZ = 120
+
+
+def _thumb_platzierung(motiv: Path | None, text: str) -> tuple[str, str]:
+    """Wo die Schlagzeile ueber dem Meme stehen soll - ein Sonnet-Aufruf mit
+    Blick auf das Motiv, analog den Sichtpruefungen im Report-Lauf.
+
+    Wie dort (run_report._sicht_antwort) gilt eine eigene, nicht leere
+    Beschreibung als Beleg, dass wirklich hingesehen wurde: ein headless
+    Aufruf kann sonst ein wohlgeformtes Urteil liefern, ohne die Datei je
+    geoeffnet zu haben. Ohne Beleg oder bei jedem anderen Problem greift die
+    deterministische Messung in thumbnail.platzierung_messen() - die
+    Platzierung darf ein Vorschaubild nie verhindern."""
+    if motiv is None:
+        return thumbnail.ZONE_STANDARD, thumbnail.AUSRICHTUNG_STANDARD
+    ersatz = thumbnail.platzierung_messen(motiv)
+    try:
+        eingabe = f"Schlagzeile: {text}\n\nMotiv: {motiv}"
+        out = rr.claude_ruf(THUMB_PROMPT_PLATZIERUNG, eingabe, "sonnet",
+                            TIMEOUT_THUMB_PLATZ, tools="Read", cwd=rr.BASE,
+                            effort="low").strip()
+        daten = json.loads(rr._json_schneiden(out))
+        beschreibung = re.sub(r"\W+", " ",
+                              str(daten.get("beschreibung") or "")).strip()
+        if len(beschreibung) < 20:
+            print("Textplatzierung ohne eigene Beschreibung - vermutlich "
+                  f"ungesehen, nehme die Messung {ersatz}")
+            return ersatz
+        zone = str(daten.get("zone") or "")
+        ausrichtung = str(daten.get("ausrichtung") or "")
+        if zone not in thumbnail.ZONEN:
+            zone = ersatz[0]
+        if ausrichtung not in thumbnail.AUSRICHTUNGEN:
+            ausrichtung = ersatz[1]
+        print(f"Textplatzierung (Sonnet): {zone}/{ausrichtung} - "
+              f"{daten.get('grund')}")
+        return zone, ausrichtung
+    except Exception as e:
+        print(f"Textplatzierung nicht beurteilt ({e}) - nehme die Messung "
+              f"{ersatz}")
+        return ersatz
+
+
 def vorschaubild(arbeit: Path, tag_dir: Path, cfg: dict[str, str], sprache: str,
                  datum: str, titel: str) -> Path | None:
-    """Vorschaubild des Tages bauen: fester Serienrahmen mit dem Schlagwort
-    des Tages, als Motiv das vom Report-Lauf geprueft ausgewaehlte Board-Bild
-    und sonst das statische Serienbild. Scheitert der Aufbau, wird das
-    Serienbild unveraendert gesetzt - lieber statisch als gar keins."""
+    """Vorschaubild des Tages bauen: Meme-Optik mit dem Schlagwort des Tages
+    ueber dem vom Report-Lauf geprueft ausgewaehlten Board-Bild, sonst ueber
+    dem statischen Serienbild. Wohin die Schlagzeile im Bild kommt, beurteilt
+    _thumb_platzierung() am Motiv. Scheitert der Aufbau, wird das Serienbild
+    unveraendert gesetzt - lieber statisch als gar keins."""
     motive = sorted(MOTIV_DIR.glob(f"{datum}.*"))
     motiv = motive[0] if motive else (THUMBNAIL if THUMBNAIL.exists() else None)
     text = thumb_text_laden(tag_dir, sprache, titel)
@@ -5183,9 +5252,11 @@ def vorschaubild(arbeit: Path, tag_dir: Path, cfg: dict[str, str], sprache: str,
                                     else datum)
     print(f"Vorschaubild: Schlagwort {text!r}, Motiv "
           f"{motiv.name if motiv else 'keins'}")
+    zone, ausrichtung = _thumb_platzierung(motiv, text)
     try:
         return thumbnail.bauen(text, motiv,
-                               arbeit / f"thumbnail{cfg['suffix']}.jpg", fuss=fuss)
+                               arbeit / f"thumbnail{cfg['suffix']}.jpg",
+                               fuss=fuss, zone=zone, ausrichtung=ausrichtung)
     except Exception as e:
         print(f"Vorschaubild nicht gebaut ({e}) - nehme das Serienbild")
         return THUMBNAIL if THUMBNAIL.exists() else None
