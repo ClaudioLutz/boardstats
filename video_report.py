@@ -4869,6 +4869,34 @@ def ton_argumente(audio_mp3: Path, ende: float, kapitel1: float = 0.0,
              "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"])
 
 
+def nur_upload_hindernis(video_mp4: Path, audio_mp3: Path,
+                         ton_vorher: float | None,
+                         ton_nachher: float | None) -> str | None:
+    """Was gegen einen Upload der vorhandenen Datei spricht - None heisst:
+    nichts, sie darf hoch.
+
+    Eigene Funktion statt Inline-Pruefung in main(), weil hier ein Fehler
+    teuer ist: durchgewunken landet ein Video auf dem oeffentlichen Kanal,
+    dessen Kapitelmarken nicht zum Bild passen. Die Marken entstehen aus den
+    Wort-Zeitstempeln der Vertonung; wurde die neu erzeugt (mtime der MP3
+    hat sich bewegt), gehoeren sie zu einer anderen Tonspur als der, gegen
+    die das fertige Bild gerendert wurde."""
+    if not video_mp4.exists():
+        return (f"{video_mp4.name} fehlt - erst bauen (ohne --nur-upload), "
+                f"dann hochladen")
+    if ton_vorher is None or ton_nachher != ton_vorher:
+        return ("die Vertonung wurde neu erzeugt, ihre Wort-Zeitstempel "
+                "passen also nicht mehr zum bereits gerenderten Bild - die "
+                "Kapitelmarken laegen daneben. Abbruch; ohne --nur-upload "
+                "komplett neu bauen.")
+    if not audio_mp3.exists():
+        return "die Tonspur fehlt - Abbruch"
+    if video_mp4.stat().st_mtime < audio_mp3.stat().st_mtime:
+        return ("das Video ist aelter als seine Tonspur - Abbruch, es "
+                "gehoert nicht zu diesem Stand.")
+    return None
+
+
 def szenen_video(folge: list[Szene], audio_mp3: Path, ziel_mp4: Path,
                  arbeit: Path, suffix: str, datum: str, ende: float,
                  kapitel1: float = 0.0, zahl_moment: float = 0.0,
@@ -5381,6 +5409,12 @@ def main() -> None:
                     help="einheitliches Dry-Run-Flag der Pipeline; hier "
                          "gleichbedeutend mit --nur-video (kein Upload, kein "
                          "Marker, Delta-Zustand bleibt unberuehrt)")
+    ap.add_argument("--nur-upload", action="store_true",
+                    help="ein bereits gebautes video_<sprache>.mp4 hochladen, "
+                         "ohne es neu zu rendern (spart ~40 min und das "
+                         "TTS-Kontingent). Bricht ab, wenn die Datei fehlt "
+                         "oder die Vertonung nicht aus dem Cache kommt - "
+                         "sonst passten die Kapitelmarken nicht zum Bild")
     ap.add_argument("--trotz-altdaten", action="store_true",
                     help=f"auch hochladen, wenn der Datenstand des Berichts "
                          f"aelter als {DATENSTAND_MAX_H:.0f} h ist")
@@ -5449,7 +5483,22 @@ def main() -> None:
     text = ton_text(bloecke_ton)
 
     print("erzeuge Vertonung mit Wort-Zeitstempeln ...")
-    worte = ton_holen(text, audio_mp3, cfg, args.nur_video)
+    # Mit --nur-upload MUSS die Vertonung aus dem Cache kommen: die
+    # Kapitelmarken entstehen unten aus diesen Wort-Zeitstempeln, und eine
+    # frisch erzeugte Tonspur wuerde andere liefern als die, gegen die das
+    # fertige Bild gerendert wurde. Ob der Cache griff, verraet die mtime -
+    # ton_holen() schreibt die MP3 nur beim echten Vertonen neu.
+    ton_vorher = audio_mp3.stat().st_mtime if audio_mp3.exists() else None
+    worte = ton_holen(text, audio_mp3, cfg, args.nur_video or args.nur_upload)
+    if args.nur_upload:
+        ton_nachher = audio_mp3.stat().st_mtime if audio_mp3.exists() else None
+        hindernis = nur_upload_hindernis(video_mp4, audio_mp3,
+                                         ton_vorher, ton_nachher)
+        if hindernis:
+            print(f"--nur-upload: {hindernis}")
+            return
+        print(f"--nur-upload: verwende das vorhandene {video_mp4.name} "
+              f"({video_mp4.stat().st_size / 1048576:.0f} MB), kein Render")
     print(f"{len(worte)} Woerter erkannt")
     block_worte = worte_zu_bloecken(worte, bloecke_ton)
     sprech_ende = worte[-1].end if worte else 0.0
@@ -5515,19 +5564,34 @@ def main() -> None:
                           f"({effekte.name})")
             except Exception as e:  # noqa: BLE001 - Effekte sind Beigabe
                 print(f"Effektspur nicht gebaut ({e}) - Ton ohne Effekte")
-            print("baue Szenen-Video ...")
             # Zeitstempel (C-News): der Datenstand aus der Kopfzeile des
             # Berichts als Bildschirm-Metadatum im Ecken-Bug.
             m_stand = DATENSTAND_RE.search(markdown)
             datenstand = (f"{int(m_stand.group(4)):02d}:{m_stand.group(5)}"
                           if m_stand else "")
-            szenen_video(folge, audio_mp3, video_mp4, arbeit, cfg["suffix"],
-                         datum, ende_bauen, kapitel1, zahl_moment, effekte,
-                         datenstand)
+            if args.nur_upload:
+                # Der Szenenbau lief trotzdem - er kostet Sekunden und haelt
+                # die Kapitelmarken-Rechnung unten auf demselben Weg wie ein
+                # normaler Lauf. Nur das Rendern (~40 min) faellt weg.
+                print("--nur-upload: Szenen-Video wird nicht neu gebaut")
+            else:
+                print("baue Szenen-Video ...")
+                szenen_video(folge, audio_mp3, video_mp4, arbeit,
+                             cfg["suffix"], datum, ende_bauen, kapitel1,
+                             zahl_moment, effekte, datenstand)
             fertig = True
         except Exception as e:
             # Kein Layout-Problem darf den Upload verhindern.
             print(f"Szenen-Aufbau fehlgeschlagen ({e}) - Ersatz-Layout")
+    if args.nur_upload and not fertig:
+        # Der Szenenbau ist gescheitert. Ohne diesen Riegel liefe jetzt die
+        # Ersatz-Staffel (v6-Folien, dann v5-Text) und wuerde das vorhandene
+        # Video ueberschreiben - genau das, was --nur-upload verhindern soll.
+        # Die vorhandene Datei stammt aus einem Lauf, dessen Szenenbau
+        # funktioniert hat; sie ist besser als alles, was hier noch entstuende.
+        print("--nur-upload: Szenenbau fehlgeschlagen, aber das vorhandene "
+              "Video bleibt unangetastet und wird hochgeladen")
+        fertig = True
     konkat: Path | None = None
     ass_arg: Path | None = None
     if not fertig and fdaten and int(fdaten.get("version") or 1) < 2:
