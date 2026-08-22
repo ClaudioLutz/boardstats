@@ -2267,7 +2267,9 @@ def _detail_zeiten(fragmente: list[str], worte: list[Wort], von: float,
     zeiten = [max(von, t if t is not None else von) for t in roh]
     for i in range(1, len(zeiten)):      # Reihenfolge des Kastens erzwingen
         zeiten[i] = max(zeiten[i], zeiten[i - 1] + DETAIL_VERSATZ)
-    rest = 0.0                           # Lesezeit von hinten freihalten
+    # Lesezeit von hinten freihalten - inklusive der Blendphasen, die
+    # der Zeile am Anfang und Ende nicht lesbar sind (Leitplanke 3).
+    rest = DETAIL_BLENDEN
     for i in range(len(zeiten) - 1, -1, -1):
         rest += detail_frag_boden(fragmente[i])
         zeiten[i] = max(von, min(zeiten[i], bis - rest))
@@ -2889,7 +2891,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
 
     def lower_third(sz_: Szene, text: str, von: float, bis: float,
                     label: str = "", quelle: str = "", gross: bool = True,
-                    kicker: str = "", boden: float = 0.0) -> None:
+                    kicker: str = "",
+                    boden: float | None = None) -> None:
         """Zweistufiges Lower Third (C1/C-News): erst faehrt der Grund mit
         dem Farbbalken ein, LT_VERSATZ spaeter erscheint der Text darin.
         Beide Stufen enden gemeinsam."""
@@ -2898,7 +2901,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         sz_.overlays.append(ov(grund, von, bis, fade=0.2, einflug="links"))
         o = ov(textbild, von + LT_VERSATZ, bis, fade=0.25, einflug="unten",
                lese_text=text,
-               lese_boden=boden or lese_boden_allgemein(text))
+               lese_boden=(lese_boden_allgemein(text) if boden is None
+                           else boden))
         o.einflug_weg = szenen._s(20)
         sz_.overlays.append(o)
 
@@ -2988,9 +2992,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                              lese_text=thumb,
                              lese_boden=min(KALTSTART_MIN,
                                             lese_boden_allgemein(thumb))))
+    # boden=0: der Hook wird wortgleich als erster Satz gesprochen und
+    # kann strukturell nicht laenger stehen als bis intro_bis - der Ton
+    # traegt ihn (dieselbe Regel wie beim Zahlen-Kopf).
     lower_third(s, hook, hook_ab, max(intro_bis, hook_ab + 0.6),
-                label="TODAY'S TOP STORY",
-                boden=HOOK_VORLAUF + len(hook) / HOOK_CPS)
+                label="TODAY'S TOP STORY", boden=0.0)
     ticker_overlays(s, 0.4, intro_bis - 0.2)
 
     # Agenda als "Coming up"-Strecke: je Eintrag eine Mini-Szene mit dem
@@ -3031,9 +3037,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             return
         t0 = start_von(zk_idx)
         z = neu(pool_bild(), t0)
+        # boden=0: die Ansage wird wortgleich gesprochen und steht nur,
+        # bis die erste Zahl beginnt - der Ton traegt sie (keine Pruefung).
         lower_third(z, kopf_titel, t0 + 0.2,
                     start_von(zahl_idx[0]) if zahl_idx else t0 + 4.0,
-                    label=kopf_label)
+                    label=kopf_label, boden=0.0)
         genutzt = zahl_idx[:len(karten)]
         for j, i in enumerate(genutzt):
             t = start_von(i)
@@ -3048,8 +3056,9 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
             # Zuschauer sie alle gesehen.
             rest = len(karten) - len(genutzt)
             if j + 1 == len(genutzt) and rest > 0 \
-                    and bis - t >= ZAHL_COUNTUP_MIN + ZAHL_UEBERSICHT_MIN:
-                schnitt = bis - ZAHL_UEBERSICHT_MIN
+                    and bis - t >= ZAHL_COUNTUP_MIN \
+                    + ZAHL_UEBERSICHT_FENSTER:
+                schnitt = bis - ZAHL_UEBERSICHT_FENSTER
                 _countup_overlays(z, karten[j], t + 0.2, schnitt, ov,
                                   klang)
                 # Small Multiples (C2) mit gestaffeltem Einflug (die
@@ -3170,7 +3179,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         opener_bis = min(
             max(rumpf_start,
                 kopf_start + (OPENER_QUELLE_MIN if quelle else OPENER_MIN)
-                + EINBLEND_VERLUST + LT_VERSATZ),
+                + OPENER_SICHT_ZUSCHLAG),
             naechster - 0.5)
         # Tempo-Badge am Kapitelzaehler: seit 21.08.2026 ersetzt er den
         # frueheren eigenen Abschnitt "FILLING FAST". Dass ein Thread
@@ -3214,7 +3223,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # Einblendverlust (Leitplanke 3, 22.08.2026).
                 ereignisse.append((max(sp[0], rumpf_start + 1.0), "zitat",
                                    zit, max(natur, sp[0] + ZITAT_MIN
-                                            + EINBLEND_VERLUST)))
+                                            + ZITAT_SICHT_ZUSCHLAG)))
         kar = eintrag.get("karte")
         if isinstance(kar, dict) and str(kar.get("wert") or "").strip():
             tz = _anker_zeit(str(kar.get("anker") or ""), rumpf_worte)
@@ -3371,7 +3380,11 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 f = (sicht_bis(zeit[n], ab) - zeit[n] >= boden
                      and naht_nach(ab) >= ab + FLUG_DAUER)
                 z = ab + FLUG_DAUER if f else halt
-                steht = sicht_bis(zeit[n], z) - zeit[n] >= boden
+                # Ein Punkt, der ohne Flug hart parkt, blendet am Ende aus
+                # (0.35) - fliegende lesen bis zum Flugbeginn, dort ueber-
+                # nimmt der Flug die Ausblende.
+                steht = sicht_bis(zeit[n], z) - zeit[n] \
+                    >= boden + (0.0 if f else 0.35)
                 if not steht:
                     # Zu kurz fuer eine Fokus-Karte: der Punkt erscheint
                     # sofort in der Liste, wie vor der Bewegung.
@@ -3382,9 +3395,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 # mehreren kurzen Punkten hintereinander aufsummieren und die
                 # Liste gegen die Anker verschieben.
                 gerade = min(max(z, land[-1]) if land else z, g1)
-                fliegt.append(f and abs(gerade - z) < 0.01)
+                f_ok = f and abs(gerade - z) < 0.01
+                fliegt.append(f_ok)
+                # Lesbar ist der Punkt nur bis zum Flugbeginn - die
+                # Flugphase zaehlt nicht als Lesezeit (Leitplanke 3).
+                lesbar_ende = gerade - (FLUG_DAUER if f_ok else 0.0)
                 zeigt.append(steht
-                             and sicht_bis(zeit[n], gerade) - zeit[n] >= boden)
+                             and sicht_bis(zeit[n], lesbar_ende) - zeit[n]
+                             >= boden + (0.0 if f_ok else 0.35))
                 land.append(gerade)
             marken = [g0] + land
             beginn = g0
@@ -3457,7 +3475,8 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                 frag = list(details[n])
                 # Auch hier effektive Lesezeit: die erste Kastenstufe blendet
                 # 0.3s auf, bevor die Zeile voll steht (Leitplanke 3).
-                fenster_frei = sicht_bis(det_von, det_bis) - det_von - 0.3
+                fenster_frei = (sicht_bis(det_von, det_bis) - det_von
+                                - DETAIL_BLENDEN)
                 while frag and detail_boden(frag) > fenster_frei:
                     frag = frag[:-1]
                 frag_stat[0] += len(details[n])
@@ -3839,7 +3858,12 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
     wert = str(karte["wert"])
     titel = str(karte.get("titel") or "")
     sub = str(karte.get("sub") or "")
-    dauer = max(0.3, min(COUNTUP_DAUER, (bis - ab) * 0.45))
+    # Das Zaehlwerk bekommt nur die Zeit, die nach dem Lesezeit-Boden des
+    # Endstands (ZAHL_COUNTUP_MIN) uebrig bleibt - der Endwert ist die
+    # Aussage, das Zaehlen nur der Weg dorthin (Smoke-Befund 22.08.2026:
+    # 45 %-Deckel liess den TL;DR-Endstaenden nur noch 1.1-1.5 s).
+    budget = (bis - ab) - ZAHL_COUNTUP_MIN - COUNTUP_FLASH
+    dauer = max(0.4, min(COUNTUP_DAUER, budget))
     stufen = szenen.countup_werte(wert, max(4, round(dauer / COUNTUP_TAKT)))
     takt = dauer / max(1, len(stufen))
     for si, w in enumerate(stufen):
@@ -3862,9 +3886,9 @@ def _countup_overlays(sz: Szene, karte: dict, ab: float, bis: float,
     sz.overlays.append(ov(szenen.zahl_tafel(wert, titel, sub, spark=spark),
                           final_ab, bis, 0.0,
                           lese_text=f"{wert} {titel}".strip(),
-                          lese_boden=max(ZAHL_COUNTUP_MIN,
-                                         lese_boden_allgemein(
-                                             f"{wert} {titel}".strip()))))
+                          # Nur der Zahl-Boden: Wert und Titel werden auch
+                          # gesprochen, das Bild ergaenzt den Ton.
+                          lese_boden=ZAHL_COUNTUP_MIN))
 
 
 # Ease-Konstanten des Feel-Pakets (B2): Standard-Back-Easing-Werte.
@@ -3903,7 +3927,11 @@ ZAHL_COUNTUP_MIN = 1.8   # so lange muss der Count-up der letzten gesprochenen
                          # Zahl mindestens stehen bleiben, bevor die stille
                          # Uebersicht sein Fenster uebernehmen darf
 MULTIPLES_VERSATZ = 0.12  # Staffelversatz der Small-Multiples-Karten (C1/C2)
-ZAHL_UEBERSICHT_MIN = 2.2  # Lesezeit der Uebersichtstafel mit allen vier
+ZAHL_UEBERSICHT_MIN = 2.2  # effektive Lesezeit je Multiples-Karte
+ZAHL_UEBERSICHT_FENSTER = ZAHL_UEBERSICHT_MIN + 1.2  # Standzeit-Fenster der
+                           # Uebersicht: Boden plus Ein-/Ausblende (0.75)
+                           # plus Staffelversatz der letzten Karte (0.36)
+                           # (Smoke-Messung 22.08.2026)
                            # Zahlen; passt das Fenster nicht, entfaellt sie
                            # ersatzlos statt aufzublitzen
                          # (Balken + Titel brauchen einen Moment zum Lesen)
@@ -3953,6 +3981,12 @@ DETAIL_FRAG_MIN = 2.0    # Boden je einzelnem Fragment (der Kasten als
 # diesen Verlust deshalb auf ihre Fenster-Pruefungen drauf, und
 # lesezeit_verifizieren() rechnet ihn am fertigen Plan nach.
 EINBLEND_VERLUST = 0.40
+# Sichtzuschlaege je Elementtyp: was der Boden zusaetzlich braucht, damit
+# die EFFEKTIVE Lesezeit ihn haelt (Smoke-Messung 22.08.2026 am echten
+# Tag 21.08.): Textstart-Versatz + Einflug + Ausblende.
+OPENER_SICHT_ZUSCHLAG = 1.1   # 0.45 Versatz (0.2+LT) + 0.4 Einflug + 0.25 aus
+ZITAT_SICHT_ZUSCHLAG = 0.9    # 0.1 Versatz + 0.4 Einflug + 0.35 Ausblende
+DETAIL_BLENDEN = 0.7          # Ein- plus Ausblende einer Detail-Zeile
 
 
 def fokus_boden(text: str) -> float:
@@ -4015,6 +4049,9 @@ def lesezeit_verifizieren(folge: list[Szene], ende: float
     Sicherheitsnetz, das anschlagen muss, sobald ein kuenftiger Beat die
     Planungs-Boeden umgeht - ohne sie zerstoert jeder zusaetzliche
     Animations-Beat schleichend die Lesbarkeit."""
+    def fliegt_vor(teile: list[Overlay]) -> bool:
+        return any(o.flug_ab is not None for o in teile)
+
     stuecke: dict[Path, list[Overlay]] = {}
     for s in folge:
         for o in s.overlays:
@@ -4028,7 +4065,13 @@ def lesezeit_verifizieren(folge: list[Szene], ende: float
         bis = min(bis, ende)
         erst = min(teile, key=lambda o: o.start)
         letzt = max(teile, key=lambda o: o.ende)
-        einblend = max(erst.fade, EINFLUG_DAUER if erst.einflug else 0.0)
+        # Einflug kostet nur Lesezeit, wenn _lage ihn wirklich faehrt
+        # (Standzeiten unter 2x EINFLUG_DAUER bleiben statisch).
+        faehrt = bool(erst.einflug) and (
+            max(o.ende for o in teile) - start
+            - (FLUG_DAUER if fliegt_vor(teile) else 0.0)
+            >= 2 * EINFLUG_DAUER)
+        einblend = max(erst.fade, EINFLUG_DAUER if faehrt else 0.0)
         fliegt = any(o.flug_ab is not None for o in teile)
         ausblend = 0.0 if fliegt else letzt.fade
         effektiv = (bis - start) - einblend - ausblend
