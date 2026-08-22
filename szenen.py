@@ -533,6 +533,42 @@ def fokus_punkt(text: str, lage: str = "left",
     return bild, x + FOKUS_PAD_L, oben + _s(32)
 
 
+def fokus_zahl_overlay(text: str, lage: str = "left",
+                       detail: list[str] | None = None,
+                       oben_min: int = STAPEL_OBEN_MIN) -> Image.Image | None:
+    """Puls-Overlay fuer die Zahlen im Fokus-Punkt (Intent B3/C2/Idee 28).
+
+    Rendert NUR die Zahl-Tokens des Stichpunkts, farbig (Gruen/Rot bei
+    explizitem Vorzeichen, sonst Akzent), an exakt denselben Positionen wie
+    in fokus_punkt - video_report blendet das Bild kurz ueber die
+    Fokus-Karte, wenn die Zahl gesprochen wird. Bewusst nur die Glyphen
+    und kein zweiter Kasten: zweimal KARTE_ALPHA uebereinander waere ein
+    sichtbarer Dunkel-Puls. None, wenn der Text keine Zahl traegt.
+
+    Positioniert wird ueber Praefix-Breiten derselben Schrift, mit der
+    fokus_punkt die ganze Zeile in einem Zug setzt - PIL misst
+    deterministisch, die Glyphen liegen deckungsgleich."""
+    if not _ZAHL.search(text.upper()):
+        return None
+    bild = _leer()
+    d = ImageDraw.Draw(bild)
+    x, oben, zeilen, f, _, _, _, _ = _stapel(d, text, detail, lage, oben_min)
+    getroffen = False
+    for i, zeile in enumerate(zeilen):
+        tokens = zeile.split(" ")
+        for j, tok in enumerate(tokens):
+            if not _ZAHL.search(tok):
+                continue
+            praefix = " ".join(tokens[:j])
+            tx = x + FOKUS_PAD_L + (d.textlength(praefix + " ", font=f)
+                                    if praefix else 0)
+            d.text((tx, oben + _s(32) + i * FOKUS_ZEILE), tok, font=f,
+                   fill=zahl_farbe(tok), stroke_width=3,
+                   stroke_fill=(0, 0, 0))
+            getroffen = True
+    return bild if getroffen else None
+
+
 def detail_teile(text: str, detail: list[str], lage: str = "left",
                  oben_min: int = STAPEL_OBEN_MIN
                  ) -> tuple[list[Image.Image], list[Image.Image]] | None:

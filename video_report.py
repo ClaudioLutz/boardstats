@@ -3236,6 +3236,7 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
         titel_plan: list[KartenStand] = []
         detail_plan: list[KartenStand] = []
         fokus_plan: list[FokusKarte] = []
+        puls_plan: list[KartenStand] = []
         for gi, (g0, gtitel, glage) in enumerate(segmente):
             g1 = segmente[gi + 1][0] if gi + 1 < len(segmente) else naechster
             texte = [str(p["text"]) for t, p in tags if g0 <= t < g1]
@@ -3435,6 +3436,30 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     land[n] - FLUG_DAUER if fliegt[n] else None,
                     ziel[0] - (tx - fx), ziel[1] - (ty - fy),
                     text=punkt_text))
+                # Wortebene (Intent B3): die Zahl im Stichpunkt faerbt sich
+                # exakt in dem Moment, in dem sie gesprochen wird - gefunden
+                # ueber dieselbe Fundort-Suche wie die Detail-Fragmente.
+                zahl_tok = next((tok for tok in punkt_text.split()
+                                 if szenen._ZAHL.search(tok)), "")
+                if zahl_tok:
+                    lesbar_bis = (land[n] - FLUG_DAUER if fliegt[n]
+                                  else land[n])
+                    fenster = [w for w in rumpf_worte
+                               if t_n - 0.4 <= w.start <= lesbar_bis]
+                    moment = _detail_fundort(zahl_tok, fenster)
+                    if moment is not None:
+                        von_p = max(t_n + 0.3, moment)
+                        bis_p = min(von_p + ZAHL_PULS_DAUER,
+                                    lesbar_bis - 0.1)
+                        if bis_p - von_p > 0.4:
+                            puls = szenen.fokus_zahl_overlay(
+                                punkt_text, glage,
+                                frag if zeigt_detail else None)
+                            if puls is not None:
+                                ppfad, px_, py_ = png(puls)
+                                puls_plan.append(KartenStand(
+                                    ppfad, px_, py_, von_p, bis_p,
+                                    blende=0.18))
 
         # Klang zu den Fluegen (Intent B5): Whoosh beim Abheben, Klick beim
         # Einrasten in der Liste - aus denselben Planwerten wie der Flug.
@@ -3496,6 +3521,14 @@ def szenen_bauen(bloecke: list[Block], block_worte: list[list[Wort]],
                     weiter=b0 < fk.bis - 0.02,
                     lese_text=fk.text,
                     lese_boden=fokus_boden(fk.text) if fk.text else 0.0))
+            # Zahl-Puls NACH der Fokus-Karte auflegen (Overlays werden in
+            # Listenreihenfolge gestapelt): die farbigen Zahl-Glyphen liegen
+            # deckungsgleich ueber den weissen der Karte.
+            for st in puls_plan:
+                a0, b0 = max(a, st.von), min(b, st.bis)
+                if b0 - a0 > 0.02:
+                    sz.overlays.append(Overlay(
+                        st.png, a0, b0, st.blende, st.x, st.y))
 
         erste_story = True
         sz: Szene | None = None
@@ -3725,6 +3758,8 @@ SCHLUSS_FADE = 1.5    # Ausblende des Schlussbilds (Tafel-Alpha und Bild nach
                       # Schwarz); muss kleiner als AUSKLANG bleiben.
 OUTRO_TAFEL_MIN_SEC = 4.0  # die Abschluss-Tafel behaelt davon immer so viel,
                            # die Aktivitaets-Grafik bekommt nur den Rest
+ZAHL_PULS_DAUER = 1.1    # so lange steht die farbige Zahl im Fokus-Punkt,
+                         # wenn sie gesprochen wird (Intent B3 / Idee 28/32)
 FOKUS_MIN = 1.1          # absoluter Boden; die Lesezeit rechnet fokus_boden()
 DETAIL_MIN = 2.6         # kuerzer bekommt ein Punkt keine Stichwort-Fragmente:
                          # zwei bis drei Zeilen Kleintext wollen gelesen
