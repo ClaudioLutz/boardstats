@@ -29,7 +29,7 @@ damit ein Fehler in einem Schritt die anderen nicht mitreisst:
 | 7:20 / 13:20 / 20:20 | `run.sh` | `crawl_biz.py` + `aggregate_biz.py` → Snapshot, `reports/latest.json` |
 | 20:35 | `report.sh` | `run_report.py --top 15` → `extrakte/<datum>/bericht.md`, Folien, Bilder, GitHub-Publish |
 | 21:15 | `video.sh` | `video_report.py --sprache en` (Vertonung+Render+Upload) + `shorts.py` (Tages-Shorts je Story) + `klip_katalog.py` (Retention) |
-| 23:30 | (inline) | `analytics_bericht.py --tage 45 --speichern` — Abbruchkurven als Erfolgskontrolle, seit `2e2d63a` zugleich Datenquelle für die Retention-Rückkopplung in den nächsten Bericht |
+| 23:30 | (inline) | `analytics_bericht.py --tage 45 --speichern` — Abbruchkurven als Erfolgskontrolle, seit `2e2d63a` zugleich Datenquelle für die Retention-Rückkopplung in den nächsten Bericht; seit `737dcdb` zusätzlich Traffic-Quellen, Suchbegriffe und CH-Kontrollreihe |
 
 **Seit 20.08.2026 (`231c51a`) Abendrhythmus statt Morgenlauf:** Messung
 zeigte, dass /biz/ dem US-Handelstag folgt (13–21 UTC = 52.5 % aller Posts,
@@ -639,7 +639,10 @@ Im lokalen Kettentest (22.08. 00:00–00:40) an echter Ausgabe verifiziert:
 
 **Bewusst nicht geliefert** (in der Story begründet): der A/B-Titel-Punkt
 aus D. Die Messgrösse wäre die Klickrate, und Impressionen/CTR gibt die
-YouTube-API nicht heraus (siehe Modul-Docstring `analytics_bericht.py`).
+YouTube-API nicht heraus (am 22.08. mit Gegentest belegt, siehe Modul-Docstring
+`analytics_bericht.py` und den Abschnitt „Reichweite" unten). Nach dem Befund
+0,0 % CTR ist genau dieser Punkt allerdings der wichtigste offene — er braucht
+nur einen anderen Weg als die API.
 
 **Falle, die dabei zugeschnappt ist:** `git add -A` nach einem lokalen
 Kettentest nimmt `extrakte/<datum>/` mit — das ist die **einzige**
@@ -647,6 +650,59 @@ Testausgabe, die nicht gitignored ist (`arbeit/`, `cache/`, `video/`, `raw/`
 sind es). Vor jedem Commit während eines Kettentests `git status --short`
 lesen. Beim Aufräumen fiel es auf (21 Löschungen statt leerem Status), der
 Commit war noch ungepusht und wurde per `git rm --cached` + amend bereinigt.
+
+## Reichweite: der Engpass ist die Klickrate (22.08.2026)
+
+Anlass war die Beobachtung des Nutzers, YouTube habe die aktuellen Videos
+„abgeschrieben" (3 / 8 / 8 Aufrufe gegen 30 am 18.08.). Die Messung
+(`research/messung-reichweite-einbruch-2026-08-22.md`) sagt etwas anderes —
+und der wichtigste Wert kam aus **YouTube Studio**, nicht aus der API:
+
+**Video vom 21.08.: 205 Impressionen, 0,0 % Klickrate, 0 Wiedergaben aus
+Impressionen.** YouTube bietet an, es klickt niemand. Der Engpass liegt
+**vor** dem Klick. Die Serie A–D wirkt danach und kann daran per Konstruktion
+nichts ändern — Hebel sind **Thumbnail und Titel**.
+
+Weitere belastbare Befunde:
+
+- **Format schlägt alles:** am 21.08., gleiche Stunde, gleiche Tonspur —
+  Hauptvideo **3** Views, die 6 Shorts zusammen **44** (Faktor 15).
+- Bis 19.08. fehlte `YT_BROWSE` in den API-Daten komplett; für das
+  21.08.-Video weist Studio es aus. Die Feed-Verteilung ist also **neu
+  dazugekommen**, nicht entzogen.
+- Die CH-Aufrufe (18 am 15.08., 14 am 16.08., danach **exakt null**) waren
+  eigene Kontrollblicke. Ihr Wegfall erklärt einen Teil des „Einbruchs".
+- Suchbegriffe sind rein tagesaktuell (`monero` 11, `grrr stock` 4), kein
+  Marken-/Kanalbegriff.
+- Tag-0-Views streuen zwischen 6 und 26 — einzelne Tage sind kein Trend.
+
+**Werkzeug dafür ist jetzt eingebaut** (`737dcdb`): `analytics_bericht.py`
+erhebt `traffic_quellen()`, `suchbegriffe()`, `landeszahlen()` und legt die
+Rohzeilen als `traffic`/`suchbegriffe`/`land`/`land_tage` ab. Die Ausgabe sagt
+explizit, ob `YT_BROWSE` vorhanden ist.
+
+**Grenze, mit Gegentest belegt:** Impressionen und CTR gibt die Analytics-API
+nicht her (`impressions`/`impressionClickThroughRate` → HTTP 400 „Unknown
+identifier", `adImpressions` → 401). Für diese Zahlen bleibt Studio, Reiter
+*Reichweite*, unersetzlich — kein Skript kann das ersetzen.
+
+**Nicht wiederholen:** `day,country` und `video,insightTrafficSourceType` sind
+unzulässige Dimensionskombinationen (HTTP 400 „query is not supported"), beide
+müssen über `filters=` laufen. Der Analytics-Nachlauf ist real **~3 Tage**, nicht
+die 2 aus `NACHLAUF_TAGE` — angefragte jüngste Tage fehlen schlicht als Zeilen.
+Für echte Zählerstände die Data API (`videos.list part=statistics`) nehmen.
+
+**Prüfpunkte:**
+
+1. **Morgen früh:** trägt `arbeit/analytics/2026-08-22.json` auf hp-ubuntu die
+   Schlüssel `traffic`, `suchbegriffe`, `land`, `land_tage`? Heute 23:30 ist der
+   erste produktive Lauf des neuen Codes. Ebenso prüfen, dass `kurven` weiterhin
+   gefüllt ist — die Rückkopplung darf nicht gelitten haben.
+2. **24.08.:** steht in `traffic` ein `EXT_URL`-Ausschlag für den 21./22.08.?
+   Das ist die Antwort auf das /biz/-Seeding. Bleibt er aus, hat das Seeding
+   nichts gebracht.
+3. **Laufend:** taucht `YT_BROWSE` in der Tagesreihe auf, ist das der Tag, an
+   dem der Feed anspringt — dann wird die Klickrate zur entscheidenden Grösse.
 
 ## Wartung dieses Skills
 
